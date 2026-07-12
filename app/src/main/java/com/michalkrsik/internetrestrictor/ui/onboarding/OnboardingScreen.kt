@@ -1,0 +1,266 @@
+package com.michalkrsik.internetrestrictor.ui.onboarding
+
+import android.os.Build
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.michalkrsik.internetrestrictor.domain.StateSnapshot
+import com.michalkrsik.internetrestrictor.ui.components.PauseEmblem
+
+@Composable
+fun OnboardingScreen(
+    snapshot: StateSnapshot,
+    onOpenAccessibility: () -> Unit,
+    onOpenUsageAccess: () -> Unit,
+    onOpenAppInfo: () -> Unit,
+    onTestChrome: () -> Unit,
+    onComplete: () -> Unit,
+) {
+    var page by rememberSaveable { mutableIntStateOf(0) }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 24.dp, vertical = 28.dp),
+        verticalArrangement = Arrangement.spacedBy(22.dp),
+    ) {
+        Text(
+            "SETUP  ${page + 1} / 5",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        when (page) {
+            0 -> WelcomeStep()
+            1 -> DefaultsStep()
+            2 -> AccessibilityStep(
+                enabled = snapshot.accessibilityEnabled,
+                onOpenAccessibility = onOpenAccessibility,
+                onOpenAppInfo = onOpenAppInfo,
+            )
+            3 -> UsageStep(
+                granted = snapshot.usageAccessGranted,
+                onOpenUsageAccess = onOpenUsageAccess,
+            )
+            else -> ReadyStep(snapshot, onTestChrome)
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (page > 0) {
+                OutlinedButton(
+                    onClick = { page-- },
+                    modifier = Modifier.weight(1f).height(52.dp),
+                    shape = RoundedCornerShape(16.dp),
+                ) { Text("Back") }
+            }
+            Button(
+                onClick = { if (page < 4) page++ else onComplete() },
+                enabled = page != 2 || snapshot.accessibilityEnabled,
+                modifier = Modifier.weight(1f).height(52.dp),
+                shape = RoundedCornerShape(16.dp),
+            ) {
+                Text(if (page == 4) "Finish setup" else "Continue")
+            }
+        }
+    }
+}
+
+@Composable
+private fun WelcomeStep() {
+    Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        PauseEmblem()
+        Text("Pause before Chrome.", style = MaterialTheme.typography.headlineLarge)
+        Text(
+            "Internet Restrictor adds a deliberate pause before Chrome, then measures only active Chrome use against one daily, weekly, and monthly time pool.",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        InfoCard(
+            "Local by design",
+            "Settings and usage stay on this device. There is no account, backend, advertising ID, or analytics service.",
+        )
+        InfoCard(
+            "A gentle boundary",
+            "You remain in control. Disabling Accessibility, using another browser, or turning enforcement off bypasses the app by design.",
+        )
+    }
+}
+
+@Composable
+private fun DefaultsStep() {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text("Your starting rules.", style = MaterialTheme.typography.headlineLarge)
+        Text(
+            "You can change these after setup.",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        InfoCard("Daily budget", "60 minutes")
+        InfoCard("Weekly budget", "600 minutes")
+        InfoCard("Monthly budget", "2,400 minutes")
+        InfoCard("Sessions", "Choose 10, 30, or 60 minutes. The first wait costs 5 seconds per 10 minutes requested.")
+        InfoCard("Emergency skips", "Three wait skips per local day. A skip never bypasses an exhausted budget.")
+    }
+}
+
+@Composable
+private fun AccessibilityStep(
+    enabled: Boolean,
+    onOpenAccessibility: () -> Unit,
+    onOpenAppInfo: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text("Allow the Chrome gate.", style = MaterialTheme.typography.headlineLarge)
+        Text(
+            "Accessibility access is required for the real-time gate. Android asks you to enable it manually.",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        DisclosureCard()
+        Button(
+            onClick = onOpenAccessibility,
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            shape = RoundedCornerShape(16.dp),
+        ) { Text(if (enabled) "Accessibility enabled ✓" else "Open Accessibility settings") }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            InfoCard(
+                "If Android blocks the switch",
+                "For a sideloaded build, open App info, tap the three-dot menu, choose Allow restricted settings, then return to Accessibility.",
+                actionLabel = "Open app info",
+                onAction = onOpenAppInfo,
+            )
+        }
+        if (!enabled) {
+            Text(
+                "Setup cannot claim Chrome is protected until Android reports this access as enabled.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+    }
+}
+
+@Composable
+private fun DisclosureCard() {
+    Surface(
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)),
+    ) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("What the service does", style = MaterialTheme.typography.titleMedium)
+            listOf(
+                "Observes which app is currently in front.",
+                "Only needs to know whether stable Chrome is active.",
+                "Draws the pause screen over Chrome.",
+                "Measures active, focused Chrome time.",
+                "Does not inspect URLs, webpages, text, typing, or screenshots.",
+                "Keeps usage and settings on this device.",
+            ).forEach { Text("•  $it", style = MaterialTheme.typography.bodyMedium) }
+        }
+    }
+}
+
+@Composable
+private fun UsageStep(granted: Boolean, onOpenUsageAccess: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text("Improve recovery.", style = MaterialTheme.typography.headlineLarge)
+        Text(
+            "Usage Access can help confirm recent Chrome boundaries after a brief process interruption. It is not used to trigger the gate.",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        InfoCard(
+            "Real-time protection stays honest",
+            "The Accessibility service remains the source for focus and overlays. Ambiguous gaps are left uncounted rather than guessed.",
+        )
+        Button(
+            onClick = onOpenUsageAccess,
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            shape = RoundedCornerShape(16.dp),
+        ) { Text(if (granted) "Usage Access granted ✓" else "Open Usage Access settings") }
+        Text(
+            if (granted) {
+                "Permission granted. This personal MVP still reports limited recovery until the store-ready reconciliation suite is validated."
+            } else {
+                "You may continue without it. The dashboard will clearly say Protected with limited recovery."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun ReadyStep(snapshot: StateSnapshot, onTestChrome: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text("Test the real gate.", style = MaterialTheme.typography.headlineLarge)
+        Text(
+            if (snapshot.serviceConnected) {
+                "The protection service is connected. Opening Chrome should show the pause screen over the existing Chrome surface."
+            } else {
+                "Accessibility is enabled, but Android has not reported the service connected yet. Open Chrome to prompt a live check."
+            },
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Button(
+            onClick = onTestChrome,
+            enabled = snapshot.chromeInstalled,
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            shape = RoundedCornerShape(16.dp),
+        ) { Text("Test Chrome gate") }
+        InfoCard(
+            "What to expect",
+            "Chrome may draw a brief frame before Android sends the foreground event. The pause screen should then block Chrome touches without changing the current tab, Incognito state, or destination.",
+        )
+    }
+}
+
+@Composable
+private fun InfoCard(
+    title: String,
+    body: String,
+    actionLabel: String? = null,
+    onAction: () -> Unit = {},
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)),
+    ) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(body, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            actionLabel?.let {
+                OutlinedButton(onClick = onAction, shape = RoundedCornerShape(14.dp)) { Text(it) }
+            }
+        }
+    }
+}

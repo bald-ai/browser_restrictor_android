@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Internet Restrictor — Design directions</title>
+  <style>
+    @font-face { font-family: Manrope; src: url("../app/src/main/res/font/manrope_variable.ttf"); }
+    @font-face { font-family: Instrument; src: url("../app/src/main/res/font/instrument_serif_regular.ttf"); }
+    * { box-sizing: border-box; }
+    :root { color-scheme: dark; font-family: Manrope, system-ui, sans-serif; }
+    body { margin: 0; min-height: 100vh; background: #090c12; color: #eef2f9; }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    .page { min-height: 100vh; display: grid; grid-template-columns: minmax(280px, 380px) 1fr; }
+    .picker { padding: 44px 36px; border-right: 1px solid #202630; background: #0d1118; }
+    .picker h1 { margin: 0 0 12px; font: 42px/1 Instrument, Georgia, serif; }
+    .picker > p { color: #939daa; line-height: 1.55; margin: 0 0 32px; }
+    .choice { display: block; width: 100%; text-align: left; border: 1px solid #28303b; color: #dfe6ef; background: #131923; border-radius: 16px; padding: 17px; margin: 12px 0; }
+    .choice strong { display: block; font-size: 15px; margin-bottom: 5px; }
+    .choice span { color: #8793a2; font-size: 12px; line-height: 1.45; }
+    .choice.active { border-color: #55d5aa; background: #12241f; box-shadow: 0 0 0 1px #55d5aa inset; }
+    .choice.active span { color: #a8cabc; }
+    .recommend { display: inline-block; margin-left: 6px; padding: 3px 7px; border-radius: 999px; background: #55d5aa; color: #07140f; font-size: 9px; font-weight: 800; letter-spacing: .06em; }
+    .screen-picker { display: flex; gap: 6px; margin-top: 28px; padding: 5px; background: #090d13; border-radius: 12px; }
+    .screen-picker button { flex: 1; border: 0; border-radius: 9px; padding: 9px 4px; background: transparent; color: #7f8a99; font-size: 11px; font-weight: 700; }
+    .screen-picker button.active { color: #fff; background: #26303d; }
+    .hint { margin-top: 18px; color: #697482; font-size: 11px; line-height: 1.5; }
+    .stage { min-width: 0; display: grid; place-items: center; padding: 34px; background: radial-gradient(circle at 50% 20%, #1b2431 0, #0b0f15 50%); }
+    .phone { width: min(393px, calc(100vw - 34px)); height: min(852px, calc(100vh - 68px)); min-height: 620px; position: relative; overflow: hidden; border: 8px solid #30343b; border-radius: 48px; background: #0a1322; box-shadow: 0 34px 90px #000c, 0 0 0 2px #080a0d; }
+    .speaker { position: absolute; z-index: 20; top: 10px; left: 50%; transform: translateX(-50%); width: 82px; height: 22px; border-radius: 20px; background: #05070a; }
+    .status { position: absolute; z-index: 15; top: 0; left: 0; right: 0; height: 42px; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; font-size: 11px; font-weight: 700; }
+    .status-icons { letter-spacing: 3px; }
+    .gesture { position: absolute; z-index: 20; left: 50%; bottom: 8px; width: 108px; height: 4px; transform: translateX(-50%); border-radius: 8px; background: currentColor; opacity: .65; }
+    .prototype { display: none; width: 100%; height: 100%; }
+    .prototype.active { display: block; }
+    .mock-screen { display: none; height: 100%; overflow-y: auto; scrollbar-width: none; padding-top: 42px; padding-bottom: 34px; }
+    .mock-screen::-webkit-scrollbar { display: none; }
+    .mock-screen.active { display: block; }
+    .row { display: flex; align-items: center; }
+    .between { justify-content: space-between; }
+    .eyebrow { font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+    .muted { opacity: .64; }
+    .tiny { font-size: 11px; line-height: 1.45; }
+    .body { font-size: 13px; line-height: 1.55; }
+    .serif { font-family: Instrument, Georgia, serif; font-weight: 400; }
+    .pill { display: inline-flex; align-items: center; border-radius: 999px; padding: 7px 10px; font-size: 10px; font-weight: 800; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; margin-right: 7px; background: currentColor; }
+    .progress { overflow: hidden; height: 7px; border-radius: 99px; background: #ffffff12; }
+    .progress > i { display: block; height: 100%; width: var(--value); border-radius: inherit; background: currentColor; }
+    .primary-button, .secondary-button { width: 100%; min-height: 50px; border-radius: 14px; font-weight: 800; border: 0; }
+    .secondary-button { background: transparent; border: 1px solid currentColor; }
+    .switch { width: 42px; height: 24px; padding: 3px; border-radius: 99px; background: #55d5aa; }
+    .switch:after { content: ""; display: block; width: 18px; height: 18px; margin-left: 18px; border-radius: 50%; background: #08130f; }
+
+    /* A — calm and focused */
+    .calm { background: #0a1322; color: #edf3f7; }
+    .calm .mock-screen { padding-left: 22px; padding-right: 22px; }
+    .calm .eyebrow, .calm .accent { color: #54d8a7; }
+    .calm h2 { margin: 13px 0 6px; font: 38px/1.02 Instrument, Georgia, serif; }
+    .calm .intro { color: #9daabc; margin: 0; }
+    .calm .status-line { margin: 20px 0 18px; padding: 13px 0; border-top: 1px solid #ffffff13; border-bottom: 1px solid #ffffff13; }
+    .calm .budget-focus { padding: 24px 22px; border-radius: 20px; background: #152236; border: 1px solid #ffffff0d; }
+    .calm .budget-focus .number { margin: 6px 0 0; font: 64px/.95 Instrument, Georgia, serif; }
+    .calm .budget-focus .unit { color: #91a0b3; font-size: 12px; margin-top: 2px; }
+    .calm .budget-focus > .progress { margin-top: 16px; }
+    .calm .budget-line { margin-top: 18px; }
+    .calm .budget-line + .budget-line { margin-top: 14px; }
+    .calm .progress { margin-top: 7px; color: #54d8a7; }
+    .calm .simple-section { margin-top: 22px; padding: 0 2px; }
+    .calm .simple-section h3 { margin: 0 0 13px; font-size: 15px; }
+    .calm .primary-button { margin-top: 24px; background: #54d8a7; color: #07150f; }
+    .calm .secondary-button { margin-top: 10px; color: #91a0b3; border-color: #344359; }
+    .calm .topbar { height: 54px; margin-bottom: 10px; }
+    .calm .back { color: #54d8a7; font-weight: 800; }
+    .calm .setting-group { margin-top: 20px; border-top: 1px solid #ffffff14; }
+    .calm .setting-row { padding: 16px 0; border-bottom: 1px solid #ffffff10; gap: 15px; }
+    .calm .setting-row .copy { flex: 1; }
+    .calm .field { min-width: 70px; padding: 9px 10px; text-align: center; border-radius: 10px; color: #edf3f7; background: #17253a; border: 1px solid #334159; }
+    .calm .save { position: sticky; bottom: 6px; margin-top: 22px; padding-top: 12px; background: linear-gradient(transparent, #0a1322 25%); }
+    .calm .gate-wrap { min-height: 100%; display: flex; flex-direction: column; }
+    .calm .gate-center { flex: 1; display: flex; flex-direction: column; justify-content: center; text-align: center; }
+    .calm .pause { width: 58px; height: 58px; margin: 0 auto 20px; display: grid; place-content: center; border-radius: 18px; background: #54d8a720; color: #54d8a7; font-size: 25px; letter-spacing: 5px; padding-left: 5px; }
+    .calm .gate-center h2 { font-size: 40px; }
+    .calm .durations { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 28px 0 4px; }
+    .calm .duration { border: 1px solid #344359; border-radius: 13px; padding: 13px 4px; color: #9aa9bc; background: transparent; font-weight: 800; }
+    .calm .duration.selected { color: #08140f; background: #54d8a7; border-color: #54d8a7; }
+    .calm .gate-budget { margin-top: 22px; padding-top: 18px; border-top: 1px solid #ffffff13; text-align: left; }
+
+    /* B — native utility */
+    .native { background: #101418; color: #e2e2e7; }
+    .native .mock-screen { padding-left: 16px; padding-right: 16px; }
+    .native .appbar { height: 64px; font-size: 22px; font-weight: 500; }
+    .native .appbar small { font-size: 20px; margin-right: 22px; }
+    .native .hero-card { padding: 20px; border-radius: 12px; background: #1b2127; }
+    .native .hero-card h2 { font: 500 30px/1.1 Manrope, sans-serif; margin: 8px 0; }
+    .native .success { color: #79d9aa; }
+    .native .section-title { margin: 25px 16px 8px; color: #b5c8ff; font-size: 12px; font-weight: 700; }
+    .native .list { overflow: hidden; border-radius: 12px; background: #1b2127; }
+    .native .list-row { min-height: 66px; padding: 13px 16px; border-bottom: 1px solid #ffffff10; gap: 14px; }
+    .native .list-row:last-child { border-bottom: 0; }
+    .native .icon { width: 35px; height: 35px; display: grid; place-content: center; border-radius: 50%; background: #283139; color: #b5c8ff; }
+    .native .copy { flex: 1; }
+    .native .value { color: #aeb8c2; font-size: 12px; }
+    .native .progress { margin-top: 8px; color: #79d9aa; height: 5px; }
+    .native .fab { position: sticky; bottom: 12px; float: right; margin-top: 22px; border: 0; border-radius: 16px; padding: 16px 20px; background: #b5c8ff; color: #15203a; font-weight: 800; box-shadow: 0 7px 18px #0008; }
+    .native .primary-button { background: #b5c8ff; color: #16203a; }
+    .native .secondary-button { color: #b5c8ff; border-color: #6d7895; margin-top: 9px; }
+    .native .gate-wrap { min-height: 100%; display: flex; flex-direction: column; }
+    .native .gate-center { flex: 1; display: flex; flex-direction: column; justify-content: center; text-align: center; padding: 12px 16px; }
+    .native .gate-center .icon { margin: 0 auto 18px; width: 64px; height: 64px; font-size: 25px; }
+    .native .gate-center h2 { margin: 0 0 8px; font-size: 28px; font-weight: 500; }
+    .native .segmented { display: flex; margin: 25px 0 18px; border: 1px solid #778399; border-radius: 22px; overflow: hidden; }
+    .native .segmented button { flex: 1; padding: 11px 4px; color: #dfe5ee; border: 0; border-right: 1px solid #778399; background: transparent; }
+    .native .segmented button:last-child { border: 0; }
+    .native .segmented .selected { color: #14203a; background: #b5c8ff; }
+
+    /* C — editorial */
+    .editorial { background: #f2eee5; color: #172119; }
+    .editorial .status { color: #172119; }
+    .editorial .mock-screen { padding-left: 24px; padding-right: 24px; }
+    .editorial .eyebrow { color: #9a3d2d; }
+    .editorial h2 { margin: 16px 0 4px; font: 48px/.9 Instrument, Georgia, serif; letter-spacing: -.02em; }
+    .editorial .rule { height: 1px; margin: 22px 0; background: #172119; opacity: .25; }
+    .editorial .big-number { font: 92px/.8 Instrument, Georgia, serif; color: #9a3d2d; letter-spacing: -.05em; }
+    .editorial .big-label { margin-left: 8px; font: 24px/1 Instrument, Georgia, serif; }
+    .editorial .budget-line { padding: 14px 0; border-bottom: 1px solid #1721192b; }
+    .editorial .progress { margin-top: 8px; background: #1721191b; color: #9a3d2d; border-radius: 0; height: 4px; }
+    .editorial .quote { margin: 26px 0; font: italic 23px/1.2 Instrument, Georgia, serif; color: #385e4c; }
+    .editorial .primary-button { border-radius: 0; background: #172119; color: #f4f0e7; }
+    .editorial .secondary-button { margin-top: 9px; border-radius: 0; color: #172119; }
+    .editorial .topbar { height: 58px; }
+    .editorial .back { font-weight: 800; }
+    .editorial .setting-section { padding: 18px 0; border-bottom: 1px solid #1721193b; }
+    .editorial .setting-section h3 { margin: 0 0 14px; font: 27px/1 Instrument, Georgia, serif; }
+    .editorial .setting-row { padding: 10px 0; gap: 12px; }
+    .editorial .setting-row .copy { flex: 1; }
+    .editorial .switch { background: #9a3d2d; }
+    .editorial .switch:after { background: #f2eee5; }
+    .editorial .field { width: 72px; padding: 9px; border: 1px solid #172119; background: transparent; color: #172119; text-align: center; border-radius: 0; }
+    .editorial .gate-wrap { min-height: 100%; display: flex; flex-direction: column; }
+    .editorial .gate-center { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+    .editorial .gate-center h2 { font-size: 62px; }
+    .editorial .roman { color: #9a3d2d; font: 16px Instrument, Georgia, serif; }
+    .editorial .durations { display: flex; margin: 28px 0 20px; border-top: 1px solid #172119; border-bottom: 1px solid #172119; }
+    .editorial .duration { flex: 1; padding: 17px 3px; border: 0; border-right: 1px solid #172119; color: #172119; background: transparent; font: 20px Instrument, Georgia, serif; }
+    .editorial .duration:last-child { border-right: 0; }
+    .editorial .duration.selected { color: #f4f0e7; background: #9a3d2d; }
+
+    @media (max-width: 820px) {
+      .page { display: block; }
+      .picker { padding: 22px 18px 16px; border-right: 0; border-bottom: 1px solid #202630; }
+      .picker h1 { font-size: 30px; }
+      .picker > p, .choice span, .hint { display: none; }
+      .choices { display: flex; gap: 7px; }
+      .choice { margin: 0; padding: 11px 8px; text-align: center; border-radius: 11px; }
+      .choice strong { margin: 0; font-size: 12px; }
+      .recommend { display: none; }
+      .screen-picker { margin-top: 12px; }
+      .stage { min-height: calc(100vh - 172px); padding: 20px 8px; }
+      .phone { height: min(760px, calc(100vh - 196px)); min-height: 560px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <aside class="picker">
+      <h1>Choose a direction</h1>
+      <p>Compare three complete visual approaches. Switch between the important screens and imagine each one as the finished Android app.</p>
+      <div class="choices">
+        <button class="choice active" data-direction="calm">
+          <strong>A · Calm and focused <span class="recommend">RECOMMENDED</span></strong>
+          <span>Keeps the current personality, removes clutter, and makes remaining time the focus.</span>
+        </button>
+        <button class="choice" data-direction="native">
+          <strong>B · Android utility</strong>
+          <span>Familiar Material-style lists and controls. Very clear, practical, and conventional.</span>
+        </button>
+        <button class="choice" data-direction="editorial">
+          <strong>C · Editorial</strong>
+          <span>More distinctive and expressive, with large typography and a warm paper-like palette.</span>
+        </button>
+      </div>
+      <nav class="screen-picker" aria-label="Preview screen">
+        <button class="active" data-screen="dashboard">Dashboard</button>
+        <button data-screen="settings">Settings</button>
+        <button data-screen="gate">Chrome gate</button>
+      </nav>
+      <p class="hint">The prototype is intentionally visual. Buttons switch previews but do not alter settings.</p>
+    </aside>
+
+    <section class="stage">
+      <div class="phone">
+        <div class="speaker"></div>
+        <div class="status"><span>9:41</span><span class="status-icons">▮ ◒ 93</span></div>
+        <div class="gesture"></div>
+
+        <div class="prototype calm active" data-direction-panel="calm">
+          <section class="mock-screen active" data-screen-panel="dashboard">
+            <div class="eyebrow">Internet Restrictor</div>
+            <h2>Today’s boundary.</h2>
+            <div class="status-line row between">
+              <div class="row"><i class="dot accent"></i><strong class="body">Chrome protected</strong></div>
+              <span class="tiny muted">Wait on · 3 skips left</span>
+            </div>
+            <div class="budget-focus">
+              <div class="eyebrow muted">Time remaining today</div>
+              <div class="number">56</div>
+              <div class="unit">of 60 minutes</div>
+              <div class="progress" style="--value:7%"><i></i></div>
+              <div class="budget-line">
+                <div class="row between tiny"><strong>This week</strong><span class="muted">9h 56m left</span></div>
+                <div class="progress" style="--value:2%"><i></i></div>
+              </div>
+              <div class="budget-line">
+                <div class="row between tiny"><strong>This month</strong><span class="muted">39h 56m left</span></div>
+                <div class="progress" style="--value:1%"><i></i></div>
+              </div>
+            </div>
+            <button class="primary-button">Open settings</button>
+            <button class="secondary-button">Test Chrome gate</button>
+          </section>
+
+          <section class="mock-screen" data-screen-panel="settings">
+            <div class="topbar row"><span class="back">‹ Dashboard</span></div>
+            <div class="eyebrow">Settings</div>
+            <h2>Chrome rules.</h2>
+            <div class="setting-group">
+              <div class="setting-row row">
+                <div class="copy"><strong class="body">Protect Chrome</strong><div class="tiny muted">Gate and count active use</div></div><div class="switch"></div>
+              </div>
+              <div class="setting-row row">
+                <div class="copy"><strong class="body">Require a wait</strong><div class="tiny muted">Pause before each session</div></div><div class="switch"></div>
+              </div>
+              <div class="setting-row row">
+                <div class="copy"><strong class="body">Emergency skips</strong><div class="tiny muted">3 available each day</div></div><div class="switch"></div>
+              </div>
+            </div>
+            <div class="simple-section"><h3>Time budgets</h3></div>
+            <div class="setting-group" style="margin-top:0">
+              <div class="setting-row row"><div class="copy"><strong class="body">Daily</strong><div class="tiny muted">Enabled</div></div><div class="field">60 min</div></div>
+              <div class="setting-row row"><div class="copy"><strong class="body">Weekly</strong><div class="tiny muted">Enabled</div></div><div class="field">600 min</div></div>
+              <div class="setting-row row"><div class="copy"><strong class="body">Monthly</strong><div class="tiny muted">Enabled</div></div><div class="field">2400 min</div></div>
+            </div>
+            <div class="save"><button class="primary-button">Save changes</button></div>
+          </section>
+
+          <section class="mock-screen" data-screen-panel="gate">
+            <div class="gate-wrap">
+              <div class="row"><span class="back">← Leave Chrome</span></div>
+              <div class="gate-center">
+                <div class="pause">Ⅱ</div>
+                <div class="eyebrow">Take a moment</div>
+                <h2>Pause before Chrome.</h2>
+                <p class="body muted">A 5 second pause, then your session begins.</p>
+                <div class="durations">
+                  <button class="duration selected">10 min</button><button class="duration">30 min</button><button class="duration">60 min</button>
+                </div>
+                <button class="primary-button">Begin 10 minute session</button>
+                <button class="secondary-button">Use emergency skip · 3 left</button>
+              </div>
+              <div class="gate-budget">
+                <div class="row between body"><strong>Today</strong><span class="muted">56 min left</span></div>
+                <div class="progress" style="--value:7%; margin-top:9px"><i></i></div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div class="prototype native" data-direction-panel="native">
+          <section class="mock-screen active" data-screen-panel="dashboard">
+            <div class="appbar row">Internet Restrictor</div>
+            <div class="hero-card">
+              <div class="row between"><span class="success tiny"><b>●</b> Protection on</span><span class="tiny muted">Chrome</span></div>
+              <h2>56 minutes left</h2>
+              <div class="tiny muted">of 60 minutes today</div>
+              <div class="progress" style="--value:7%"><i></i></div>
+            </div>
+            <div class="section-title">BUDGETS</div>
+            <div class="list">
+              <div class="list-row row"><span class="icon">D</span><div class="copy"><strong class="body">Daily</strong><div class="tiny muted">4 min used of 60 min</div></div><span class="value">56m</span></div>
+              <div class="list-row row"><span class="icon">W</span><div class="copy"><strong class="body">Weekly</strong><div class="tiny muted">4 min used of 10 hr</div></div><span class="value">9h 56m</span></div>
+              <div class="list-row row"><span class="icon">M</span><div class="copy"><strong class="body">Monthly</strong><div class="tiny muted">4 min used of 40 hr</div></div><span class="value">39h 56m</span></div>
+            </div>
+            <div class="section-title">ACCESS</div>
+            <div class="list">
+              <div class="list-row row"><span class="icon">⏱</span><div class="copy"><strong class="body">Wait before Chrome</strong><div class="tiny muted">On · 3 skips remaining</div></div><span class="value">›</span></div>
+              <div class="list-row row"><span class="icon">✓</span><div class="copy"><strong class="body">Protection health</strong><div class="tiny muted">Working normally</div></div><span class="value">›</span></div>
+            </div>
+            <button class="fab">⚙ Settings</button>
+          </section>
+
+          <section class="mock-screen" data-screen-panel="settings">
+            <div class="appbar row"><small>←</small>Settings</div>
+            <div class="section-title">PROTECTION</div>
+            <div class="list">
+              <div class="list-row row"><div class="copy"><strong class="body">Protect Chrome</strong><div class="tiny muted">Gate and count Chrome use</div></div><div class="switch"></div></div>
+              <div class="list-row row"><div class="copy"><strong class="body">Require wait</strong><div class="tiny muted">Pause before opening Chrome</div></div><div class="switch"></div></div>
+              <div class="list-row row"><div class="copy"><strong class="body">Emergency skips</strong><div class="tiny muted">3 skips per day</div></div><div class="switch"></div></div>
+            </div>
+            <div class="section-title">TIME BUDGETS</div>
+            <div class="list">
+              <div class="list-row row"><div class="copy"><strong class="body">Daily budget</strong><div class="tiny muted">60 minutes</div></div><span class="value">›</span></div>
+              <div class="list-row row"><div class="copy"><strong class="body">Weekly budget</strong><div class="tiny muted">600 minutes</div></div><span class="value">›</span></div>
+              <div class="list-row row"><div class="copy"><strong class="body">Monthly budget</strong><div class="tiny muted">2,400 minutes</div></div><span class="value">›</span></div>
+            </div>
+            <div class="section-title">APP</div>
+            <div class="list">
+              <div class="list-row row"><div class="copy"><strong class="body">Dark theme</strong></div><div class="switch"></div></div>
+              <div class="list-row row"><div class="copy"><strong class="body">Export diagnostics</strong></div><span class="value">›</span></div>
+              <div class="list-row row"><div class="copy"><strong class="body" style="color:#ffb4ab">Reset usage</strong></div></div>
+            </div>
+          </section>
+
+          <section class="mock-screen" data-screen-panel="gate">
+            <div class="gate-wrap">
+              <div class="appbar row"><small>←</small>Leave Chrome</div>
+              <div class="gate-center">
+                <div class="icon">Ⅱ</div>
+                <h2>Chrome is paused</h2>
+                <p class="body muted">Choose a session length to continue.</p>
+                <div class="segmented"><button class="selected">10 min</button><button>30 min</button><button>60 min</button></div>
+                <div class="tiny muted" style="margin-bottom:18px">5 second focused wait</div>
+                <button class="primary-button">Start session</button>
+                <button class="secondary-button">Emergency skip · 3 left</button>
+              </div>
+              <div class="list-row row" style="border-top:1px solid #ffffff12"><div class="copy"><strong class="body">Daily budget</strong><div class="tiny muted">4 of 60 min used</div></div><span class="value">56 min left</span></div>
+            </div>
+          </section>
+        </div>
+
+        <div class="prototype editorial" data-direction-panel="editorial">
+          <section class="mock-screen active" data-screen-panel="dashboard">
+            <div class="eyebrow">Internet Restrictor · Friday</div>
+            <h2>Your time,<br>with intention.</h2>
+            <div class="rule"></div>
+            <div><span class="big-number">56</span><span class="big-label">minutes<br>remain today</span></div>
+            <div class="budget-line"><div class="row between tiny"><strong>DAILY</strong><span>4 / 60 MIN</span></div><div class="progress" style="--value:7%"><i></i></div></div>
+            <div class="budget-line"><div class="row between tiny"><strong>WEEKLY</strong><span>4 / 600 MIN</span></div><div class="progress" style="--value:2%"><i></i></div></div>
+            <div class="budget-line"><div class="row between tiny"><strong>MONTHLY</strong><span>4 / 2,400 MIN</span></div><div class="progress" style="--value:1%"><i></i></div></div>
+            <p class="quote">“A pause is not a prohibition.”</p>
+            <div class="row between body" style="margin-bottom:18px"><span><b style="color:#385e4c">●</b> Chrome protected</span><span>3 skips</span></div>
+            <button class="primary-button">ADJUST YOUR RULES</button>
+            <button class="secondary-button">TEST THE CHROME GATE</button>
+          </section>
+
+          <section class="mock-screen" data-screen-panel="settings">
+            <div class="topbar row"><span class="back">← RETURN</span></div>
+            <div class="eyebrow">Your rules</div>
+            <h2>Shape the<br>boundary.</h2>
+            <div class="setting-section">
+              <h3>Protection</h3>
+              <div class="setting-row row"><div class="copy"><strong class="body">Protect Chrome</strong><div class="tiny muted">Gate and count active use</div></div><div class="switch"></div></div>
+              <div class="setting-row row"><div class="copy"><strong class="body">Require a pause</strong><div class="tiny muted">Before each session</div></div><div class="switch"></div></div>
+            </div>
+            <div class="setting-section">
+              <h3>Time allowances</h3>
+              <div class="setting-row row"><div class="copy"><strong class="body">Each day</strong></div><input class="field" value="60 min" readonly></div>
+              <div class="setting-row row"><div class="copy"><strong class="body">Each week</strong></div><input class="field" value="600 min" readonly></div>
+              <div class="setting-row row"><div class="copy"><strong class="body">Each month</strong></div><input class="field" value="2400 min" readonly></div>
+            </div>
+            <div class="setting-section">
+              <h3>Emergency passes</h3>
+              <div class="setting-row row"><div class="copy"><strong class="body">Three each day</strong><div class="tiny muted">Skips the pause, never the budget</div></div><div class="switch"></div></div>
+            </div>
+            <button class="primary-button" style="margin-top:22px">KEEP THESE RULES</button>
+          </section>
+
+          <section class="mock-screen" data-screen-panel="gate">
+            <div class="gate-wrap">
+              <div class="topbar row between"><span class="back">← LEAVE</span><span class="roman">I · PAUSE</span></div>
+              <div class="gate-center">
+                <div class="eyebrow">Before you continue</div>
+                <h2>Make space<br>for a pause.</h2>
+                <p class="quote">Choose the time you truly need.</p>
+                <div class="durations"><button class="duration selected">10 min</button><button class="duration">30 min</button><button class="duration">60 min</button></div>
+                <p class="tiny">Your focused pause: <b>5 seconds</b><br>Today’s allowance: <b>56 minutes</b></p>
+                <button class="primary-button" style="margin-top:20px">BEGIN THE PAUSE</button>
+                <button class="secondary-button">USE ONE OF 3 PASSES</button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script>
+    const choices = [...document.querySelectorAll('.choice')];
+    const screens = [...document.querySelectorAll('.screen-picker button')];
+    let direction = 'calm';
+    let screen = 'dashboard';
+
+    function render() {
+      choices.forEach(button => button.classList.toggle('active', button.dataset.direction === direction));
+      screens.forEach(button => button.classList.toggle('active', button.dataset.screen === screen));
+      document.querySelectorAll('[data-direction-panel]').forEach(panel => {
+        const selected = panel.dataset.directionPanel === direction;
+        panel.classList.toggle('active', selected);
+        panel.querySelectorAll('[data-screen-panel]').forEach(view => {
+          view.classList.toggle('active', selected && view.dataset.screenPanel === screen);
+          if (selected && view.dataset.screenPanel === screen) view.scrollTop = 0;
+        });
+      });
+    }
+
+    choices.forEach(button => button.addEventListener('click', () => {
+      direction = button.dataset.direction;
+      render();
+    }));
+    screens.forEach(button => button.addEventListener('click', () => {
+      screen = button.dataset.screen;
+      render();
+    }));
+  </script>
+</body>
+</html>
