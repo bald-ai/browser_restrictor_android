@@ -4,11 +4,14 @@ import androidx.datastore.core.CorruptionException
 import androidx.datastore.core.Serializer
 import com.michalkrsik.internetrestrictor.domain.BudgetPeriod
 import com.michalkrsik.internetrestrictor.domain.DailyCounter
+import com.michalkrsik.internetrestrictor.domain.DailyUsageReport
 import com.michalkrsik.internetrestrictor.domain.ForegroundClass
 import com.michalkrsik.internetrestrictor.domain.MAX_SAFE_MINUTES
 import com.michalkrsik.internetrestrictor.domain.PendingWait
+import com.michalkrsik.internetrestrictor.domain.OffUsageReminderState
 import com.michalkrsik.internetrestrictor.domain.PersistedState
 import com.michalkrsik.internetrestrictor.domain.RESTRICTOR_SCHEMA_VERSION
+import com.michalkrsik.internetrestrictor.domain.RestrictionEngine
 import com.michalkrsik.internetrestrictor.domain.RestrictorSettings
 import com.michalkrsik.internetrestrictor.domain.RuntimeMetadata
 import com.michalkrsik.internetrestrictor.domain.ThemePreference
@@ -30,12 +33,13 @@ object AppStateSerializer : Serializer<PersistedState> {
             val source = DataInputStream(input)
             if (source.readInt() != MAGIC) throw CorruptionException("Unrecognized state file")
             val schema = source.readInt()
-            if (schema != RESTRICTOR_SCHEMA_VERSION) {
+            if (schema !in 1..RESTRICTOR_SCHEMA_VERSION) {
                 throw CorruptionException("Unsupported state schema: $schema")
             }
             val revision = source.readLong()
             val settings = RestrictorSettings(
                 enforcementEnabled = source.readBoolean(),
+                pauseUntilWallMs = if (schema >= 2 && source.readBoolean()) source.readLong() else null,
                 delayEnabled = source.readBoolean(),
                 dailyBudgetEnabled = source.readBoolean(),
                 dailyBudgetMinutes = source.readLong(),
@@ -80,8 +84,27 @@ object AppStateSerializer : Serializer<PersistedState> {
                 serviceLastConnectedWallMs = source.readLong(),
                 lastKnownForegroundClass = source.readEnum<ForegroundClass>(),
             )
+            val reports = if (schema >= 2) {
+                List(source.readInt()) {
+                    DailyUsageReport(
+                        localDayKey = source.readUTF(),
+                        protectedUsageMs = source.readLong(),
+                        offUsageMs = source.readLong(),
+                    )
+                }
+            } else emptyList()
+            val reminder = if (schema >= 2) {
+                OffUsageReminderState(
+                    sessionStartedAtWallMs = source.readLong(),
+                    qualifyingUsageMs = source.readLong(),
+                    firstNotificationSent = source.readBoolean(),
+                    lastNotificationWallMs = source.readLong(),
+                    usageAtLastNotificationMs = source.readLong(),
+                )
+            } else OffUsageReminderState()
+            val currentVisitGraceActive = if (schema >= 2) source.readBoolean() else false
             val state = PersistedState(
-                schemaVersion = schema,
+                schemaVersion = RESTRICTOR_SCHEMA_VERSION,
                 stateRevision = revision,
                 settings = settings,
                 dailyUsage = daily,
@@ -91,6 +114,9 @@ object AppStateSerializer : Serializer<PersistedState> {
                 pendingWait = pending,
                 dailyCounter = counter,
                 runtimeMetadata = metadata,
+                usageReports = reports,
+                offUsageReminder = reminder,
+                currentVisitGraceActive = currentVisitGraceActive,
             )
             validate(state)
             return state
@@ -109,6 +135,8 @@ object AppStateSerializer : Serializer<PersistedState> {
         target.writeLong(t.stateRevision)
         with(t.settings) {
             target.writeBoolean(enforcementEnabled)
+            target.writeBoolean(pauseUntilWallMs != null)
+            pauseUntilWallMs?.let(target::writeLong)
             target.writeBoolean(delayEnabled)
             target.writeBoolean(dailyBudgetEnabled)
             target.writeLong(dailyBudgetMinutes)
@@ -151,6 +179,20 @@ object AppStateSerializer : Serializer<PersistedState> {
             target.writeLong(serviceLastConnectedWallMs)
             target.writeInt(lastKnownForegroundClass.ordinal)
         }
+        target.writeInt(t.usageReports.size)
+        t.usageReports.forEach {
+            target.writeUTF(it.localDayKey)
+            target.writeLong(it.protectedUsageMs)
+            target.writeLong(it.offUsageMs)
+        }
+        with(t.offUsageReminder) {
+            target.writeLong(sessionStartedAtWallMs)
+            target.writeLong(qualifyingUsageMs)
+            target.writeBoolean(firstNotificationSent)
+            target.writeLong(lastNotificationWallMs)
+            target.writeLong(usageAtLastNotificationMs)
+        }
+        target.writeBoolean(t.currentVisitGraceActive)
         target.flush()
     }
 
@@ -158,6 +200,7 @@ object AppStateSerializer : Serializer<PersistedState> {
         fun invalid(message: String): Nothing = throw CorruptionException(message)
         if (state.schemaVersion != RESTRICTOR_SCHEMA_VERSION) invalid("Wrong schema")
         if (state.stateRevision < 0) invalid("Negative revision")
+        if ((state.settings.pauseUntilWallMs ?: 0) < 0) invalid("Invalid pause end")
         val numericSettings = listOf(
             state.settings.dailyBudgetMinutes,
             state.settings.weeklyBudgetMinutes,
@@ -184,6 +227,18 @@ object AppStateSerializer : Serializer<PersistedState> {
         if (state.dailyCounter.completedNormalUnlocks < 0 || state.dailyCounter.emergencySkipsUsed < 0) {
             invalid("Invalid daily counter")
         }
+        if (state.usageReports.size > RestrictionEngine.MAX_REPORT_DAYS) invalid("Too many report days")
+        state.usageReports.forEach {
+            if (it.localDayKey.isBlank() || it.protectedUsageMs < 0 || it.offUsageMs < 0) {
+                invalid("Invalid usage report")
+            }
+        }
+        with(state.offUsageReminder) {
+            if (
+                sessionStartedAtWallMs < 0 || qualifyingUsageMs < 0 || lastNotificationWallMs < 0 ||
+                usageAtLastNotificationMs < 0 || usageAtLastNotificationMs > qualifyingUsageMs
+            ) invalid("Invalid reminder state")
+        }
     }
 
     private fun DataOutputStream.writeUsage(usage: UsagePeriodState) {
@@ -204,4 +259,3 @@ object AppStateSerializer : Serializer<PersistedState> {
         return values[ordinal]
     }
 }
-

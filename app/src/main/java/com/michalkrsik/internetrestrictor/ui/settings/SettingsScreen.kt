@@ -46,9 +46,11 @@ fun SettingsScreen(
     snapshot: StateSnapshot,
     onBack: () -> Unit,
     onThemeChange: (ThemePreference) -> Unit,
-    onEnforcementChange: (Boolean) -> Unit,
+    onPauseProtection: (Long?) -> Unit,
+    onResumeProtection: () -> Unit,
     onSave: (RestrictorSettings) -> Unit,
     onResetUsage: () -> Unit,
+    onClearReports: () -> Unit,
     onHealthAction: () -> Unit,
     onExportDiagnostics: () -> Unit,
 ) {
@@ -63,6 +65,7 @@ fun SettingsScreen(
     var skipsEnabled by rememberSaveable { mutableStateOf(snapshot.settings.emergencySkipsEnabled) }
     var skipLimit by rememberSaveable { mutableStateOf(snapshot.settings.emergencySkipDailyLimit.toString()) }
     var showResetDialog by rememberSaveable { mutableStateOf(false) }
+    var showClearReportsDialog by rememberSaveable { mutableStateOf(false) }
 
     val daily = parseWholeNumber(dailyMinutes)
     val weekly = parseWholeNumber(weeklyMinutes)
@@ -108,18 +111,50 @@ fun SettingsScreen(
             OutlinedButton(onClick = { showResetDialog = true }, shape = RoundedCornerShape(14.dp)) {
                 Text("Reset usage")
             }
+            Text(
+                "Your 30-day report is kept when restriction counters are reset.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            TextButton(onClick = { showClearReportsDialog = true }) {
+                Text("Clear report history")
+            }
         }
 
         SettingsCard("Enforcement") {
-            ToggleRow(
-                title = "Protect Chrome",
-                supporting = if (snapshot.settings.enforcementEnabled) {
-                    "The gate and active-use accounting are enabled."
-                } else {
-                    "Enforcement off. Limits and usage are kept."
-                },
-                checked = snapshot.settings.enforcementEnabled,
-                onCheckedChange = onEnforcementChange,
+            Text(
+                if (snapshot.settings.enforcementEnabled) "Chrome protection is on." else
+                    "Protection is off. Active Chrome use is still added to your report.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (snapshot.settings.enforcementEnabled) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    listOf(1L, 2L, 4L).forEach { hours ->
+                        OutlinedButton(
+                            onClick = { onPauseProtection(hours) },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(14.dp),
+                        ) { Text("${hours}h") }
+                    }
+                }
+                TextButton(onClick = { onPauseProtection(null) }) {
+                    Text("Keep off until the daily auto-enable")
+                }
+            } else {
+                Button(
+                    onClick = onResumeProtection,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                ) { Text("Resume protection") }
+            }
+            Text(
+                "Protection automatically turns on every day at 12:00 noon in your current timezone.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
@@ -214,6 +249,23 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showResetDialog = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    if (showClearReportsDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearReportsDialog = false },
+            title = { Text("Clear report history?") },
+            text = { Text("This removes the protected/off usage history. Your limits and current restriction counters stay.") },
+            confirmButton = {
+                Button(onClick = {
+                    showClearReportsDialog = false
+                    onClearReports()
+                }) { Text("Clear reports") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearReportsDialog = false }) { Text("Cancel") }
             },
         )
     }

@@ -1,11 +1,17 @@
 package com.michalkrsik.internetrestrictor
 
 import android.content.Intent
+import android.Manifest
+import android.app.AlarmManager
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import com.michalkrsik.internetrestrictor.domain.HOUR_MS
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
@@ -38,6 +44,12 @@ import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     private val requestedDestination = mutableStateOf<String?>(null)
+    private var notificationPermissionRequested = false
+    private var exactAlarmPermissionRequested = false
+
+    private val notificationPermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { }
 
     private val diagnosticsExporter = registerForActivityResult(
         ActivityResultContracts.CreateDocument("text/plain"),
@@ -102,6 +114,7 @@ class MainActivity : ComponentActivity() {
                 } else destination
             }
             requestedDestination.value = null
+            requestNotificationPermissionIfNeeded(snapshot.settings.onboardingCompleted)
         }
 
         when (destination) {
@@ -125,8 +138,14 @@ class MainActivity : ComponentActivity() {
                 onThemeChange = { theme ->
                     lifecycleScope.launch { appContainer.repository.setTheme(theme) }
                 },
-                onEnforcementChange = { enabled ->
-                    lifecycleScope.launch { appContainer.repository.setEnforcementEnabled(enabled) }
+                onPauseProtection = { hours ->
+                    requestExactAlarmPermissionIfNeeded()
+                    lifecycleScope.launch {
+                        appContainer.pauseProtection(hours?.let { it * HOUR_MS })
+                    }
+                },
+                onResumeProtection = {
+                    lifecycleScope.launch { appContainer.resumeProtection() }
                 },
                 onSave = { settings ->
                     lifecycleScope.launch {
@@ -135,6 +154,9 @@ class MainActivity : ComponentActivity() {
                 },
                 onResetUsage = {
                     lifecycleScope.launch { appContainer.repository.resetUsage() }
+                },
+                onClearReports = {
+                    lifecycleScope.launch { appContainer.repository.clearReportHistory() }
                 },
                 onHealthAction = { handleHealthAction(snapshot.enforcementHealth) },
                 onExportDiagnostics = {
@@ -159,6 +181,7 @@ class MainActivity : ComponentActivity() {
                 chromeInstalled = access.chromeInstalled,
                 advancedProtectionEnabled = access.advancedProtectionEnabled,
             )
+            appContainer.reconcileProtectionSchedule()
         }
     }
 
@@ -169,7 +192,7 @@ class MainActivity : ComponentActivity() {
             ProtectionHealth.USAGE_ACCESS_RECOMMENDED,
             -> openUsageAccessSettings()
             ProtectionHealth.ENFORCEMENT_OFF -> lifecycleScope.launch {
-                appContainer.repository.setEnforcementEnabled(true)
+                appContainer.resumeProtection()
             }
             ProtectionHealth.ACCESSIBILITY_REQUIRED,
             ProtectionHealth.SERVICE_DISCONNECTED,
@@ -185,6 +208,30 @@ class MainActivity : ComponentActivity() {
 
     private fun openAccessibilitySettings() {
         startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+    }
+
+    private fun requestNotificationPermissionIfNeeded(onboardingCompleted: Boolean) {
+        if (!onboardingCompleted || notificationPermissionRequested) return
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionRequested = true
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    private fun requestExactAlarmPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || exactAlarmPermissionRequested) return
+        val alarmManager = getSystemService(AlarmManager::class.java)
+        if (alarmManager.canScheduleExactAlarms()) return
+        exactAlarmPermissionRequested = true
+        startActivity(
+            Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                data = "package:$packageName".toUri()
+            },
+        )
     }
 
     private fun openUsageAccessSettings() {

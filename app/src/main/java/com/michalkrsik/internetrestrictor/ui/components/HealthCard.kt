@@ -51,7 +51,7 @@ fun healthCopy(
     }
     ProtectionHealth.ENFORCEMENT_OFF -> HealthCopy(
         "Enforcement is off",
-        "Limits and usage are kept, but Chrome is not currently gated or counted.",
+        "Chrome is not gated, but active Chrome use is still counted in your report.",
         "Turn on",
         false,
     )

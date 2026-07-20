@@ -22,6 +22,10 @@ This is a personal, user-controlled tool—not parental control, device manageme
 - Boot, user-unlock, date, time, timezone, screen, keyguard, and service-restart handling.
 - Android 16 Advanced Protection status reporting.
 - No account, backend, telemetry, advertising ID, or network permission.
+- One, two, and four hour protection pauses with automatic re-enabling at local noon.
+- Active Chrome reporting while protection is off, kept separate from restriction budgets.
+- Informational notifications after 30 minutes of off-mode Chrome use, with bounded hourly follow-ups.
+- Today plus 30 days of local report history split into protection-on and protection-off usage.
 
 ## Requirements
 
@@ -101,6 +105,10 @@ The checked emulator captures are in `validation_artifacts/`: [onboarding](valid
 
 The Accessibility service reacts only to window-level changes. It uses the active window package name to distinguish Chrome, Internet Restrictor, and other apps. It does not traverse the accessibility tree or read URLs, webpage text, form fields, typing, or screenshots.
 
+Protection pauses leave the Accessibility service connected. This lets the app continue measuring active, focused Chrome use without blocking it. Off-mode use is report-only and never consumes the normal budgets. Protection returns after the chosen 1, 2, or 4 hour pause, or at 12:00 noon in the device's current timezone, whichever comes first. If Chrome is already active at that moment, the current visit may continue and the next Chrome visit is protected.
+
+The first informational reminder is sent after 30 minutes of active Chrome use while protection is off. Further reminders are limited to once per hour and require at least another 15 minutes of use. Android 13 and newer requires notification permission; denying it does not affect tracking or enforcement.
+
 ## Important boundaries
 
 - Version 1 protects only stable Google Chrome. Other browsers and Chrome variants are intentionally outside scope.
@@ -117,6 +125,8 @@ The manifest intentionally contains no `INTERNET`, VPN, or general system-overla
 - Accessibility service binding, granted manually by the user, for foreground detection and the accessibility overlay.
 - Usage Access, granted manually and optional in this MVP, for the future bounded recovery path.
 - Boot completion, to re-establish local period and time-boundary state.
+- Exact alarms, to restore protection at the selected pause boundary or local noon.
+- Notifications, to deliver informational off-mode usage reminders when permitted.
 - Android 16 Advanced Protection status query, to report device compatibility honestly.
 - Package visibility for stable Chrome only.
 

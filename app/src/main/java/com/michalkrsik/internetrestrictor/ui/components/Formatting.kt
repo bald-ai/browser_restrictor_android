@@ -24,6 +24,8 @@ fun formatCompactTime(ms: Long): String {
     return if (minutes == 0L) "${hours}h" else "${hours}h ${minutes}m"
 }
 
+fun formatReportTime(ms: Long): String = if (ms <= 0) "0m" else formatCompactTime(ms)
+
 fun formatLongTime(ms: Long): String {
     val safe = ms.coerceAtLeast(0)
     if (safe < MINUTE_MS) return "less than a minute"
@@ -32,4 +34,3 @@ fun formatLongTime(ms: Long): String {
     val minutes = (safe % HOUR_MS) / MINUTE_MS
     return if (minutes == 0L) "$hours hr" else "$hours hr $minutes min"
 }
-

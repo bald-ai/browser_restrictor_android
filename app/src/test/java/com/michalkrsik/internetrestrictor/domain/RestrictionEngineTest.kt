@@ -277,6 +277,204 @@ class RestrictionEngineTest {
     }
 
     @Test
+    fun enforcementOffTracksReportWithoutChargingBudgetsAndTriggersAtThirtyMinutes() {
+        val off = engine.setEnforcement(initial(), false, now + HOUR_MS, now, zone)
+        val reported = engine.consumeOffUsage(off, ready, now, now + 30 * MINUTE_MS, zone)
+        assertEquals(0, reported.dailyUsage.usedMs)
+        assertEquals(30 * MINUTE_MS, reported.usageReports.single().offUsageMs)
+        assertTrue(reported.offUsageReminder.firstNotificationSent)
+        assertEquals(30 * MINUTE_MS, reported.offUsageReminder.qualifyingUsageMs)
+    }
+
+    @Test
+    fun offReminderRepeatRequiresAnHourAndFifteenMoreUsageMinutes() {
+        val off = engine.setEnforcement(initial(), false, null, now, zone)
+        val first = engine.consumeOffUsage(off, ready, now, now + 30 * MINUTE_MS, zone)
+        val fourteenMore = engine.consumeOffUsage(
+            first,
+            ready,
+            now + 75 * MINUTE_MS,
+            now + 89 * MINUTE_MS,
+            zone,
+        )
+        assertEquals(first.offUsageReminder.lastNotificationWallMs, fourteenMore.offUsageReminder.lastNotificationWallMs)
+        val fifteenMore = engine.consumeOffUsage(
+            fourteenMore,
+            ready,
+            now + 90 * MINUTE_MS,
+            now + 91 * MINUTE_MS,
+            zone,
+        )
+        assertEquals(now + 91 * MINUTE_MS, fifteenMore.offUsageReminder.lastNotificationWallMs)
+    }
+
+    @Test
+    fun offUsageReportSplitsAtLocalMidnight() {
+        val start = ZonedDateTime.of(2026, 7, 10, 23, 59, 59, 500_000_000, zone)
+            .toInstant().toEpochMilli()
+        val off = engine.setEnforcement(
+            engine.normalize(PersistedState(), start, zone),
+            false,
+            null,
+            start,
+            zone,
+        )
+        val reported = engine.consumeOffUsage(off, ready, start, start + 1_000, zone)
+        assertEquals(500, reported.usageReports.first { it.localDayKey == "2026-07-10" }.offUsageMs)
+        assertEquals(500, reported.usageReports.first { it.localDayKey == "2026-07-11" }.offUsageMs)
+    }
+
+    @Test
+    fun resumedProtectionAllowsCurrentChromeVisitUntilChromeExits() {
+        val off = engine.setEnforcement(initial(), false, null, now, zone)
+        val resumed = engine.setEnforcement(
+            off,
+            true,
+            null,
+            now + 1_000,
+            zone,
+            allowCurrentVisit = true,
+        )
+        assertEquals(
+            GateMode.ACCESS_GRANTED_CURRENT_VISIT,
+            engine.underlyingMode(resumed, ready, now + 1_000),
+        )
+        val reported = engine.consumeCurrentVisitUsage(
+            resumed,
+            ready,
+            now + 1_000,
+            now + 11_000,
+            zone,
+        )
+        assertEquals(0, reported.dailyUsage.usedMs)
+        assertEquals(10_000, reported.usageReports.single().protectedUsageMs)
+        val nextVisit = reported.copy(currentVisitGraceActive = false)
+        assertEquals(GateMode.PAUSED, engine.underlyingMode(nextVisit, ready, now + 11_000))
+    }
+
+    @Test
+    fun scheduleRecoveryEnablesProtectionAndPersistsCurrentVisitGrace() {
+        val off = engine.setEnforcement(initial(), false, now + HOUR_MS, now, zone)
+
+        val recovered = engine.reconcileProtectionSchedule(
+            input = off,
+            nowWallMs = now + HOUR_MS,
+            zoneId = zone,
+            currentVisitOpen = true,
+        )
+
+        assertTrue(recovered.settings.enforcementEnabled)
+        assertNull(recovered.settings.pauseUntilWallMs)
+        assertTrue(recovered.currentVisitGraceActive)
+        assertEquals(GateMode.ACCESS_GRANTED_CURRENT_VISIT, engine.underlyingMode(recovered, ready, now + HOUR_MS))
+    }
+
+    @Test
+    fun scheduleReconciliationLeavesNotYetDuePauseUntouched() {
+        val off = engine.setEnforcement(initial(), false, now + HOUR_MS, now, zone)
+
+        val unchanged = engine.reconcileProtectionSchedule(
+            input = off,
+            nowWallMs = now + 30 * MINUTE_MS,
+            zoneId = zone,
+            currentVisitOpen = true,
+        )
+
+        assertEquals(off, unchanged)
+    }
+
+    @Test
+    fun currentVisitGraceSurvivesDisconnectAndClearsAfterConfirmedExit() {
+        assertTrue(engine.retainCurrentVisitGrace(true, serviceConnected = false, chromeActive = false))
+        assertTrue(engine.retainCurrentVisitGrace(true, serviceConnected = true, chromeActive = true))
+        assertFalse(engine.retainCurrentVisitGrace(true, serviceConnected = true, chromeActive = false))
+    }
+
+    @Test
+    fun clockChangeRebasesReminderCooldown() {
+        val reminder = OffUsageReminderState(
+            sessionStartedAtWallMs = now - HOUR_MS,
+            qualifyingUsageMs = 45 * MINUTE_MS,
+            firstNotificationSent = true,
+            lastNotificationWallMs = now - HOUR_MS,
+            usageAtLastNotificationMs = 30 * MINUTE_MS,
+        )
+        val rebased = engine.rebaseOffUsageReminderAfterClockChange(
+            reminder,
+            protectionEnabled = false,
+            nowWallMs = now + 2 * HOUR_MS,
+        )
+        assertEquals(now + 2 * HOUR_MS, rebased.lastNotificationWallMs)
+        val off = engine.setEnforcement(initial(), false, null, now, zone).copy(
+            offUsageReminder = rebased,
+        )
+        val afterFifteenMinutes = engine.consumeOffUsage(
+            off,
+            ready,
+            now + 2 * HOUR_MS,
+            now + 2 * HOUR_MS + 15 * MINUTE_MS,
+            zone,
+        )
+        assertEquals(rebased.lastNotificationWallMs, afterFifteenMinutes.offUsageReminder.lastNotificationWallMs)
+    }
+
+    @Test
+    fun reportRetentionKeepsTodayPlusThirtyHistoricalDays() {
+        var state = engine.normalize(
+            PersistedState(settings = RestrictorSettings(delayEnabled = false)),
+            now - 31 * DAY_MS,
+            zone,
+        )
+        repeat(32) { offset ->
+            val start = now - (31 - offset) * DAY_MS
+            state = engine.consumeUsage(state, ready, start, start + 1_000, zone)
+        }
+        assertEquals(31, state.usageReports.size)
+        assertEquals("2026-06-10", state.usageReports.first().localDayKey)
+        assertEquals("2026-07-10", state.usageReports.last().localDayKey)
+    }
+
+    @Test
+    fun clearingReportsDoesNotResetBudgetsOrReminderCadence() {
+        val reminder = OffUsageReminderState(
+            sessionStartedAtWallMs = now,
+            qualifyingUsageMs = 30 * MINUTE_MS,
+            firstNotificationSent = true,
+            lastNotificationWallMs = now + 30 * MINUTE_MS,
+            usageAtLastNotificationMs = 30 * MINUTE_MS,
+        )
+        val state = initial().copy(
+            dailyUsage = initial().dailyUsage.copy(usedMs = 12_000),
+            usageReports = listOf(DailyUsageReport("2026-07-10", protectedUsageMs = 12_000)),
+            offUsageReminder = reminder,
+        )
+        val cleared = engine.clearReportHistory(state)
+        assertTrue(cleared.usageReports.isEmpty())
+        assertEquals(12_000, cleared.dailyUsage.usedMs)
+        assertEquals(reminder, cleared.offUsageReminder)
+    }
+
+    @Test
+    fun normalizationDoesNotDeleteReportThatIsFutureInANewTimezone() {
+        val state = initial().copy(
+            usageReports = listOf(DailyUsageReport("2026-07-11", protectedUsageMs = 1_000)),
+        )
+        val normalized = engine.normalize(state, now, zone)
+        assertEquals(state.usageReports, normalized.usageReports)
+    }
+
+    @Test
+    fun offModeHealthStillReportsMissingAccessibility() {
+        val state = engine.setEnforcement(initial(), false, null, now, zone)
+        val snapshot = engine.snapshot(
+            state,
+            ready.copy(accessibilityEnabled = false, serviceConnected = false),
+            now,
+        )
+        assertEquals(ProtectionHealth.ACCESSIBILITY_REQUIRED, snapshot.enforcementHealth)
+    }
+
+    @Test
     fun resetClearsAllRuntimeStateButKeepsRulesAndTheme() {
         val settings = RestrictorSettings(theme = ThemePreference.LIGHT, dailyBudgetMinutes = 17)
         val base = initial(settings)
@@ -284,6 +482,8 @@ class RestrictionEngineTest {
             dailyUsage = base.dailyUsage.copy(usedMs = 3_000),
             activeUnlock = UnlockSession("unlock", UnlockSource.NORMAL, now, now + MINUTE_MS),
             dailyCounter = base.dailyCounter.copy(completedNormalUnlocks = 2, emergencySkipsUsed = 2),
+            usageReports = listOf(DailyUsageReport("2026-07-10", protectedUsageMs = 3_000)),
+            currentVisitGraceActive = true,
         )
         val reset = engine.resetUsage(dirty, now, zone)
         assertEquals(0, reset.dailyUsage.usedMs)
@@ -293,6 +493,8 @@ class RestrictionEngineTest {
         assertEquals(0, reset.dailyCounter.emergencySkipsUsed)
         assertEquals(17, reset.settings.dailyBudgetMinutes)
         assertEquals(ThemePreference.LIGHT, reset.settings.theme)
+        assertEquals(dirty.usageReports, reset.usageReports)
+        assertFalse(reset.currentVisitGraceActive)
     }
 
     @Test
@@ -307,4 +509,3 @@ class RestrictionEngineTest {
         is CommandResult.Rejected -> error("Expected applied, got ${result.reason}")
     }
 }
-
