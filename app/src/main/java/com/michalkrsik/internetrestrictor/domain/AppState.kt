@@ -3,7 +3,7 @@ package com.michalkrsik.internetrestrictor.domain
 import java.util.UUID
 
 const val CHROME_PACKAGE = "com.android.chrome"
-const val RESTRICTOR_SCHEMA_VERSION = 1
+const val RESTRICTOR_SCHEMA_VERSION = 2
 const val MINUTE_MS = 60_000L
 const val HOUR_MS = 60L * MINUTE_MS
 const val DAY_MS = 24L * HOUR_MS
@@ -28,6 +28,7 @@ enum class GateMode {
     ACCESS_GRANTED_NORMAL,
     ACCESS_GRANTED_EMERGENCY,
     ACCESS_GRANTED_NO_DELAY,
+    ACCESS_GRANTED_CURRENT_VISIT,
     OUT_OF_TIME,
     OUT_OF_TIME_LATCHED,
     STORAGE_ERROR,
@@ -48,6 +49,7 @@ enum class ProtectionHealth {
 
 data class RestrictorSettings(
     val enforcementEnabled: Boolean = true,
+    val pauseUntilWallMs: Long? = null,
     val delayEnabled: Boolean = true,
     val dailyBudgetEnabled: Boolean = true,
     val dailyBudgetMinutes: Long = 60,
@@ -59,6 +61,20 @@ data class RestrictorSettings(
     val emergencySkipDailyLimit: Long = 3,
     val theme: ThemePreference = ThemePreference.DARK,
     val onboardingCompleted: Boolean = false,
+)
+
+data class DailyUsageReport(
+    val localDayKey: String,
+    val protectedUsageMs: Long = 0,
+    val offUsageMs: Long = 0,
+)
+
+data class OffUsageReminderState(
+    val sessionStartedAtWallMs: Long = 0,
+    val qualifyingUsageMs: Long = 0,
+    val firstNotificationSent: Boolean = false,
+    val lastNotificationWallMs: Long = 0,
+    val usageAtLastNotificationMs: Long = 0,
 )
 
 data class UsagePeriodState(
@@ -107,6 +123,9 @@ data class PersistedState(
     val pendingWait: PendingWait? = null,
     val dailyCounter: DailyCounter = DailyCounter(),
     val runtimeMetadata: RuntimeMetadata = RuntimeMetadata(),
+    val usageReports: List<DailyUsageReport> = emptyList(),
+    val offUsageReminder: OffUsageReminderState = OffUsageReminderState(),
+    val currentVisitGraceActive: Boolean = false,
 ) {
     fun usage(period: BudgetPeriod): UsagePeriodState = when (period) {
         BudgetPeriod.DAILY -> dailyUsage
@@ -187,6 +206,9 @@ data class StateSnapshot(
     val chromeInstalled: Boolean,
     val activeUnlock: UnlockSession?,
     val completedNormalUnlocksToday: Long,
+    val offSessionStartedAtWallMs: Long,
+    val usageReports: List<DailyUsageReport>,
+    val todayUsageReport: DailyUsageReport,
     val latchedBlockers: Set<BudgetPeriod>,
     val wallNowMs: Long,
     val isLoaded: Boolean,
@@ -205,6 +227,8 @@ data class StateSnapshot(
             GateMode.ACCESS_GRANTED_NORMAL,
             GateMode.ACCESS_GRANTED_EMERGENCY,
             GateMode.ACCESS_GRANTED_NO_DELAY,
+            GateMode.ACCESS_GRANTED_CURRENT_VISIT,
+            GateMode.ENFORCEMENT_DISABLED,
         )
 }
 

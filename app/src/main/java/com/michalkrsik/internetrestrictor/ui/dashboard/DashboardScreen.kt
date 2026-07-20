@@ -37,6 +37,7 @@ import com.michalkrsik.internetrestrictor.domain.StateSnapshot
 import com.michalkrsik.internetrestrictor.ui.components.BudgetBar
 import com.michalkrsik.internetrestrictor.ui.components.HealthCard
 import com.michalkrsik.internetrestrictor.ui.components.formatCompactTime
+import com.michalkrsik.internetrestrictor.ui.components.formatReportTime
 import com.michalkrsik.internetrestrictor.ui.components.formatLongTime
 import com.michalkrsik.internetrestrictor.ui.components.friendlyLabel
 import com.michalkrsik.internetrestrictor.ui.components.healthCopy
@@ -81,6 +82,9 @@ fun DashboardScreen(
         Spacer(Modifier.height(18.dp))
         HeroBudgetCard(snapshot)
 
+        Spacer(Modifier.height(18.dp))
+        UsageReportCard(snapshot)
+
         Spacer(Modifier.height(24.dp))
         Button(
             onClick = onOpenSettings,
@@ -98,6 +102,72 @@ fun DashboardScreen(
         ) {
             Text("Test Chrome gate", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+    }
+}
+
+@Composable
+private fun UsageReportCard(snapshot: StateSnapshot) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.13f)),
+    ) {
+        Column(
+            Modifier.padding(horizontal = 22.dp, vertical = 22.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("USAGE REPORT", style = MaterialTheme.typography.labelSmall, letterSpacing = 1.5.sp)
+            Text("Today", style = MaterialTheme.typography.titleMedium)
+            ReportRow(
+                "Protection on",
+                snapshot.todayUsageReport.protectedUsageMs,
+                MaterialTheme.colorScheme.primary,
+            )
+            ReportRow(
+                "Protection off",
+                snapshot.todayUsageReport.offUsageMs,
+                MaterialTheme.colorScheme.error,
+            )
+            val history = snapshot.usageReports.asReversed().dropWhile {
+                it.localDayKey == snapshot.todayUsageReport.localDayKey
+            }
+            if (history.isNotEmpty()) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+                Text("Last 30 days", style = MaterialTheme.typography.titleSmall)
+                history.forEach { report ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            report.localDayKey,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            "On ${formatReportTime(report.protectedUsageMs)} · Off ${formatReportTime(report.offUsageMs)}",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReportRow(label: String, durationMs: Long, color: androidx.compose.ui.graphics.Color) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.size(7.dp).background(color, CircleShape))
+            Text(label, style = MaterialTheme.typography.bodyMedium)
+        }
+        Text(formatReportTime(durationMs), style = MaterialTheme.typography.titleMedium)
     }
 }
 

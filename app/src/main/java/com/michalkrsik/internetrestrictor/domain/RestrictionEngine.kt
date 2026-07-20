@@ -1,6 +1,7 @@
 package com.michalkrsik.internetrestrictor.domain
 
 import java.time.ZoneId
+import java.time.LocalDate
 import kotlin.math.roundToInt
 
 class RestrictionEngine(
@@ -51,6 +52,31 @@ class RestrictionEngine(
             }
         }
 
+        val todayKey = keys.daily
+        val reportCutoff = LocalDate.parse(todayKey).minusDays(REPORT_HISTORY_DAYS.toLong()).toString()
+        val retainedReports = state.usageReports
+            .filter { it.localDayKey >= reportCutoff }
+            .sortedBy { it.localDayKey }
+            .takeLast(MAX_REPORT_DAYS)
+        if (retainedReports != state.usageReports) {
+            state = state.copy(usageReports = retainedReports)
+            revisionRelevant = true
+        }
+
+        if (state.settings.enforcementEnabled && state.settings.pauseUntilWallMs != null) {
+            state = state.copy(settings = state.settings.copy(pauseUntilWallMs = null))
+            revisionRelevant = true
+        } else if (!state.settings.enforcementEnabled && state.offUsageReminder.sessionStartedAtWallMs == 0L) {
+            state = state.copy(
+                offUsageReminder = state.offUsageReminder.copy(sessionStartedAtWallMs = nowWallMs),
+            )
+            revisionRelevant = true
+        }
+        if (!state.settings.enforcementEnabled && state.currentVisitGraceActive) {
+            state = state.copy(currentVisitGraceActive = false)
+            revisionRelevant = true
+        }
+
         return if (revisionRelevant) state.copy(stateRevision = nextRevision(state.stateRevision)) else state
     }
 
@@ -89,6 +115,7 @@ class RestrictionEngine(
         if (!runtime.storageReady || !runtime.accessibilityEnabled || !runtime.serviceConnected) {
             return GateMode.SERVICE_UNAVAILABLE
         }
+        if (state.currentVisitGraceActive) return GateMode.ACCESS_GRANTED_CURRENT_VISIT
         if (budgetSnapshots(state).any { it.exhausted }) return GateMode.OUT_OF_TIME
         state.activeUnlock?.takeIf { it.expiresAtWallMs > nowWallMs }?.let {
             return if (it.source == UnlockSource.NORMAL) {
@@ -177,6 +204,11 @@ class RestrictionEngine(
             chromeInstalled = runtime.chromeInstalled,
             activeUnlock = state.activeUnlock,
             completedNormalUnlocksToday = state.dailyCounter.completedNormalUnlocks,
+            offSessionStartedAtWallMs = state.offUsageReminder.sessionStartedAtWallMs,
+            usageReports = state.usageReports,
+            todayUsageReport = state.usageReports.firstOrNull {
+                it.localDayKey == PeriodCalculator.keysAt(nowWallMs, java.time.ZoneId.systemDefault()).daily
+            } ?: DailyUsageReport(PeriodCalculator.keysAt(nowWallMs, java.time.ZoneId.systemDefault()).daily),
             latchedBlockers = runtime.latchedBlockers,
             wallNowMs = nowWallMs,
             isLoaded = isLoaded,
@@ -380,6 +412,13 @@ class RestrictionEngine(
                         lastCommittedWallMs = interval.startMs + charged,
                     ),
                 )
+                state = addReportInterval(
+                    state = state,
+                    intervalStartWallMs = interval.startMs,
+                    intervalEndWallMs = interval.startMs + charged,
+                    zoneId = zoneId,
+                    protectionOff = false,
+                )
                 cursor = interval.startMs + charged
             }
             if (charged < interval.durationMs) break
@@ -389,6 +428,161 @@ class RestrictionEngine(
             state = state.copy(stateRevision = nextRevision(state.stateRevision))
         }
         return state.copy(runtimeMetadata = state.runtimeMetadata.copy(lastCommittedWallMs = cursor))
+    }
+
+    fun consumeOffUsage(
+        input: PersistedState,
+        runtime: RuntimeSignals,
+        intervalStartWallMs: Long,
+        intervalEndWallMs: Long,
+        zoneId: ZoneId,
+    ): PersistedState {
+        if (intervalEndWallMs <= intervalStartWallMs) return input
+        var state = normalize(input, intervalStartWallMs, zoneId)
+        if (underlyingMode(state, runtime, intervalStartWallMs) != GateMode.ENFORCEMENT_DISABLED) {
+            return state
+        }
+        state = addReportInterval(
+            state,
+            intervalStartWallMs,
+            intervalEndWallMs,
+            zoneId,
+            protectionOff = true,
+        )
+        val added = intervalEndWallMs - intervalStartWallMs
+        val reminder = state.offUsageReminder
+        val qualifying = Math.addExact(reminder.qualifyingUsageMs, added)
+        val sendFirst = !reminder.firstNotificationSent && qualifying >= FIRST_OFF_NOTIFICATION_USAGE_MS
+        val sendRepeat = reminder.firstNotificationSent &&
+            intervalEndWallMs - reminder.lastNotificationWallMs >= OFF_NOTIFICATION_REPEAT_INTERVAL_MS &&
+            qualifying - reminder.usageAtLastNotificationMs >= OFF_NOTIFICATION_ADDITIONAL_USAGE_MS
+        state = state.copy(
+            offUsageReminder = reminder.copy(
+                qualifyingUsageMs = qualifying,
+                firstNotificationSent = reminder.firstNotificationSent || sendFirst,
+                lastNotificationWallMs = if (sendFirst || sendRepeat) intervalEndWallMs else reminder.lastNotificationWallMs,
+                usageAtLastNotificationMs = if (sendFirst || sendRepeat) qualifying else reminder.usageAtLastNotificationMs,
+            ),
+            runtimeMetadata = state.runtimeMetadata.copy(lastCommittedWallMs = intervalEndWallMs),
+        )
+        return state
+    }
+
+    fun consumeCurrentVisitUsage(
+        input: PersistedState,
+        runtime: RuntimeSignals,
+        intervalStartWallMs: Long,
+        intervalEndWallMs: Long,
+        zoneId: ZoneId,
+    ): PersistedState {
+        if (intervalEndWallMs <= intervalStartWallMs) return input
+        val state = normalize(input, intervalStartWallMs, zoneId)
+        if (underlyingMode(state, runtime, intervalStartWallMs) != GateMode.ACCESS_GRANTED_CURRENT_VISIT) {
+            return state
+        }
+        return addReportInterval(
+            state,
+            intervalStartWallMs,
+            intervalEndWallMs,
+            zoneId,
+            protectionOff = false,
+        ).copy(runtimeMetadata = state.runtimeMetadata.copy(lastCommittedWallMs = intervalEndWallMs))
+    }
+
+    fun setEnforcement(
+        input: PersistedState,
+        enabled: Boolean,
+        pauseUntilWallMs: Long?,
+        nowWallMs: Long,
+        zoneId: ZoneId,
+        allowCurrentVisit: Boolean = false,
+    ): PersistedState {
+        val state = normalize(input, nowWallMs, zoneId)
+        val nextPause = if (enabled) null else pauseUntilWallMs
+        return state.copy(
+            stateRevision = nextRevision(state.stateRevision),
+            settings = state.settings.copy(
+                enforcementEnabled = enabled,
+                pauseUntilWallMs = nextPause,
+            ),
+            offUsageReminder = if (enabled) {
+                OffUsageReminderState()
+            } else {
+                OffUsageReminderState(sessionStartedAtWallMs = nowWallMs)
+            },
+            currentVisitGraceActive = enabled && allowCurrentVisit,
+        )
+    }
+
+    fun reconcileProtectionSchedule(
+        input: PersistedState,
+        nowWallMs: Long,
+        zoneId: ZoneId,
+        currentVisitOpen: Boolean,
+    ): PersistedState {
+        if (!ProtectionSchedule.isResumeDue(input, nowWallMs, zoneId)) return input
+        return setEnforcement(
+            input = input,
+            enabled = true,
+            pauseUntilWallMs = null,
+            nowWallMs = nowWallMs,
+            zoneId = zoneId,
+            allowCurrentVisit = currentVisitOpen,
+        )
+    }
+
+    fun retainCurrentVisitGrace(
+        currentGrace: Boolean,
+        serviceConnected: Boolean,
+        chromeActive: Boolean,
+    ): Boolean = currentGrace && (!serviceConnected || chromeActive)
+
+    fun rebaseOffUsageReminderAfterClockChange(
+        reminder: OffUsageReminderState,
+        protectionEnabled: Boolean,
+        nowWallMs: Long,
+    ): OffUsageReminderState = if (reminder.firstNotificationSent && !protectionEnabled) {
+        reminder.copy(lastNotificationWallMs = nowWallMs)
+    } else {
+        reminder
+    }
+
+    fun clearReportHistory(input: PersistedState): PersistedState = input.copy(
+        stateRevision = nextRevision(input.stateRevision),
+        usageReports = emptyList(),
+    )
+
+    private fun addReportInterval(
+        state: PersistedState,
+        intervalStartWallMs: Long,
+        intervalEndWallMs: Long,
+        zoneId: ZoneId,
+        protectionOff: Boolean,
+    ): PersistedState {
+        if (intervalEndWallMs <= intervalStartWallMs) return state
+        val reports = state.usageReports.associateBy { it.localDayKey }.toMutableMap()
+        for (interval in PeriodCalculator.splitAtLocalMidnights(
+            intervalStartWallMs,
+            intervalEndWallMs,
+            zoneId,
+        )) {
+            val key = PeriodCalculator.keysAt(interval.startMs, zoneId).daily
+            val current = reports[key] ?: DailyUsageReport(key)
+            reports[key] = if (protectionOff) {
+                current.copy(offUsageMs = Math.addExact(current.offUsageMs, interval.durationMs))
+            } else {
+                current.copy(protectedUsageMs = Math.addExact(current.protectedUsageMs, interval.durationMs))
+            }
+        }
+        val cutoff = LocalDate.parse(PeriodCalculator.keysAt(intervalEndWallMs - 1, zoneId).daily)
+            .minusDays(REPORT_HISTORY_DAYS.toLong())
+            .toString()
+        return state.copy(
+            usageReports = reports.values
+                .filter { it.localDayKey >= cutoff }
+                .sortedBy { it.localDayKey }
+                .takeLast(MAX_REPORT_DAYS),
+        )
     }
 
     fun saveSettings(
@@ -419,6 +613,7 @@ class RestrictionEngine(
             monthlyUsage = UsagePeriodState(BudgetPeriod.MONTHLY, keys.monthly, 0),
             activeUnlock = null,
             pendingWait = null,
+            currentVisitGraceActive = false,
             dailyCounter = DailyCounter(localDayKey = keys.daily),
             runtimeMetadata = state.runtimeMetadata.copy(
                 lastCommittedWallMs = nowWallMs,
@@ -443,11 +638,11 @@ class RestrictionEngine(
     private fun health(state: PersistedState, runtime: RuntimeSignals): ProtectionHealth = when {
         runtime.storageError || runtime.storageWriteError -> ProtectionHealth.STORAGE_ERROR
         !runtime.chromeInstalled -> ProtectionHealth.CHROME_NOT_FOUND
-        !state.settings.enforcementEnabled -> ProtectionHealth.ENFORCEMENT_OFF
         runtime.advancedProtectionEnabled && !runtime.accessibilityEnabled ->
             ProtectionHealth.ADVANCED_PROTECTION_BLOCKED
         !runtime.accessibilityEnabled -> ProtectionHealth.ACCESSIBILITY_REQUIRED
         !runtime.serviceConnected -> ProtectionHealth.SERVICE_DISCONNECTED
+        !state.settings.enforcementEnabled -> ProtectionHealth.ENFORCEMENT_OFF
         runtime.usageRecoveryOperational && runtime.usageAccessGranted -> ProtectionHealth.READY
         else -> ProtectionHealth.READY_LIMITED_RECOVERY
     }
@@ -462,6 +657,11 @@ class RestrictionEngine(
     private fun nextRevision(revision: Long): Long = Math.addExact(revision, 1)
 
     companion object {
+        const val REPORT_HISTORY_DAYS = 30
+        const val MAX_REPORT_DAYS = REPORT_HISTORY_DAYS + 1
+        const val FIRST_OFF_NOTIFICATION_USAGE_MS = 30L * MINUTE_MS
+        const val OFF_NOTIFICATION_REPEAT_INTERVAL_MS = HOUR_MS
+        const val OFF_NOTIFICATION_ADDITIONAL_USAGE_MS = 15L * MINUTE_MS
         val accessGrantedModes = setOf(
             GateMode.ACCESS_GRANTED_NORMAL,
             GateMode.ACCESS_GRANTED_EMERGENCY,

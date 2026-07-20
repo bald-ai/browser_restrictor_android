@@ -38,6 +38,7 @@ class DeviceAccessMonitor(
                 chromeInstalled = access.chromeInstalled,
                 advancedProtectionEnabled = access.advancedProtectionEnabled,
             )
+            container.reconcileProtectionSchedule()
         }
     }
 

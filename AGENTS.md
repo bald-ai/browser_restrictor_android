@@ -11,6 +11,18 @@ Before building for the phone or running `adb install`, read
 check. Do not use `adb uninstall` to work around an install failure without
 explicit user approval.
 
+## Extended phone-control workloads
+
+Before starting an extended phone-control workload, read
+[`ADB_PHONE_CONTROL_PLAYBOOK.md`](ADB_PHONE_CONTROL_PLAYBOOK.md). This applies
+to multi-step ADB UI automation, long-running on-device processing, cross-app
+comparisons, repeated evidence capture, or another sustained phone
+investigation.
+
+Do not load the playbook for a simple one-off phone action such as installing
+or launching an app, checking ADB connectivity, or performing a basic smoke
+check.
+
 ## Real-phone Android validation
 
 Use the Android SDK copy of ADB directly because `adb` may not be on `PATH`:
