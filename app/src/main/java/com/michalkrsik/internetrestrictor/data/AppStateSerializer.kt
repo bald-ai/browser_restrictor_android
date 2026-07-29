@@ -20,6 +20,7 @@ import com.michalkrsik.internetrestrictor.domain.UnlockSource
 import com.michalkrsik.internetrestrictor.domain.UsagePeriodState
 import java.io.DataInputStream
 import java.io.DataOutputStream
+import java.io.EOFException
 import java.io.InputStream
 import java.io.OutputStream
 
@@ -102,7 +103,14 @@ object AppStateSerializer : Serializer<PersistedState> {
                     usageAtLastNotificationMs = source.readLong(),
                 )
             } else OffUsageReminderState()
-            val currentVisitGraceActive = if (schema >= 2) source.readBoolean() else false
+            val currentVisitGraceActive = if (schema >= 2) {
+                try {
+                    source.readBoolean()
+                } catch (_: EOFException) {
+                    // Early schema-v2 development builds ended after the reminder state.
+                    false
+                }
+            } else false
             val state = PersistedState(
                 schemaVersion = RESTRICTOR_SCHEMA_VERSION,
                 stateRevision = revision,

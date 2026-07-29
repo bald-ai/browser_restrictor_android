@@ -50,6 +50,7 @@ fun SettingsScreen(
     onResumeProtection: () -> Unit,
     onSave: (RestrictorSettings) -> Unit,
     onResetUsage: () -> Unit,
+    onCancelActiveUnlock: () -> Unit,
     onClearReports: () -> Unit,
     onHealthAction: () -> Unit,
     onExportDiagnostics: () -> Unit,
@@ -121,6 +122,21 @@ fun SettingsScreen(
             }
         }
 
+        SettingsCard("Developer controls") {
+            Text(
+                "Cancels only the currently granted Chrome session. Usage totals, budgets, skips, reports, and settings stay unchanged.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedButton(
+                onClick = onCancelActiveUnlock,
+                enabled = snapshot.activeUnlock != null,
+                shape = RoundedCornerShape(14.dp),
+            ) {
+                Text(if (snapshot.activeUnlock != null) "Cancel active unlock" else "No active unlock")
+            }
+        }
+
         SettingsCard("Enforcement") {
             Text(
                 if (snapshot.settings.enforcementEnabled) "Chrome protection is on." else
@@ -183,7 +199,7 @@ fun SettingsScreen(
         SettingsCard("Emergency skips") {
             ToggleRow(
                 title = "Enable skips",
-                supporting = "Skips bypass only the focused wait. They never bypass an exhausted budget.",
+                supporting = "Skips open Chrome for 30 minutes, including after a budget is exhausted.",
                 checked = skipsEnabled,
                 onCheckedChange = { skipsEnabled = it },
             )

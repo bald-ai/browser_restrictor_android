@@ -9,13 +9,14 @@ const val HOUR_MS = 60L * MINUTE_MS
 const val DAY_MS = 24L * HOUR_MS
 const val PENDING_WAIT_EXPIRY_MS = DAY_MS
 const val EMERGENCY_UNLOCK_MS = 30L * MINUTE_MS
+const val PUSHUP_UNLOCK_MS = 30L * MINUTE_MS
 const val MAX_SAFE_MINUTES = Long.MAX_VALUE / MINUTE_MS
 
 enum class ThemePreference { DARK, LIGHT }
 
 enum class BudgetPeriod { DAILY, WEEKLY, MONTHLY }
 
-enum class UnlockSource { NORMAL, EMERGENCY }
+enum class UnlockSource { NORMAL, EMERGENCY, PUSHUP }
 
 enum class ForegroundClass { CHROME, RESTRICTOR, OTHER }
 
@@ -27,6 +28,7 @@ enum class GateMode {
     WAITING,
     ACCESS_GRANTED_NORMAL,
     ACCESS_GRANTED_EMERGENCY,
+    ACCESS_GRANTED_PUSHUP,
     ACCESS_GRANTED_NO_DELAY,
     ACCESS_GRANTED_CURRENT_VISIT,
     OUT_OF_TIME,
@@ -226,9 +228,9 @@ data class StateSnapshot(
         get() = canonicalMode in setOf(
             GateMode.ACCESS_GRANTED_NORMAL,
             GateMode.ACCESS_GRANTED_EMERGENCY,
+            GateMode.ACCESS_GRANTED_PUSHUP,
             GateMode.ACCESS_GRANTED_NO_DELAY,
             GateMode.ACCESS_GRANTED_CURRENT_VISIT,
-            GateMode.ENFORCEMENT_DISABLED,
         )
 }
 

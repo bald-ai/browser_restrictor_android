@@ -155,6 +155,9 @@ class MainActivity : ComponentActivity() {
                 onResetUsage = {
                     lifecycleScope.launch { appContainer.repository.resetUsage() }
                 },
+                onCancelActiveUnlock = {
+                    lifecycleScope.launch { appContainer.repository.cancelActiveUnlock() }
+                },
                 onClearReports = {
                     lifecycleScope.launch { appContainer.repository.clearReportHistory() }
                 },

@@ -140,8 +140,14 @@ class RestrictorRepository(
                 chromeActive = chromeActive,
             )
             val graceChanged = retainedGrace != persistedState.currentVisitGraceActive
-            if (graceChanged) {
-                persistedState = persistedState.copy(currentVisitGraceActive = retainedGrace)
+            val waitWasPending = persistedState.pendingWait != null
+            val updatedState = abortPendingWaitAfterServiceUpdate(
+                state = persistedState.copy(currentVisitGraceActive = retainedGrace),
+                chromeActive = chromeActive,
+            )
+            val waitAborted = waitWasPending && updatedState.pendingWait == null
+            if (graceChanged || waitAborted) {
+                persistedState = updatedState
             }
             runtime = runtime.copy(
                 foregroundClass = foregroundClass,
@@ -168,7 +174,10 @@ class RestrictorRepository(
                 ),
             )
             manageGateTokensLocked()
-            if (old.policyFingerprint() != runtime.policyFingerprint() || graceChanged) bumpRevisionLocked()
+            if (old.policyFingerprint() != runtime.policyFingerprint() || graceChanged || waitAborted) {
+                bumpRevisionLocked()
+            }
+            if (waitAborted) diagnosticSink("Focused wait aborted after leaving Chrome")
             if (old.foregroundClass != runtime.foregroundClass || old.chromeActive != runtime.chromeActive) {
                 diagnosticSink("Foreground transition: ${runtime.foregroundClass.name}")
             }
@@ -203,12 +212,22 @@ class RestrictorRepository(
         )
     }
 
-    suspend fun emergencySkip(expectedRevision: Long, expectedPendingWaitId: String?): Boolean = command {
+    suspend fun emergencySkip(expectedRevision: Long, expectedPendingWaitId: String?): Boolean = command(
+        clearOutOfTimeLatch = true,
+    ) {
         engine.emergencySkip(
             input = persistedState,
             runtime = runtime,
             expectedRevision = expectedRevision,
             expectedPendingWaitId = expectedPendingWaitId,
+            nowWallMs = timeSource.wallTimeMs(),
+            zoneId = timeSource.zoneId(),
+        )
+    }
+
+    suspend fun grantPushupUnlock(): Boolean = command(clearOutOfTimeLatch = true) {
+        engine.grantPushupUnlock(
+            input = persistedState,
             nowWallMs = timeSource.wallTimeMs(),
             zoneId = timeSource.zoneId(),
         )
@@ -324,6 +343,29 @@ class RestrictorRepository(
 
     suspend fun clearReportHistory(): Boolean = immediateMutation {
         engine.clearReportHistory(it)
+    }
+
+    suspend fun cancelActiveUnlock(): Boolean {
+        awaitLoaded()
+        return mutationMutex.withLock {
+            advanceLocked(timeSource.elapsedRealtimeMs(), timeSource.wallTimeMs(), forceUsageFlush = true)
+            val hadActiveUnlock = persistedState.activeUnlock != null
+            val next = engine.cancelActiveUnlock(
+                persistedState,
+                timeSource.wallTimeMs(),
+                timeSource.zoneId(),
+            )
+            if (!persistLocked(next)) return@withLock false
+            persistedState = next
+            runtime = runtime.copy(outOfTimeLatchToken = null, latchedBlockers = emptySet())
+            if (hadActiveUnlock && next.activeUnlock == null) {
+                diagnosticSink("Active unlock cancelled from developer controls")
+            }
+            manageGateTokensLocked()
+            lastError = null
+            publishLocked()
+            true
+        }
     }
 
     suspend fun handleClockOrTimezoneChanged() {
@@ -482,6 +524,7 @@ class RestrictorRepository(
             }
             GateMode.ACCESS_GRANTED_NORMAL,
             GateMode.ACCESS_GRANTED_EMERGENCY,
+            GateMode.ACCESS_GRANTED_PUSHUP,
             GateMode.ACCESS_GRANTED_NO_DELAY,
             -> {
                 if (bufferedUsageStartWallMs != null && (bufferedUsageIsOff || bufferedUsageIsCurrentVisit)) {
@@ -663,6 +706,8 @@ class RestrictorRepository(
                 diagnosticSink("Normal unlock granted")
             before.activeUnlock == null && after.activeUnlock?.source?.name == "EMERGENCY" ->
                 diagnosticSink("Emergency skip granted")
+            before.activeUnlock == null && after.activeUnlock?.source?.name == "PUSHUP" ->
+                diagnosticSink("Push-up unlock granted")
             before.settings != after.settings -> diagnosticSink("Settings changed")
         }
     }
@@ -700,6 +745,7 @@ class RestrictorRepository(
         val nonGateModes = setOf(
             GateMode.ACCESS_GRANTED_NORMAL,
             GateMode.ACCESS_GRANTED_EMERGENCY,
+            GateMode.ACCESS_GRANTED_PUSHUP,
             GateMode.ACCESS_GRANTED_NO_DELAY,
             GateMode.ACCESS_GRANTED_CURRENT_VISIT,
             GateMode.CHROME_BACKGROUND,
@@ -715,3 +761,12 @@ internal fun persistedForegroundAfterServiceUpdate(
     observed: ForegroundClass,
     serviceConnected: Boolean,
 ): ForegroundClass = if (serviceConnected) observed else previous
+
+internal fun abortPendingWaitAfterServiceUpdate(
+    state: PersistedState,
+    chromeActive: Boolean,
+): PersistedState = if (!chromeActive && state.pendingWait != null) {
+    state.copy(pendingWait = null)
+} else {
+    state
+}

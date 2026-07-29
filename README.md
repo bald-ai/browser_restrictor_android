@@ -12,12 +12,14 @@ This is a personal, user-controlled tool—not parental control, device manageme
 - A touch-blocking accessibility overlay over stable Chrome (`com.android.chrome`).
 - Focused waits with the extension's escalating wait-cost rules.
 - Normal 10, 30, and 60 minute wall-clock sessions.
+- A rotatable front/back-camera five-push-up challenge on every gate that grants 30 budget-free minutes after forgiving AI verification.
 - Three emergency wait skips per local day, without budget bypass.
 - Daily, Monday-based weekly, and calendar-month budgets.
 - Exact local-midnight usage splitting and all-period usage accounting.
 - Out-of-time latching, expiry handling, stale-command protection, and reset semantics.
 - A non-interactive Chrome status badge during an active unlock.
 - Dashboard, health status, settings, reset confirmation, theme selection, and local diagnostic export.
+- A developer control that cancels only the current unlock without resetting usage or settings.
 - Transactional typed persistence with corruption detection and fail-open startup behavior.
 - Boot, user-unlock, date, time, timezone, screen, keyguard, and service-restart handling.
 - Android 16 Advanced Protection status reporting.

@@ -116,13 +116,16 @@ class RestrictionEngine(
             return GateMode.SERVICE_UNAVAILABLE
         }
         if (state.currentVisitGraceActive) return GateMode.ACCESS_GRANTED_CURRENT_VISIT
+        state.activeUnlock?.takeIf { it.expiresAtWallMs > nowWallMs }?.let {
+            when (it.source) {
+                UnlockSource.EMERGENCY -> return GateMode.ACCESS_GRANTED_EMERGENCY
+                UnlockSource.PUSHUP -> return GateMode.ACCESS_GRANTED_PUSHUP
+                UnlockSource.NORMAL -> Unit
+            }
+        }
         if (budgetSnapshots(state).any { it.exhausted }) return GateMode.OUT_OF_TIME
         state.activeUnlock?.takeIf { it.expiresAtWallMs > nowWallMs }?.let {
-            return if (it.source == UnlockSource.NORMAL) {
-                GateMode.ACCESS_GRANTED_NORMAL
-            } else {
-                GateMode.ACCESS_GRANTED_EMERGENCY
-            }
+            return GateMode.ACCESS_GRANTED_NORMAL
         }
         if (!state.settings.delayEnabled) return GateMode.ACCESS_GRANTED_NO_DELAY
         if (state.pendingWait != null) return GateMode.WAITING
@@ -165,19 +168,17 @@ class RestrictionEngine(
         val remainingSkips = (
             state.settings.emergencySkipDailyLimit - state.dailyCounter.emergencySkipsUsed
         ).coerceAtLeast(0)
-        val enabledBudgets = budgets.filter { it.enabled }
-        val grantDuration = if (enabledBudgets.isEmpty()) {
-            EMERGENCY_UNLOCK_MS
-        } else {
-            minOf(EMERGENCY_UNLOCK_MS, enabledBudgets.minOf { it.remainingMs ?: 0 })
+        val grantDuration = EMERGENCY_UNLOCK_MS
+        val skipModeEligible = when (mode) {
+            GateMode.PAUSED, GateMode.WAITING -> state.settings.delayEnabled
+            GateMode.OUT_OF_TIME, GateMode.OUT_OF_TIME_LATCHED -> true
+            else -> false
         }
         val skipEligible = state.settings.emergencySkipsEnabled &&
             remainingSkips > 0 &&
-            grantDuration > 0 &&
-            !budgets.any { it.exhausted } &&
-            mode in setOf(GateMode.PAUSED, GateMode.WAITING) &&
+            skipModeEligible &&
             state.activeUnlock == null &&
-            state.settings.delayEnabled
+            grantDuration > 0
 
         return StateSnapshot(
             stateRevision = state.stateRevision,
@@ -372,6 +373,28 @@ class RestrictionEngine(
         )
     }
 
+    fun grantPushupUnlock(
+        input: PersistedState,
+        nowWallMs: Long,
+        zoneId: ZoneId,
+    ): CommandResult {
+        val state = normalize(input, nowWallMs, zoneId)
+        if (state.activeUnlock != null) return rejected(state, "Chrome is already unlocked")
+        val unlock = UnlockSession(
+            id = idGenerator.nextId(),
+            source = UnlockSource.PUSHUP,
+            grantedAtWallMs = nowWallMs,
+            expiresAtWallMs = Math.addExact(nowWallMs, PUSHUP_UNLOCK_MS),
+        )
+        return CommandResult.Applied(
+            state.copy(
+                stateRevision = nextRevision(state.stateRevision),
+                activeUnlock = unlock,
+                pendingWait = null,
+            ),
+        )
+    }
+
     fun consumeUsage(
         input: PersistedState,
         runtime: RuntimeSignals,
@@ -393,25 +416,45 @@ class RestrictionEngine(
         )) {
             state = normalize(state, interval.startMs, zoneId)
             val budgets = budgetSnapshots(state)
-            val maximum = budgets.filter { it.enabled }
-                .minOfOrNull { it.remainingMs ?: Long.MAX_VALUE }
-                ?: interval.durationMs
+            val budgetFreeAccess = state.activeUnlock?.let {
+                it.source == UnlockSource.PUSHUP &&
+                    it.expiresAtWallMs > interval.startMs
+            } == true
+            val overBudgetAccess = state.activeUnlock?.let {
+                it.source in setOf(UnlockSource.EMERGENCY, UnlockSource.PUSHUP) &&
+                    it.expiresAtWallMs > interval.startMs
+            } == true
+            val maximum = if (overBudgetAccess) {
+                interval.durationMs
+            } else {
+                budgets.filter { it.enabled }
+                    .minOfOrNull { it.remainingMs ?: Long.MAX_VALUE }
+                    ?: interval.durationMs
+            }
             val charged = minOf(interval.durationMs, maximum).coerceAtLeast(0)
             if (charged > 0) {
-                state = state.copy(
-                    dailyUsage = state.dailyUsage.copy(
-                        usedMs = Math.addExact(state.dailyUsage.usedMs, charged),
-                    ),
-                    weeklyUsage = state.weeklyUsage.copy(
-                        usedMs = Math.addExact(state.weeklyUsage.usedMs, charged),
-                    ),
-                    monthlyUsage = state.monthlyUsage.copy(
-                        usedMs = Math.addExact(state.monthlyUsage.usedMs, charged),
-                    ),
-                    runtimeMetadata = state.runtimeMetadata.copy(
-                        lastCommittedWallMs = interval.startMs + charged,
-                    ),
-                )
+                state = if (budgetFreeAccess) {
+                    state.copy(
+                        runtimeMetadata = state.runtimeMetadata.copy(
+                            lastCommittedWallMs = interval.startMs + charged,
+                        ),
+                    )
+                } else {
+                    state.copy(
+                        dailyUsage = state.dailyUsage.copy(
+                            usedMs = Math.addExact(state.dailyUsage.usedMs, charged),
+                        ),
+                        weeklyUsage = state.weeklyUsage.copy(
+                            usedMs = Math.addExact(state.weeklyUsage.usedMs, charged),
+                        ),
+                        monthlyUsage = state.monthlyUsage.copy(
+                            usedMs = Math.addExact(state.monthlyUsage.usedMs, charged),
+                        ),
+                        runtimeMetadata = state.runtimeMetadata.copy(
+                            lastCommittedWallMs = interval.startMs + charged,
+                        ),
+                    )
+                }
                 state = addReportInterval(
                     state = state,
                     intervalStartWallMs = interval.startMs,
@@ -552,6 +595,19 @@ class RestrictionEngine(
         usageReports = emptyList(),
     )
 
+    fun cancelActiveUnlock(
+        input: PersistedState,
+        nowWallMs: Long,
+        zoneId: ZoneId,
+    ): PersistedState {
+        val state = normalize(input, nowWallMs, zoneId)
+        if (state.activeUnlock == null) return state
+        return state.copy(
+            stateRevision = nextRevision(state.stateRevision),
+            activeUnlock = null,
+        )
+    }
+
     private fun addReportInterval(
         state: PersistedState,
         intervalStartWallMs: Long,
@@ -665,6 +721,7 @@ class RestrictionEngine(
         val accessGrantedModes = setOf(
             GateMode.ACCESS_GRANTED_NORMAL,
             GateMode.ACCESS_GRANTED_EMERGENCY,
+            GateMode.ACCESS_GRANTED_PUSHUP,
             GateMode.ACCESS_GRANTED_NO_DELAY,
         )
     }

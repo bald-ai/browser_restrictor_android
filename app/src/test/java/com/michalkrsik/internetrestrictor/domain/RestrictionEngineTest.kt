@@ -50,12 +50,21 @@ class RestrictionEngineTest {
     }
 
     @Test
-    fun exhaustedBudgetOutranksValidUnlock() {
+    fun exhaustedBudgetOutranksValidNormalUnlock() {
         val state = initial().copy(
             dailyUsage = initial().dailyUsage.copy(usedMs = 60 * MINUTE_MS),
             activeUnlock = UnlockSession("unlock", UnlockSource.NORMAL, now, now + HOUR_MS),
         )
         assertEquals(GateMode.OUT_OF_TIME, engine.underlyingMode(state, ready, now))
+    }
+
+    @Test
+    fun validEmergencyUnlockOutranksExhaustedBudget() {
+        val state = initial().copy(
+            dailyUsage = initial().dailyUsage.copy(usedMs = 60 * MINUTE_MS),
+            activeUnlock = UnlockSession("unlock", UnlockSource.EMERGENCY, now, now + HOUR_MS),
+        )
+        assertEquals(GateMode.ACCESS_GRANTED_EMERGENCY, engine.underlyingMode(state, ready, now))
     }
 
     @Test
@@ -169,19 +178,52 @@ class RestrictionEngineTest {
     }
 
     @Test
-    fun emergencySkipDurationIsCappedByTightestBudget() {
+    fun emergencySkipAlwaysOffersFullThirtyMinutes() {
         val state = initial().copy(dailyUsage = initial().dailyUsage.copy(usedMs = 55 * MINUTE_MS))
         val snapshot = engine.snapshot(state, ready, now)
-        assertEquals(5 * MINUTE_MS, snapshot.skipSnapshot.grantDurationMs)
+        assertEquals(30 * MINUTE_MS, snapshot.skipSnapshot.grantDurationMs)
         assertTrue(snapshot.skipSnapshot.eligible)
     }
 
     @Test
-    fun emergencySkipCannotBypassExhaustionOrConsumeCount() {
+    fun emergencySkipBypassesExhaustionAndConsumesCount() {
         val state = initial().copy(dailyUsage = initial().dailyUsage.copy(usedMs = 60 * MINUTE_MS))
-        val result = engine.emergencySkip(state, ready, state.stateRevision, null, now, zone)
-        assertTrue(result is CommandResult.Rejected)
-        assertEquals(0, (result as CommandResult.Rejected).state.dailyCounter.emergencySkipsUsed)
+        val skipped = applied(
+            engine.emergencySkip(state, ready, state.stateRevision, null, now, zone),
+        )
+        assertEquals(UnlockSource.EMERGENCY, skipped.activeUnlock!!.source)
+        assertEquals(now + 30 * MINUTE_MS, skipped.activeUnlock.expiresAtWallMs)
+        assertEquals(1, skipped.dailyCounter.emergencySkipsUsed)
+        assertEquals(GateMode.ACCESS_GRANTED_EMERGENCY, engine.underlyingMode(skipped, ready, now))
+    }
+
+    @Test
+    fun pushupUnlockBypassesExhaustionWithoutConsumingEmergencySkip() {
+        val state = initial().copy(
+            dailyUsage = initial().dailyUsage.copy(usedMs = 60 * MINUTE_MS),
+        )
+        val unlocked = applied(engine.grantPushupUnlock(state, now, zone))
+        assertEquals(UnlockSource.PUSHUP, unlocked.activeUnlock!!.source)
+        assertEquals(now + 30 * MINUTE_MS, unlocked.activeUnlock.expiresAtWallMs)
+        assertEquals(0, unlocked.dailyCounter.emergencySkipsUsed)
+        assertEquals(GateMode.ACCESS_GRANTED_PUSHUP, engine.underlyingMode(unlocked, ready, now))
+    }
+
+    @Test
+    fun pushupUnlockIsAvailableWhileUsageRemains() {
+        val state = initial()
+        val unlocked = applied(engine.grantPushupUnlock(state, now, zone))
+        assertEquals(UnlockSource.PUSHUP, unlocked.activeUnlock!!.source)
+        assertEquals(now + 30 * MINUTE_MS, unlocked.activeUnlock.expiresAtWallMs)
+    }
+
+    @Test
+    fun exhaustedBudgetCanUseEmergencySkipWhenDelayIsDisabled() {
+        val base = initial(RestrictorSettings(delayEnabled = false))
+        val state = base.copy(dailyUsage = base.dailyUsage.copy(usedMs = 60 * MINUTE_MS))
+        val snapshot = engine.snapshot(state, ready, now)
+        assertEquals(GateMode.OUT_OF_TIME, snapshot.canonicalMode)
+        assertTrue(snapshot.skipSnapshot.eligible)
     }
 
     @Test
@@ -215,6 +257,50 @@ class RestrictionEngineTest {
         assertEquals(60 * MINUTE_MS, used.dailyUsage.usedMs)
         assertEquals(500, used.weeklyUsage.usedMs)
         assertEquals(GateMode.OUT_OF_TIME, engine.underlyingMode(used, ready, now + 2_000))
+    }
+
+    @Test
+    fun emergencyUsageContinuesPastBudgetAndRemainsInReports() {
+        val base = initial().copy(
+            dailyUsage = initial().dailyUsage.copy(usedMs = 60 * MINUTE_MS),
+            activeUnlock = UnlockSession(
+                id = "emergency",
+                source = UnlockSource.EMERGENCY,
+                grantedAtWallMs = now,
+                expiresAtWallMs = now + 30 * MINUTE_MS,
+            ),
+        )
+        val used = engine.consumeUsage(base, ready, now, now + 2_000, zone)
+        assertEquals(60 * MINUTE_MS + 2_000, used.dailyUsage.usedMs)
+        assertEquals(
+            2_000,
+            used.usageReports.single { it.localDayKey == "2026-07-10" }.protectedUsageMs,
+        )
+        assertEquals(GateMode.ACCESS_GRANTED_EMERGENCY, engine.underlyingMode(used, ready, now + 2_000))
+    }
+
+    @Test
+    fun pushupUsageDoesNotConsumeBudgetsAndRemainsInReports() {
+        val base = initial().copy(
+            dailyUsage = initial().dailyUsage.copy(usedMs = 20 * MINUTE_MS),
+            weeklyUsage = initial().weeklyUsage.copy(usedMs = 30 * MINUTE_MS),
+            monthlyUsage = initial().monthlyUsage.copy(usedMs = 40 * MINUTE_MS),
+            activeUnlock = UnlockSession(
+                id = "pushup",
+                source = UnlockSource.PUSHUP,
+                grantedAtWallMs = now,
+                expiresAtWallMs = now + 30 * MINUTE_MS,
+            ),
+        )
+        val used = engine.consumeUsage(base, ready, now, now + 2_000, zone)
+        assertEquals(20 * MINUTE_MS, used.dailyUsage.usedMs)
+        assertEquals(30 * MINUTE_MS, used.weeklyUsage.usedMs)
+        assertEquals(40 * MINUTE_MS, used.monthlyUsage.usedMs)
+        assertEquals(
+            2_000,
+            used.usageReports.single { it.localDayKey == "2026-07-10" }.protectedUsageMs,
+        )
+        assertEquals(GateMode.ACCESS_GRANTED_PUSHUP, engine.underlyingMode(used, ready, now + 2_000))
     }
 
     @Test
@@ -272,6 +358,7 @@ class RestrictionEngineTest {
             zone,
         )
         assertEquals(GateMode.ENFORCEMENT_DISABLED, engine.underlyingMode(off, ready, now))
+        assertFalse(engine.snapshot(off, ready, now).usesBadge)
         assertNotNull(off.pendingWait)
         assertEquals(waiting.dailyUsage, off.dailyUsage)
     }
@@ -452,6 +539,31 @@ class RestrictionEngineTest {
         assertTrue(cleared.usageReports.isEmpty())
         assertEquals(12_000, cleared.dailyUsage.usedMs)
         assertEquals(reminder, cleared.offUsageReminder)
+    }
+
+    @Test
+    fun cancellingActiveUnlockPreservesUsageAndOtherState() {
+        val base = initial()
+        val unlock = UnlockSession("pushup", UnlockSource.PUSHUP, now, now + 30 * MINUTE_MS)
+        val report = DailyUsageReport("2026-07-10", protectedUsageMs = 12_000)
+        val state = base.copy(
+            dailyUsage = base.dailyUsage.copy(usedMs = 10_000),
+            weeklyUsage = base.weeklyUsage.copy(usedMs = 20_000),
+            monthlyUsage = base.monthlyUsage.copy(usedMs = 30_000),
+            activeUnlock = unlock,
+            dailyCounter = base.dailyCounter.copy(emergencySkipsUsed = 1),
+            usageReports = listOf(report),
+        )
+
+        val cancelled = engine.cancelActiveUnlock(state, now + 1_000, zone)
+
+        assertNull(cancelled.activeUnlock)
+        assertEquals(10_000, cancelled.dailyUsage.usedMs)
+        assertEquals(20_000, cancelled.weeklyUsage.usedMs)
+        assertEquals(30_000, cancelled.monthlyUsage.usedMs)
+        assertEquals(1, cancelled.dailyCounter.emergencySkipsUsed)
+        assertEquals(listOf(report), cancelled.usageReports)
+        assertEquals(state.settings, cancelled.settings)
     }
 
     @Test

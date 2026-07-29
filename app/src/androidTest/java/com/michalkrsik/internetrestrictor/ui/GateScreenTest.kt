@@ -33,7 +33,7 @@ class GateScreenTest {
         storageReady = true,
         gateSessionId = "gate",
     )
-    private val actions = GateActions({ _ -> }, {}, {}, {})
+    private val actions = GateActions({ _ -> }, {}, {}, {}, {})
 
     @Test
     fun pausedGateShowsOnlyLockedSessionChoices() {
@@ -48,6 +48,8 @@ class GateScreenTest {
         composeRule.onNodeWithText("30 min").assertIsDisplayed()
         composeRule.onNodeWithText("60 min").assertIsDisplayed()
         composeRule.onNodeWithText("Begin 10 minute session").assertIsDisplayed()
+        composeRule.onNodeWithText("Earn 30 minutes").assertIsDisplayed()
+        composeRule.onNodeWithText("Complete 5 push-ups · no budget used").assertIsDisplayed()
         composeRule.onNodeWithText("←  Leave Chrome").assertIsDisplayed()
         composeRule.onAllNodesWithText("Settings", substring = true).assertCountEquals(0)
     }
@@ -72,6 +74,7 @@ class GateScreenTest {
         }
 
         composeRule.onNodeWithText("Chrome is out of time.").assertIsDisplayed()
+        composeRule.onNodeWithText("Earn 30 minutes").assertIsDisplayed()
         composeRule.onNodeWithText("Try again").assertIsDisplayed()
         composeRule.onAllNodesWithText("minute session", substring = true).assertCountEquals(0)
         composeRule.onAllNodesWithText("emergency skip", substring = true).assertCountEquals(0)
