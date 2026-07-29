@@ -21,6 +21,7 @@ class GateOverlayController(
     private val windowManager: WindowManager,
     private val repository: RestrictorRepository,
     private val scope: CoroutineScope,
+    private val onPushupChallenge: () -> Unit,
     private val onLeaveChrome: () -> Unit,
     private val onFocusChanged: (Boolean) -> Unit,
     private val onAttachFailure: (Throwable) -> Unit,
@@ -56,6 +57,7 @@ class GateOverlayController(
                                     )
                                 }
                             },
+                            onPushupChallenge = onPushupChallenge,
                             onTryAgain = {
                                 scope.launch {
                                     repository.tryAgain(

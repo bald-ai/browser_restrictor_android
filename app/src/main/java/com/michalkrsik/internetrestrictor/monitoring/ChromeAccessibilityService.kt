@@ -16,6 +16,8 @@ import com.michalkrsik.internetrestrictor.appContainer
 import com.michalkrsik.internetrestrictor.domain.ForegroundClass
 import com.michalkrsik.internetrestrictor.overlay.BadgeOverlayController
 import com.michalkrsik.internetrestrictor.overlay.GateOverlayController
+import com.michalkrsik.internetrestrictor.ui.challenge.PushupChallengeActivity
+import com.michalkrsik.internetrestrictor.ui.challenge.PushupChallengeVisibility
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -23,6 +25,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
@@ -73,6 +76,7 @@ class ChromeAccessibilityService : AccessibilityService() {
             windowManager = windowManager,
             repository = repository,
             scope = serviceScope,
+            onPushupChallenge = ::openPushupChallenge,
             onLeaveChrome = ::leaveChrome,
             onFocusChanged = ::onGateFocusChanged,
             onAttachFailure = ::onOverlayAttachFailure,
@@ -156,8 +160,17 @@ class ChromeAccessibilityService : AccessibilityService() {
     private fun startRendering() {
         renderJob?.cancel()
         renderJob = serviceScope.launch {
-            repository.snapshot.collect { snapshot ->
+            combine(
+                repository.snapshot,
+                PushupChallengeVisibility.active,
+            ) { snapshot, challengeActive -> snapshot to challengeActive }
+                .collect { (snapshot, challengeActive) ->
                 when {
+                    challengeActive -> {
+                        foregroundMonitor.setGateVisible(false)
+                        gateController.hide()
+                        badgeController.hide()
+                    }
                     snapshot.usesFullGate -> {
                         badgeController.hide()
                         foregroundMonitor.setGateVisible(true)
@@ -212,6 +225,24 @@ class ChromeAccessibilityService : AccessibilityService() {
             eventLog.record("Leave Chrome requested; waiting for confirmed Home transition")
         } else {
             eventLog.record("Leave Chrome failed: Home action was rejected")
+        }
+    }
+
+    private fun openPushupChallenge() {
+        eventLog.record("Push-up challenge requested")
+        PushupChallengeVisibility.active.value = true
+        foregroundMonitor.setGateVisible(false)
+        gateController.hide(reportFocusLoss = false)
+        val intent = Intent(this, PushupChallengeActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        }
+        try {
+            startActivity(intent)
+        } catch (error: Exception) {
+            eventLog.record("Push-up challenge launch failed: ${error.javaClass.simpleName}")
+            PushupChallengeVisibility.active.value = false
+            foregroundMonitor.setGateVisible(true)
+            gateController.show()
         }
     }
 

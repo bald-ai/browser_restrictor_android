@@ -61,6 +61,7 @@ import com.michalkrsik.internetrestrictor.ui.components.friendlyLabel
 data class GateActions(
     val onStartSession: (Long) -> Unit,
     val onEmergencySkip: () -> Unit,
+    val onPushupChallenge: () -> Unit,
     val onTryAgain: () -> Unit,
     val onLeaveChrome: () -> Unit,
 )
@@ -131,6 +132,10 @@ fun GateScreen(snapshot: StateSnapshot, actions: GateActions) {
                             actionInFlight = true
                             actions.onEmergencySkip()
                         },
+                        onPushupChallenge = {
+                            actionInFlight = true
+                            actions.onPushupChallenge()
+                        },
                     )
                     GateMode.WAITING -> WaitingControls(
                         snapshot = snapshot,
@@ -139,10 +144,22 @@ fun GateScreen(snapshot: StateSnapshot, actions: GateActions) {
                             actionInFlight = true
                             actions.onEmergencySkip()
                         },
+                        onPushupChallenge = {
+                            actionInFlight = true
+                            actions.onPushupChallenge()
+                        },
                     )
                     GateMode.OUT_OF_TIME, GateMode.OUT_OF_TIME_LATCHED -> OutOfTimeControls(
                         snapshot = snapshot,
                         actionInFlight = actionInFlight,
+                        onPushupChallenge = {
+                            actionInFlight = true
+                            actions.onPushupChallenge()
+                        },
+                        onSkip = {
+                            actionInFlight = true
+                            actions.onEmergencySkip()
+                        },
                         onTryAgain = {
                             actionInFlight = true
                             actions.onTryAgain()
@@ -172,6 +189,7 @@ private fun PausedControls(
     actionInFlight: Boolean,
     onStart: () -> Unit,
     onSkip: () -> Unit,
+    onPushupChallenge: () -> Unit,
 ) {
     val waitMs = WaitCalculator.requiredFocusMs(selectedMinutes, snapshot.completedNormalUnlocksToday)
     val cost = WaitCalculator.costPerTenSeconds(snapshot.completedNormalUnlocksToday)
@@ -204,6 +222,7 @@ private fun PausedControls(
         ) {
             Text("Begin $selectedMinutes minute session", style = MaterialTheme.typography.labelLarge)
         }
+        PushupButton(actionInFlight, onPushupChallenge)
         SkipButton(snapshot, actionInFlight, onSkip)
         Budgets(snapshot)
     }
@@ -214,6 +233,7 @@ private fun WaitingControls(
     snapshot: StateSnapshot,
     actionInFlight: Boolean,
     onSkip: () -> Unit,
+    onPushupChallenge: () -> Unit,
 ) {
     val wait = snapshot.waitSnapshot ?: return
     val seconds = WaitCalculator.displaySeconds(wait.remainingFocusMs)
@@ -253,6 +273,7 @@ private fun WaitingControls(
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth(),
         )
+        PushupButton(actionInFlight, onPushupChallenge)
         SkipButton(snapshot, actionInFlight, onSkip)
         Budgets(snapshot)
     }
@@ -262,6 +283,8 @@ private fun WaitingControls(
 private fun OutOfTimeControls(
     snapshot: StateSnapshot,
     actionInFlight: Boolean,
+    onPushupChallenge: () -> Unit,
+    onSkip: () -> Unit,
     onTryAgain: () -> Unit,
 ) {
     Column(
@@ -269,6 +292,8 @@ private fun OutOfTimeControls(
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         Budgets(snapshot)
+        PushupButton(actionInFlight, onPushupChallenge)
+        SkipButton(snapshot, actionInFlight, onSkip)
         Button(
             onClick = onTryAgain,
             enabled = !actionInFlight,
@@ -276,6 +301,21 @@ private fun OutOfTimeControls(
             shape = RoundedCornerShape(16.dp),
         ) {
             Text("Try again", style = MaterialTheme.typography.labelLarge)
+        }
+    }
+}
+
+@Composable
+private fun PushupButton(actionInFlight: Boolean, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        enabled = !actionInFlight,
+        modifier = Modifier.fillMaxWidth().height(58.dp),
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("Earn 30 minutes", fontWeight = FontWeight.Bold)
+            Text("Complete 5 push-ups · no budget used", style = MaterialTheme.typography.bodySmall)
         }
     }
 }

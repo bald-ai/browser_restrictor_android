@@ -21,6 +21,7 @@ class BadgeOverlayController(
 ) {
     private var view: ComposeView? = null
     private var lifecycleOwner: OverlayLifecycleOwner? = null
+    private var layoutParams: WindowManager.LayoutParams? = null
 
     val isShowing: Boolean get() = view != null
 
@@ -29,17 +30,26 @@ class BadgeOverlayController(
         val owner = OverlayLifecycleOwner()
         val composeView = ComposeView(context).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
-            importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_YES
             owner.attachTo(this)
             setContent {
                 val snapshot by repository.snapshot.collectAsState()
-                RestrictorTheme(snapshot.settings.theme) { BadgeContent(snapshot) }
+                RestrictorTheme(snapshot.settings.theme) {
+                    BadgeContent(snapshot, onDrag = ::moveBy)
+                }
             }
         }
+        composeView.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+            if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) {
+                clampPosition()
+            }
+        }
+        val params = badgeLayoutParams()
         try {
-            windowManager.addView(composeView, badgeLayoutParams())
+            windowManager.addView(composeView, params)
             view = composeView
             lifecycleOwner = owner
+            layoutParams = params
         } catch (error: Throwable) {
             owner.destroy()
             composeView.disposeComposition()
@@ -58,6 +68,7 @@ class BadgeOverlayController(
         lifecycleOwner?.destroy()
         view = null
         lifecycleOwner = null
+        layoutParams = null
     }
 
     fun recreateForConfigurationChange() {
@@ -71,15 +82,37 @@ class BadgeOverlayController(
         ViewGroup.LayoutParams.WRAP_CONTENT,
         WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
         PixelFormat.TRANSLUCENT,
     ).apply {
-        gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-        y = 48.dp
+        gravity = Gravity.TOP or Gravity.END
+        x = 0
+        y = (context.resources.displayMetrics.heightPixels * 0.29f).toInt()
         title = "Internet Restrictor Chrome status"
     }
 
-    private val Int.dp: Int get() = (this * context.resources.displayMetrics.density).toInt()
-}
+    private fun moveBy(deltaY: Float) {
+        val currentView = view ?: return
+        val params = layoutParams ?: return
+        params.x = 0
+        params.y += deltaY.toInt()
+        clampPosition(currentView, params)
+    }
 
+    private fun clampPosition() {
+        val currentView = view ?: return
+        val params = layoutParams ?: return
+        clampPosition(currentView, params)
+    }
+
+    private fun clampPosition(currentView: ComposeView, params: WindowManager.LayoutParams) {
+        val display = context.resources.displayMetrics
+        params.x = 0
+        params.y = params.y.coerceIn(0, (display.heightPixels - currentView.height).coerceAtLeast(0))
+        try {
+            windowManager.updateViewLayout(currentView, params)
+        } catch (_: IllegalArgumentException) {
+            // The overlay was detached while an interaction was finishing.
+        }
+    }
+}
