@@ -3,6 +3,7 @@ package com.michalkrsik.internetrestrictor.overlay
 import android.content.Context
 import android.graphics.PixelFormat
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.ViewGroup
 import android.view.WindowManager
 import androidx.compose.runtime.collectAsState
@@ -39,6 +40,15 @@ class GateOverlayController(
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
             importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_YES
             contentDescription = "Internet Restrictor Chrome pause screen"
+            isFocusableInTouchMode = true
+            setOnKeyListener { _, keyCode, event ->
+                if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
+                    onLeaveChrome()
+                    true
+                } else {
+                    false
+                }
+            }
             owner.attachTo(this)
             setContent {
                 val snapshot by repository.snapshot.collectAsState()
@@ -82,6 +92,7 @@ class GateOverlayController(
             view = composeView
             lifecycleOwner = owner
             focusListener = listener
+            composeView.requestFocus()
         } catch (error: Throwable) {
             owner.destroy()
             composeView.disposeComposition()

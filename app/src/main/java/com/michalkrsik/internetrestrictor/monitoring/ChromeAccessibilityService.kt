@@ -14,8 +14,10 @@ import android.view.accessibility.AccessibilityEvent
 import androidx.core.content.ContextCompat
 import com.michalkrsik.internetrestrictor.appContainer
 import com.michalkrsik.internetrestrictor.domain.ForegroundClass
+import com.michalkrsik.internetrestrictor.domain.StateSnapshot
 import com.michalkrsik.internetrestrictor.overlay.BadgeOverlayController
 import com.michalkrsik.internetrestrictor.overlay.GateOverlayController
+import com.michalkrsik.internetrestrictor.overlay.OverlayCoordinator
 import com.michalkrsik.internetrestrictor.ui.challenge.PushupChallengeActivity
 import com.michalkrsik.internetrestrictor.ui.challenge.PushupChallengeVisibility
 import kotlinx.coroutines.CoroutineScope
@@ -42,24 +44,20 @@ class ChromeAccessibilityService : AccessibilityService() {
     private lateinit var foregroundMonitor: ChromeForegroundMonitor
     private lateinit var gateController: GateOverlayController
     private lateinit var badgeController: BadgeOverlayController
+    private lateinit var overlayCoordinator: OverlayCoordinator
     private var renderJob: Job? = null
     private var tickerJob: Job? = null
+    private var gateExitConfirmationJob: Job? = null
+    private var leaveTimeoutJob: Job? = null
+    private var challengeLaunchWatchdogJob: Job? = null
     private var receiverRegistered = false
     private var serviceGeneration = 0L
+    private val leaveRearmGuard = LeaveRearmGuard()
 
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             val decision = foregroundMonitor.evaluate()
-            serviceScope.launch {
-                repository.tick(timeSource.elapsedRealtimeMs(), timeSource.wallTimeMs())
-                repository.updateServiceRuntime(
-                    foregroundClass = decision.foregroundClass,
-                    chromeActive = decision.chromeActive,
-                    gateFocused = decision.gateFocused,
-                    screenInteractive = powerManager.isInteractive,
-                    keyguardUnlocked = !keyguardManager.isKeyguardLocked,
-                    serviceConnected = true,
-                )
+            submitRuntimeDecision(decision) {
                 eventLog.record("Screen/keyguard state changed")
             }
         }
@@ -86,6 +84,11 @@ class ChromeAccessibilityService : AccessibilityService() {
             windowManager = windowManager,
             repository = repository,
             onAttachFailure = ::onOverlayAttachFailure,
+        )
+        overlayCoordinator = OverlayCoordinator(
+            gateController = gateController,
+            badgeController = badgeController,
+            onGateVisibilityChanged = foregroundMonitor::setGateVisible,
         )
         registerScreenReceiver()
         startRendering()
@@ -115,17 +118,15 @@ class ChromeAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (!::foregroundMonitor.isInitialized) return
         val decision = foregroundMonitor.evaluate(event)
-        serviceScope.launch {
-            repository.tick(timeSource.elapsedRealtimeMs(), timeSource.wallTimeMs())
-            repository.updateServiceRuntime(
-                foregroundClass = decision.foregroundClass,
-                chromeActive = decision.chromeActive,
-                gateFocused = decision.gateFocused,
-                screenInteractive = powerManager.isInteractive,
-                keyguardUnlocked = !keyguardManager.isKeyguardLocked,
-                serviceConnected = true,
-            )
+        if (::overlayCoordinator.isInitialized &&
+            overlayCoordinator.isLeaving &&
+            !decision.chromeActive
+        ) {
+            completeLeave("Home transition confirmed")
+        } else {
+            submitRuntimeDecision(decision)
         }
+        schedulePendingGateExitConfirmation()
     }
 
     override fun onInterrupt() {
@@ -143,8 +144,7 @@ class ChromeAccessibilityService : AccessibilityService() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        if (::gateController.isInitialized) gateController.recreateForConfigurationChange()
-        if (::badgeController.isInitialized) badgeController.recreateForConfigurationChange()
+        if (::overlayCoordinator.isInitialized) overlayCoordinator.onConfigurationChanged()
     }
 
     override fun onDestroy() {
@@ -153,6 +153,9 @@ class ChromeAccessibilityService : AccessibilityService() {
         unregisterScreenReceiver()
         renderJob?.cancel()
         tickerJob?.cancel()
+        gateExitConfirmationJob?.cancel()
+        leaveTimeoutJob?.cancel()
+        challengeLaunchWatchdogJob?.cancel()
         serviceScope.cancel()
         super.onDestroy()
     }
@@ -165,28 +168,7 @@ class ChromeAccessibilityService : AccessibilityService() {
                 PushupChallengeVisibility.active,
             ) { snapshot, challengeActive -> snapshot to challengeActive }
                 .collect { (snapshot, challengeActive) ->
-                when {
-                    challengeActive -> {
-                        foregroundMonitor.setGateVisible(false)
-                        gateController.hide()
-                        badgeController.hide()
-                    }
-                    snapshot.usesFullGate -> {
-                        badgeController.hide()
-                        foregroundMonitor.setGateVisible(true)
-                        gateController.show()
-                    }
-                    snapshot.usesBadge -> {
-                        foregroundMonitor.setGateVisible(false)
-                        gateController.hide()
-                        badgeController.show()
-                    }
-                    else -> {
-                        foregroundMonitor.setGateVisible(false)
-                        gateController.hide()
-                        badgeController.hide()
-                    }
-                }
+                overlayCoordinator.render(targetFor(snapshot, challengeActive))
             }
         }
     }
@@ -217,39 +199,54 @@ class ChromeAccessibilityService : AccessibilityService() {
     }
 
     private fun leaveChrome() {
+        if (!::overlayCoordinator.isInitialized || overlayCoordinator.isLeaving) return
+        overlayCoordinator.beginLeaving()
+        gateExitConfirmationJob?.cancel()
         if (performGlobalAction(GLOBAL_ACTION_HOME)) {
-            // Keep the gate attached during Android's Home transition. The foreground
-            // monitor owns the Chrome latch and will release it only after a definitive
-            // non-Chrome window arrives. Removing the overlay here exposes Chrome for a
-            // few frames and causes its transition events to show the gate again.
-            eventLog.record("Leave Chrome requested; waiting for confirmed Home transition")
+            eventLog.record("Leave Chrome requested; bounded Home transition started")
+            leaveTimeoutJob?.cancel()
+            leaveTimeoutJob = serviceScope.launch {
+                delay(LEAVE_TIMEOUT_MS)
+                completeLeave("Home confirmation timed out; gate failed open")
+            }
         } else {
             eventLog.record("Leave Chrome failed: Home action was rejected")
+            completeLeave("Home action rejected; gate failed open")
         }
     }
 
     private fun openPushupChallenge() {
         eventLog.record("Push-up challenge requested")
-        PushupChallengeVisibility.active.value = true
-        foregroundMonitor.setGateVisible(false)
-        gateController.hide(reportFocusLoss = false)
+        PushupChallengeVisibility.prepareLaunch()
         val intent = Intent(this, PushupChallengeActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
         try {
+            // Submit the Activity launch while the user-interactive gate is still attached.
+            // Some Android builds silently reject a later background launch after the
+            // Accessibility overlay has already been removed.
             startActivity(intent)
+            overlayCoordinator.render(OverlayCoordinator.Target.CHALLENGE)
+            challengeLaunchWatchdogJob?.cancel()
+            challengeLaunchWatchdogJob = serviceScope.launch {
+                delay(CHALLENGE_LAUNCH_TIMEOUT_MS)
+                if (!PushupChallengeVisibility.activityStarted.value) {
+                    eventLog.record("Push-up challenge did not become visible; gate restored")
+                    PushupChallengeVisibility.cancelLaunch()
+                    renderCurrentOverlayState()
+                }
+            }
         } catch (error: Exception) {
             eventLog.record("Push-up challenge launch failed: ${error.javaClass.simpleName}")
-            PushupChallengeVisibility.active.value = false
-            foregroundMonitor.setGateVisible(true)
-            gateController.show()
+            PushupChallengeVisibility.cancelLaunch()
+            renderCurrentOverlayState()
         }
     }
 
     private fun onOverlayAttachFailure(error: Throwable) {
         eventLog.record("Overlay attach failed: ${error.javaClass.simpleName}")
         activeServiceGeneration.compareAndSet(serviceGeneration, 0)
-        removeOverlays()
+        if (::overlayCoordinator.isInitialized) overlayCoordinator.failOpen() else removeOverlays()
         serviceScope.launch {
             repository.updateServiceRuntime(
                 foregroundClass = ForegroundClass.OTHER,
@@ -277,9 +274,93 @@ class ChromeAccessibilityService : AccessibilityService() {
     }
 
     private fun removeOverlays() {
-        if (::gateController.isInitialized) gateController.hide()
-        if (::badgeController.isInitialized) badgeController.hide()
-        if (::foregroundMonitor.isInitialized) foregroundMonitor.setGateVisible(false)
+        if (::overlayCoordinator.isInitialized) {
+            overlayCoordinator.failOpen()
+        } else {
+            if (::gateController.isInitialized) gateController.hide()
+            if (::badgeController.isInitialized) badgeController.hide()
+            if (::foregroundMonitor.isInitialized) foregroundMonitor.setGateVisible(false)
+        }
+    }
+
+    private fun schedulePendingGateExitConfirmation() {
+        if (!foregroundMonitor.hasPendingGateExit) {
+            gateExitConfirmationJob?.cancel()
+            gateExitConfirmationJob = null
+            return
+        }
+        gateExitConfirmationJob?.cancel()
+        gateExitConfirmationJob = serviceScope.launch {
+            delay(GateExitStabilizer.DEFAULT_STABLE_FOR_MS)
+            val confirmed = foregroundMonitor.confirmPendingGateExit() ?: return@launch
+            if (overlayCoordinator.isLeaving) {
+                completeLeave("Home transition confirmed")
+            } else {
+                submitRuntimeDecision(confirmed)
+            }
+        }
+    }
+
+    private fun submitRuntimeDecision(
+        decision: ForegroundDecision,
+        afterUpdate: (() -> Unit)? = null,
+    ) {
+        serviceScope.launch {
+            repository.updateServiceRuntime(
+                foregroundClass = decision.foregroundClass,
+                chromeActive = decision.chromeActive,
+                gateFocused = decision.gateFocused,
+                screenInteractive = powerManager.isInteractive,
+                keyguardUnlocked = !keyguardManager.isKeyguardLocked,
+                serviceConnected = true,
+            )
+            if (leaveRearmGuard.observe(decision.chromeActive)) {
+                renderCurrentOverlayState()
+            }
+            afterUpdate?.invoke()
+        }
+    }
+
+    private fun completeLeave(reason: String) {
+        if (!::overlayCoordinator.isInitialized || !overlayCoordinator.isLeaving) return
+        leaveTimeoutJob?.cancel()
+        leaveTimeoutJob = null
+        gateExitConfirmationJob?.cancel()
+        gateExitConfirmationJob = null
+        leaveRearmGuard.beginSuppression()
+        overlayCoordinator.hideWhileLeaving()
+        val exited = foregroundMonitor.forceExit()
+        eventLog.record(reason)
+        serviceScope.launch {
+            repository.updateServiceRuntime(
+                foregroundClass = exited.foregroundClass,
+                chromeActive = exited.chromeActive,
+                gateFocused = exited.gateFocused,
+                screenInteractive = powerManager.isInteractive,
+                keyguardUnlocked = !keyguardManager.isKeyguardLocked,
+                serviceConnected = true,
+            )
+            overlayCoordinator.finishLeaving()
+            delay(POST_LEAVE_RECHECK_MS)
+            submitRuntimeDecision(foregroundMonitor.evaluate())
+        }
+    }
+
+    private fun renderCurrentOverlayState() {
+        if (!::overlayCoordinator.isInitialized) return
+        val challengeActive = PushupChallengeVisibility.active.value
+        overlayCoordinator.render(targetFor(repository.snapshot.value, challengeActive))
+    }
+
+    private fun targetFor(
+        snapshot: StateSnapshot,
+        challengeActive: Boolean,
+    ): OverlayCoordinator.Target = when {
+        challengeActive -> OverlayCoordinator.Target.CHALLENGE
+        leaveRearmGuard.suppressingOverlays -> OverlayCoordinator.Target.HIDDEN
+        snapshot.usesFullGate -> OverlayCoordinator.Target.GATE
+        snapshot.usesBadge -> OverlayCoordinator.Target.BADGE
+        else -> OverlayCoordinator.Target.HIDDEN
     }
 
     private fun registerScreenReceiver() {
@@ -310,6 +391,9 @@ class ChromeAccessibilityService : AccessibilityService() {
 
     private companion object {
         const val TICK_MS = 200L
+        const val LEAVE_TIMEOUT_MS = 500L
+        const val POST_LEAVE_RECHECK_MS = 100L
+        const val CHALLENGE_LAUNCH_TIMEOUT_MS = 1_500L
         val nextServiceGeneration = AtomicLong(0)
         val activeServiceGeneration = AtomicLong(0)
     }
