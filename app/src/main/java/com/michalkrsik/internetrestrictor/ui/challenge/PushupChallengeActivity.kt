@@ -122,7 +122,6 @@ class PushupChallengeActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        PushupChallengeVisibility.active.value = true
         WindowCompat.setDecorFitsSystemWindows(window, false)
         previewView = PreviewView(this).apply {
             scaleType = PreviewView.ScaleType.FILL_CENTER
@@ -137,8 +136,17 @@ class PushupChallengeActivity : ComponentActivity() {
         ensureCameraPermission()
     }
 
+    override fun onStart() {
+        super.onStart()
+        PushupChallengeVisibility.onActivityStarted()
+    }
+
+    override fun onStop() {
+        PushupChallengeVisibility.onActivityStopped()
+        super.onStop()
+    }
+
     override fun onDestroy() {
-        PushupChallengeVisibility.active.value = false
         handler.removeCallbacks(recordingTicker)
         handler.removeCallbacks(recordingTimeout)
         discardFinalize = true
@@ -632,4 +640,25 @@ class PushupChallengeActivity : ComponentActivity() {
 
 internal object PushupChallengeVisibility {
     val active = MutableStateFlow(false)
+    val activityStarted = MutableStateFlow(false)
+
+    fun prepareLaunch() {
+        activityStarted.value = false
+        active.value = true
+    }
+
+    fun onActivityStarted() {
+        activityStarted.value = true
+        active.value = true
+    }
+
+    fun onActivityStopped() {
+        activityStarted.value = false
+        active.value = false
+    }
+
+    fun cancelLaunch() {
+        activityStarted.value = false
+        active.value = false
+    }
 }

@@ -71,10 +71,9 @@ class BadgeOverlayController(
         layoutParams = null
     }
 
-    fun recreateForConfigurationChange() {
+    fun refreshForConfigurationChange() {
         if (!isShowing) return
-        hide()
-        show()
+        clampPosition()
     }
 
     private fun badgeLayoutParams() = WindowManager.LayoutParams(
