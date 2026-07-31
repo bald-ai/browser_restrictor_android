@@ -25,6 +25,7 @@ import androidx.camera.video.Recording
 import androidx.camera.video.VideoCapture
 import androidx.camera.video.VideoRecordEvent
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -40,6 +41,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -63,6 +65,8 @@ import androidx.lifecycle.lifecycleScope
 import com.michalkrsik.internetrestrictor.BuildConfig
 import com.michalkrsik.internetrestrictor.appContainer
 import com.michalkrsik.internetrestrictor.domain.CHROME_PACKAGE
+import com.michalkrsik.internetrestrictor.ui.theme.EditorialTheme
+import com.michalkrsik.internetrestrictor.ui.theme.PillShape
 import com.michalkrsik.internetrestrictor.ui.theme.RestrictorTheme
 import java.io.BufferedReader
 import java.io.File
@@ -246,13 +250,21 @@ class PushupChallengeActivity : ComponentActivity() {
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            OutlinedButton(onClick = ::finish) {
+            OutlinedButton(
+                onClick = ::finish,
+                shape = PillShape,
+                border = BorderStroke(1.dp, EditorialTheme.colors.hairline),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+            ) {
                 Text("Cancel")
             }
             OutlinedButton(
                 onClick = ::flipCamera,
                 enabled = hasFrontCamera && hasBackCamera &&
                     phase !in setOf(ChallengePhase.RECORDING, ChallengePhase.CHECKING),
+                shape = PillShape,
+                border = BorderStroke(1.dp, EditorialTheme.colors.hairline),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
             ) {
                 Text(
                     if (lensFacing == CameraSelector.LENS_FACING_FRONT) {
@@ -281,7 +293,7 @@ class PushupChallengeActivity : ComponentActivity() {
     private fun CameraPreview(modifier: Modifier) {
         Box(
             modifier = modifier
-                .clip(RoundedCornerShape(20.dp))
+                .clip(RoundedCornerShape(16.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant),
         ) {
             AndroidView(
@@ -320,7 +332,7 @@ class PushupChallengeActivity : ComponentActivity() {
                 ChallengePhase.RETRY,
             ),
             modifier = Modifier.fillMaxWidth().height(56.dp),
-            shape = RoundedCornerShape(16.dp),
+            shape = PillShape,
         ) {
             Text(
                 when (phase) {
