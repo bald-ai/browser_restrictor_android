@@ -28,7 +28,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.michalkrsik.internetrestrictor.domain.BudgetPeriod
 import com.michalkrsik.internetrestrictor.domain.BudgetSnapshot
 import com.michalkrsik.internetrestrictor.domain.MINUTE_MS
@@ -41,6 +40,10 @@ import com.michalkrsik.internetrestrictor.ui.components.formatReportTime
 import com.michalkrsik.internetrestrictor.ui.components.formatLongTime
 import com.michalkrsik.internetrestrictor.ui.components.friendlyLabel
 import com.michalkrsik.internetrestrictor.ui.components.healthCopy
+import com.michalkrsik.internetrestrictor.ui.theme.EditorialTheme
+import com.michalkrsik.internetrestrictor.ui.theme.PillShape
+import com.michalkrsik.internetrestrictor.ui.theme.SerifNote
+import com.michalkrsik.internetrestrictor.ui.theme.editorialTitle
 
 @Composable
 fun DashboardScreen(
@@ -60,11 +63,10 @@ fun DashboardScreen(
         Text(
             "INTERNET RESTRICTOR",
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.primary,
-            letterSpacing = 1.5.sp,
+            color = EditorialTheme.colors.ink3,
         )
         Spacer(Modifier.height(10.dp))
-        Text("Today's boundary.", style = MaterialTheme.typography.headlineLarge)
+        Text(editorialTitle("Today's boundary."), style = MaterialTheme.typography.headlineLarge)
         Spacer(Modifier.height(20.dp))
 
         StatusLine(snapshot)
@@ -89,7 +91,7 @@ fun DashboardScreen(
         Button(
             onClick = onOpenSettings,
             modifier = Modifier.fillMaxWidth().height(52.dp),
-            shape = RoundedCornerShape(16.dp),
+            shape = PillShape,
         ) {
             Text("Open settings")
         }
@@ -97,10 +99,11 @@ fun DashboardScreen(
         OutlinedButton(
             onClick = onTestChrome,
             modifier = Modifier.fillMaxWidth().height(52.dp),
-            shape = RoundedCornerShape(16.dp),
+            shape = PillShape,
+            border = BorderStroke(1.dp, EditorialTheme.colors.hairline),
             enabled = snapshot.chromeInstalled,
         ) {
-            Text("Test Chrome gate", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Test Chrome gate", color = MaterialTheme.colorScheme.onSurface)
         }
     }
 }
@@ -109,31 +112,35 @@ fun DashboardScreen(
 private fun UsageReportCard(snapshot: StateSnapshot) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.13f)),
+        border = BorderStroke(1.dp, EditorialTheme.colors.hairlineSoft),
     ) {
         Column(
             Modifier.padding(horizontal = 22.dp, vertical = 22.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("USAGE REPORT", style = MaterialTheme.typography.labelSmall, letterSpacing = 1.5.sp)
+            Text(
+                "USAGE REPORT",
+                style = MaterialTheme.typography.labelSmall,
+                color = EditorialTheme.colors.ink3,
+            )
             Text("Today", style = MaterialTheme.typography.titleMedium)
             ReportRow(
                 "Protection on",
                 snapshot.todayUsageReport.protectedUsageMs,
-                MaterialTheme.colorScheme.primary,
+                EditorialTheme.colors.go,
             )
             ReportRow(
                 "Protection off",
                 snapshot.todayUsageReport.offUsageMs,
-                MaterialTheme.colorScheme.error,
+                EditorialTheme.colors.low,
             )
             val history = snapshot.usageReports.asReversed().dropWhile {
                 it.localDayKey == snapshot.todayUsageReport.localDayKey
             }
             if (history.isNotEmpty()) {
-                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+                HorizontalDivider(color = EditorialTheme.colors.hairlineSoft)
                 Text("Last 30 days", style = MaterialTheme.typography.titleSmall)
                 history.forEach { report ->
                     Row(
@@ -173,15 +180,15 @@ private fun ReportRow(label: String, durationMs: Long, color: androidx.compose.u
 
 @Composable
 private fun StatusLine(snapshot: StateSnapshot) {
-    val hairline = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
+    val hairline = EditorialTheme.colors.hairline
     val (statusText, statusColor) = when {
         snapshot.enforcementHealth == ProtectionHealth.ENFORCEMENT_OFF ->
-            "Enforcement off" to MaterialTheme.colorScheme.onSurfaceVariant
+            "Enforcement off" to EditorialTheme.colors.ink3
         snapshot.enforcementHealth in setOf(
             ProtectionHealth.READY,
             ProtectionHealth.READY_LIMITED_RECOVERY,
-        ) -> "Chrome protected" to MaterialTheme.colorScheme.primary
-        else -> "Needs attention" to MaterialTheme.colorScheme.error
+        ) -> "Chrome protected" to EditorialTheme.colors.go
+        else -> "Needs attention" to EditorialTheme.colors.low
     }
     val detail = buildString {
         append(if (snapshot.settings.delayEnabled) "Wait on" else "No wait")
@@ -210,7 +217,7 @@ private fun StatusLine(snapshot: StateSnapshot) {
             Text(
                 "Session: ${formatLongTime(it.expiresAtWallMs - snapshot.wallNowMs)} left",
                 modifier = Modifier.padding(bottom = 13.dp),
-                style = MaterialTheme.typography.bodySmall,
+                style = SerifNote,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -222,9 +229,9 @@ private fun StatusLine(snapshot: StateSnapshot) {
 private fun HeroBudgetCard(snapshot: StateSnapshot) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.13f)),
+        border = BorderStroke(1.dp, EditorialTheme.colors.hairlineSoft),
     ) {
         Column(Modifier.padding(horizontal = 22.dp, vertical = 24.dp)) {
             val enabled = snapshot.budgetSnapshots.filter { it.enabled }
@@ -241,14 +248,13 @@ private fun HeroBudgetCard(snapshot: StateSnapshot) {
             Text(
                 heroEyebrow(hero.period),
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 1.5.sp,
+                color = EditorialTheme.colors.ink3,
             )
             Spacer(Modifier.height(6.dp))
             Text(
                 if (hero.exhausted) "0m" else formatCompactTime(remaining),
                 style = MaterialTheme.typography.displayLarge,
-                color = if (hero.exhausted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                color = if (hero.exhausted) EditorialTheme.colors.low else MaterialTheme.colorScheme.onSurface,
             )
             Spacer(Modifier.height(2.dp))
             Text(
@@ -268,17 +274,17 @@ private fun HeroBudgetCard(snapshot: StateSnapshot) {
 
 @Composable
 private fun HeroTrack(budget: BudgetSnapshot) {
-    val color = if (budget.exhausted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+    val color = if (budget.exhausted) EditorialTheme.colors.low else EditorialTheme.colors.go
     Box(
         Modifier
             .fillMaxWidth()
-            .height(7.dp)
-            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(100)),
+            .height(4.dp)
+            .background(EditorialTheme.colors.hairlineSoft, RoundedCornerShape(100)),
     ) {
         Box(
             Modifier
                 .fillMaxWidth((budget.percentage / 100f).coerceIn(0f, 1f))
-                .height(7.dp)
+                .height(4.dp)
                 .background(color, RoundedCornerShape(100)),
         )
     }

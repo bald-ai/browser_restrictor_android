@@ -16,6 +16,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.michalkrsik.internetrestrictor.domain.ProtectionHealth
+import com.michalkrsik.internetrestrictor.ui.theme.EditorialTheme
+import com.michalkrsik.internetrestrictor.ui.theme.PillShape
 
 data class HealthCopy(
     val title: String,
@@ -107,10 +109,10 @@ fun HealthCard(
     modifier: Modifier = Modifier,
 ) {
     val copy = healthCopy(health, usageAccessGranted)
-    val accent = if (copy.positive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+    val accent = if (copy.positive) EditorialTheme.colors.go else EditorialTheme.colors.low
     Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
+        shape = RoundedCornerShape(16.dp),
         color = accent.copy(alpha = 0.10f),
         border = BorderStroke(1.dp, accent.copy(alpha = 0.28f)),
     ) {
@@ -125,7 +127,7 @@ fun HealthCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             copy.action?.let { label ->
-                Button(onClick = onAction, shape = RoundedCornerShape(14.dp)) { Text(label) }
+                Button(onClick = onAction, shape = PillShape) { Text(label) }
             }
         }
     }
