@@ -1,6 +1,5 @@
 <resources>
     <string name="app_name">Internet Restrictor</string>
     <string name="accessibility_service_label">Protect Chrome</string>
-    <string name="accessibility_service_description">Creates a deliberate pause before Chrome and measures active Chrome time. It does not read URLs, webpages, text, typing, or screenshots.</string>
+    <string name="accessibility_service_description">Detects Chrome, shows the gate, and counts active time. It never reads pages, URLs, typing, or screenshots.</string>
 </resources>
-

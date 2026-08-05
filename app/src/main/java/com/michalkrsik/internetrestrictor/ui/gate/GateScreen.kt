@@ -215,7 +215,7 @@ private fun PausedControls(
             }
         }
         Text(
-            "Today's cost: $cost sec per 10 min unlock. This includes a ${WaitCalculator.formatWait(waitMs)} wait.",
+            "Today: $cost sec per 10 min. This session waits ${WaitCalculator.formatWait(waitMs)}.",
             style = MaterialTheme.typography.bodySmall,
             color = EditorialTheme.colors.ink3,
             textAlign = TextAlign.Center,
@@ -227,7 +227,7 @@ private fun PausedControls(
             modifier = Modifier.fillMaxWidth().height(52.dp),
             shape = PillShape,
         ) {
-            Text("Begin $selectedMinutes minute session", style = MaterialTheme.typography.labelLarge)
+            Text("Start $selectedMinutes min", style = MaterialTheme.typography.labelLarge)
         }
         PushupButton(actionInFlight, onPushupChallenge)
         SkipButton(snapshot, actionInFlight, onSkip)
@@ -280,7 +280,7 @@ private fun WaitingControls(
             )
         }
         Text(
-            "Keep this pause screen focused to continue.",
+            "Stay on this screen to keep counting.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -351,13 +351,13 @@ private fun SkipButton(snapshot: StateSnapshot, actionInFlight: Boolean, onClick
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                "Use emergency skip · ${snapshot.skipSnapshot.remaining} left today",
+                "Emergency skip · ${snapshot.skipSnapshot.remaining} left today",
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = EditorialTheme.colors.accent,
             )
             Text(
-                "Opens Chrome for $label",
+                "Open Chrome for $label",
                 style = MaterialTheme.typography.bodySmall,
                 color = EditorialTheme.colors.ink3,
             )
@@ -449,17 +449,17 @@ private fun eyebrow(mode: GateMode): String = when (mode) {
 
 private fun headline(mode: GateMode): String = when (mode) {
     GateMode.PAUSED -> "Pause before Chrome."
-    GateMode.WAITING -> "Hang on a moment."
+    GateMode.WAITING -> "Wait here."
     GateMode.OUT_OF_TIME, GateMode.OUT_OF_TIME_LATCHED -> "Chrome is out of time."
     else -> "Chrome"
 }
 
 private fun supportingCopy(snapshot: StateSnapshot): String = when (snapshot.canonicalMode) {
-    GateMode.PAUSED -> "Choose how long you need."
+    GateMode.PAUSED -> "Choose a session."
     GateMode.WAITING -> {
         val minutes = (snapshot.waitSnapshot?.selectedDurationMs ?: 0) / MINUTE_MS
-        "Your $minutes min session is opening soon."
+        "Your $minutes min session starts when the timer ends."
     }
-    GateMode.OUT_OF_TIME, GateMode.OUT_OF_TIME_LATCHED -> "Budget used. Try again after reset."
+    GateMode.OUT_OF_TIME, GateMode.OUT_OF_TIME_LATCHED -> "Try again after the limit resets."
     else -> ""
 }

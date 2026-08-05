@@ -103,7 +103,7 @@ fun SettingsScreen(
         SettingsCard("Appearance") {
             ToggleRow(
                 title = "Dark theme",
-                supporting = "The app starts in dark theme by default.",
+                supporting = "Dark by default.",
                 checked = snapshot.settings.theme == ThemePreference.DARK,
                 onCheckedChange = {
                     onThemeChange(if (it) ThemePreference.DARK else ThemePreference.LIGHT)
@@ -113,7 +113,7 @@ fun SettingsScreen(
 
         SettingsCard("Reset usage") {
             Text(
-                "Clears all usage, the current session, waiting progress, daily skips, and today's unlock-cost count. Rules and theme stay.",
+                "Clears usage, the current session, wait, skips, and today's wait cost. Keeps rules and theme.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -121,7 +121,7 @@ fun SettingsScreen(
                 Text("Reset usage")
             }
             Text(
-                "Your 30-day report is kept when restriction counters are reset.",
+                "Keeps your 30-day report.",
                 style = SerifNote,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -132,7 +132,7 @@ fun SettingsScreen(
 
         SettingsCard("Developer controls") {
             Text(
-                "Cancels only the currently granted Chrome session. Usage totals, budgets, skips, reports, and settings stay unchanged.",
+                "Ends only the current Chrome session. Everything else stays.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -147,7 +147,7 @@ fun SettingsScreen(
         SettingsCard("Enforcement") {
             Text(
                 if (snapshot.settings.enforcementEnabled) "Chrome protection is on." else
-                    "Protection is off. Active Chrome use is still added to your report.",
+                    "Protection is off. Chrome use still appears in your report.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -164,7 +164,7 @@ fun SettingsScreen(
                     }
                 }
                 TextButton(onClick = { onPauseProtection(null) }) {
-                    Text("Keep off until the daily auto-enable", color = EditorialTheme.colors.accent)
+                    Text("Keep off until noon", color = EditorialTheme.colors.accent)
                 }
             } else {
                 Button(
@@ -174,7 +174,7 @@ fun SettingsScreen(
                 ) { Text("Resume protection") }
             }
             Text(
-                "Protection automatically turns on every day at 12:00 noon in your current timezone.",
+                "Turns on again daily at noon in your current timezone.",
                 style = SerifNote,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -187,7 +187,7 @@ fun SettingsScreen(
             HorizontalDivider(color = EditorialTheme.colors.hairlineSoft)
             BudgetInput("Monthly", monthlyEnabled, { monthlyEnabled = it }, monthlyMinutes, { monthlyMinutes = it })
             Text(
-                "Disabled periods still accumulate usage, so re-enabling a limit respects the current period's total.",
+                "Usage keeps counting while a limit is off.",
                 style = SerifNote,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -196,7 +196,7 @@ fun SettingsScreen(
         SettingsCard("Chrome access") {
             ToggleRow(
                 title = "Require wait before Chrome access",
-                supporting = "When off, Chrome opens directly but budgets and active-use accounting remain active.",
+                supporting = "When off, Chrome opens directly. Limits and tracking stay active.",
                 checked = delayEnabled,
                 onCheckedChange = { delayEnabled = it },
             )
@@ -205,7 +205,7 @@ fun SettingsScreen(
         SettingsCard("Emergency skips") {
             ToggleRow(
                 title = "Enable skips",
-                supporting = "Skips open Chrome for 30 minutes, including after a budget is exhausted.",
+                supporting = "Each skip opens Chrome for 30 minutes, even after a limit is used.",
                 checked = skipsEnabled,
                 onCheckedChange = { skipsEnabled = it },
             )
@@ -261,7 +261,7 @@ fun SettingsScreen(
             containerColor = MaterialTheme.colorScheme.surface,
             title = { Text("Reset all usage?") },
             text = {
-                Text("This also removes the current Chrome session and any waiting progress. Your limits, delay setting, skip limit, and theme remain.")
+                Text("Also ends the current session and clears any wait. Limits, skip settings, delay, and theme stay.")
             },
             confirmButton = {
                 Button(onClick = {
@@ -282,7 +282,7 @@ fun SettingsScreen(
             onDismissRequest = { showClearReportsDialog = false },
             containerColor = MaterialTheme.colorScheme.surface,
             title = { Text("Clear report history?") },
-            text = { Text("This removes the protected/off usage history. Your limits and current restriction counters stay.") },
+            text = { Text("Deletes protected/off usage history. Limits and current counters stay.") },
             confirmButton = {
                 Button(onClick = {
                     showClearReportsDialog = false
@@ -406,7 +406,7 @@ private fun BudgetInput(
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         ToggleRow(
             title = "$title budget",
-            supporting = if (enabled) "Blocks Chrome when this period reaches its limit." else "Does not block; usage still accumulates.",
+            supporting = if (enabled) "Blocks Chrome at this limit." else "Does not block. Usage still counts.",
             checked = enabled,
             onCheckedChange = onEnabledChange,
         )

@@ -32,70 +32,70 @@ fun healthCopy(
 ): HealthCopy = when (health) {
     ProtectionHealth.READY -> HealthCopy(
         "Protection ready",
-        "Chrome is protected and recovery access is available.",
+        "Chrome is protected. Recovery access is available.",
         null,
         true,
     )
     ProtectionHealth.READY_LIMITED_RECOVERY -> if (usageAccessGranted) {
         HealthCopy(
             "Protection ready",
-            "Usage access is enabled and the real-time Chrome gate is working. Recovery after a process interruption remains limited in this build.",
+            "The Chrome gate is active. Recovery after interruptions is limited.",
             null,
             true,
         )
     } else {
         HealthCopy(
-            "Protected with limited recovery",
-            "The real-time Chrome gate is working. A process interruption may leave a small usage gap uncounted.",
+            "Limited recovery",
+            "Chrome is protected, but interruptions may leave small gaps.",
             "Improve recovery",
             true,
         )
     }
     ProtectionHealth.ENFORCEMENT_OFF -> HealthCopy(
-        "Enforcement is off",
-        "Chrome is not gated, but active Chrome use is still counted in your report.",
+        "Protection is off",
+        "Chrome opens normally. Active use still appears in your report.",
         "Turn on",
         false,
     )
     ProtectionHealth.ACCESSIBILITY_REQUIRED -> HealthCopy(
-        "Accessibility access required",
-        "Internet Restrictor cannot protect Chrome until its service is enabled in Android Settings.",
+        "Accessibility required",
+        "Enable the service to protect Chrome.",
         "Open Accessibility",
         false,
     )
     ProtectionHealth.USAGE_ACCESS_RECOMMENDED -> HealthCopy(
-        "Usage access recommended",
-        "Real-time protection works, but recovery after an interruption is limited.",
+        "Recovery is limited",
+        "Grant Usage Access to reduce gaps after interruptions.",
         "Open Usage Access",
         false,
     )
     ProtectionHealth.SERVICE_DISCONNECTED -> HealthCopy(
-        "Protection service disconnected",
-        "Android shows the service as enabled, but it is not running. Reopen Accessibility settings to repair it.",
+        "Service disconnected",
+        "Reopen Accessibility settings to reconnect it.",
         "Repair service",
         false,
     )
     ProtectionHealth.CHROME_NOT_FOUND -> HealthCopy(
-        "Stable Chrome not found",
-        "Version 1 protects only the stable Google Chrome package.",
+        "Chrome not found",
+        "This version protects stable Chrome only.",
         "Install or enable Chrome",
         false,
     )
     ProtectionHealth.STORAGE_ERROR -> HealthCopy(
-        "Stored state needs repair",
-        "Usage was not reset. Protection is visibly open until the local state can be trusted again.",
+        "Storage problem",
+        "Protection is off until local state is repaired.",
         "Open app info",
         false,
     )
     ProtectionHealth.RESTRICTED_SETTINGS_BLOCKED -> HealthCopy(
         "Restricted setting blocked",
-        "Open app info, use the three-dot menu, choose Allow restricted settings, then return to Accessibility.",
+        "In App info, allow restricted settings, then enable Accessibility.",
         "Open app info",
         false,
     )
     ProtectionHealth.ADVANCED_PROTECTION_BLOCKED -> HealthCopy(
-        "Advanced Protection blocks setup",
-        "This device mode does not allow the non-accessibility-tool service, so Chrome cannot be protected here.",
+        "Advanced Protection blocked setup",
+        "This device mode does not allow the required service.",
         "Open Android help",
         false,
     )

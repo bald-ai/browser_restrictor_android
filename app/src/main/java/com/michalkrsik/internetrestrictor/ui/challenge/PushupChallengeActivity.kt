@@ -104,7 +104,7 @@ class PushupChallengeActivity : ComponentActivity() {
             startCamera()
         } else {
             phase = ChallengePhase.ERROR
-            status = "Camera permission is required for the push-up unlock."
+            status = "Camera permission is required."
         }
     }
 
@@ -120,7 +120,7 @@ class PushupChallengeActivity : ComponentActivity() {
 
     private val recordingTimeout = Runnable {
         if (phase == ChallengePhase.RECORDING) {
-            stopRecording("Maximum recording time reached. Checking video…")
+            stopRecording("Time limit reached. Checking video…")
         }
     }
 
@@ -280,8 +280,8 @@ class PushupChallengeActivity : ComponentActivity() {
     @Composable
     private fun InstructionText() {
         Text(
-            text = "Frame as much of your body as you can. Imperfect framing and form are okay. " +
-                "Tap Start, do 5 push-ups, then tap Finish.",
+            text = "Show your upper body. Form and framing can be imperfect. " +
+                "Tap Start, do 5 push-ups, then Finish.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.fillMaxWidth(),
@@ -307,7 +307,7 @@ class PushupChallengeActivity : ComponentActivity() {
     private fun ChallengeStatus() {
         Text(
             text = if (phase == ChallengePhase.RECORDING) {
-                "Recording ${elapsedSeconds}s · finish when you are done"
+                "Recording ${elapsedSeconds}s · finish when done"
             } else {
                 status
             },

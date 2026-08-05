@@ -47,7 +47,7 @@ class GateScreenTest {
         composeRule.onNodeWithText("10 min").assertIsDisplayed()
         composeRule.onNodeWithText("30 min").assertIsDisplayed()
         composeRule.onNodeWithText("60 min").assertIsDisplayed()
-        composeRule.onNodeWithText("Begin 10 minute session").assertIsDisplayed()
+        composeRule.onNodeWithText("Start 10 min").assertIsDisplayed()
         composeRule.onNodeWithText("Earn 30 minutes").assertIsDisplayed()
         composeRule.onNodeWithText("Complete 5 push-ups · no budget used").assertIsDisplayed()
         composeRule.onNodeWithText("←  Leave Chrome").assertIsDisplayed()

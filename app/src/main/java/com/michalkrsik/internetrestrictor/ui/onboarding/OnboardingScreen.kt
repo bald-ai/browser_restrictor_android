@@ -101,17 +101,17 @@ private fun WelcomeStep() {
         PauseEmblem()
         Text(editorialTitle("Pause before Chrome."), style = MaterialTheme.typography.headlineLarge)
         Text(
-            "Internet Restrictor adds a deliberate pause before Chrome, then measures only active Chrome use against one daily, weekly, and monthly time pool.",
+            "Choose a session, wait briefly, and keep Chrome within your limits.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         InfoCard(
-            "Local by design",
-            "Settings and usage stay on this device. There is no account, backend, advertising ID, or analytics service.",
+            "Private by default",
+            "Your data stays on this device. No account, ads, or analytics.",
         )
         InfoCard(
-            "A gentle boundary",
-            "You remain in control. Disabling Accessibility, using another browser, or turning enforcement off bypasses the app by design.",
+            "You stay in control",
+            "Turn protection off, disable Accessibility, or use another browser anytime.",
         )
     }
 }
@@ -119,17 +119,17 @@ private fun WelcomeStep() {
 @Composable
 private fun DefaultsStep() {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(editorialTitle("Your starting rules."), style = MaterialTheme.typography.headlineLarge)
+        Text(editorialTitle("Start with simple limits."), style = MaterialTheme.typography.headlineLarge)
         Text(
-            "You can change these after setup.",
+            "Change them anytime.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         InfoCard("Daily budget", "60 minutes")
-        InfoCard("Weekly budget", "600 minutes")
-        InfoCard("Monthly budget", "2,400 minutes")
-        InfoCard("Sessions", "Choose 10, 30, or 60 minutes. The first wait costs 5 seconds per 10 minutes requested.")
-        InfoCard("Emergency skips", "Three wait skips per local day. A skip never bypasses an exhausted budget.")
+        InfoCard("Weekly budget", "10 hours")
+        InfoCard("Monthly budget", "40 hours")
+        InfoCard("Sessions", "Choose 10, 30, or 60 minutes. First wait: 5 seconds per 10 minutes.")
+        InfoCard("Emergency skips", "Three per day. Each opens Chrome for 30 minutes, even after a limit is used.")
     }
 }
 
@@ -140,9 +140,9 @@ private fun AccessibilityStep(
     onOpenAppInfo: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(editorialTitle("Allow the Chrome gate."), style = MaterialTheme.typography.headlineLarge)
+        Text(editorialTitle("Enable the Chrome gate."), style = MaterialTheme.typography.headlineLarge)
         Text(
-            "Accessibility access is required for the real-time gate. Android asks you to enable it manually.",
+            "Accessibility detects Chrome, shows the gate, and counts active use.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -154,15 +154,15 @@ private fun AccessibilityStep(
         ) { Text(if (enabled) "Accessibility enabled ✓" else "Open Accessibility settings") }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             InfoCard(
-                "If Android blocks the switch",
-                "For a sideloaded build, open App info, tap the three-dot menu, choose Allow restricted settings, then return to Accessibility.",
+                "Switch blocked?",
+                "In App info, choose Allow restricted settings, then return here.",
                 actionLabel = "Open app info",
                 onAction = onOpenAppInfo,
             )
         }
         if (!enabled) {
             Text(
-                "Setup cannot claim Chrome is protected until Android reports this access as enabled.",
+                "Continue after Android confirms Accessibility is enabled.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
@@ -179,14 +179,13 @@ private fun DisclosureCard() {
         border = BorderStroke(1.dp, accent.copy(alpha = 0.28f)),
     ) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("What the service does", style = MaterialTheme.typography.titleMedium)
+            Text("Why it is needed", style = MaterialTheme.typography.titleMedium)
             listOf(
-                "Observes which app is currently in front.",
-                "Only needs to know whether stable Chrome is active.",
-                "Draws the pause screen over Chrome.",
-                "Measures active, focused Chrome time.",
-                "Does not inspect URLs, webpages, text, typing, or screenshots.",
-                "Keeps usage and settings on this device.",
+                "Detects when stable Chrome is in front.",
+                "Shows the pause screen.",
+                "Counts active Chrome time.",
+                "Never reads pages, URLs, typing, or screenshots.",
+                "Keeps data on this device.",
             ).forEach { Text("•  $it", style = MaterialTheme.typography.bodyMedium) }
         }
     }
@@ -197,13 +196,13 @@ private fun UsageStep(granted: Boolean, onOpenUsageAccess: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text(editorialTitle("Improve recovery."), style = MaterialTheme.typography.headlineLarge)
         Text(
-            "Usage Access can help confirm recent Chrome boundaries after a brief process interruption. It is not used to trigger the gate.",
+            "Usage Access can reduce tracking gaps after an interruption. It never controls the gate.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         InfoCard(
-            "Real-time protection stays honest",
-            "The Accessibility service remains the source for focus and overlays. Ambiguous gaps are left uncounted rather than guessed.",
+            "Accessibility stays in charge",
+            "Uncertain time stays uncounted.",
         )
         Button(
             onClick = onOpenUsageAccess,
@@ -212,9 +211,9 @@ private fun UsageStep(granted: Boolean, onOpenUsageAccess: () -> Unit) {
         ) { Text(if (granted) "Usage Access granted ✓" else "Open Usage Access settings") }
         Text(
             if (granted) {
-                "Permission granted. This personal MVP still reports limited recovery until the store-ready reconciliation suite is validated."
+                "Granted. Recovery after interruptions is still limited in this build."
             } else {
-                "You may continue without it. The dashboard will clearly say Protected with limited recovery."
+                "Optional. Without it, recovery after interruptions is limited."
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -225,12 +224,12 @@ private fun UsageStep(granted: Boolean, onOpenUsageAccess: () -> Unit) {
 @Composable
 private fun ReadyStep(snapshot: StateSnapshot, onTestChrome: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(editorialTitle("Test the real gate."), style = MaterialTheme.typography.headlineLarge)
+        Text(editorialTitle("Test the gate."), style = MaterialTheme.typography.headlineLarge)
         Text(
             if (snapshot.serviceConnected) {
-                "The protection service is connected. Opening Chrome should show the pause screen over the existing Chrome surface."
+                "Open Chrome. The pause screen should appear over it."
             } else {
-                "Accessibility is enabled, but Android has not reported the service connected yet. Open Chrome to prompt a live check."
+                "The service is enabled but not connected yet. Open Chrome to check again."
             },
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -243,7 +242,7 @@ private fun ReadyStep(snapshot: StateSnapshot, onTestChrome: () -> Unit) {
         ) { Text("Test Chrome gate") }
         InfoCard(
             "What to expect",
-            "Chrome may draw a brief frame before Android sends the foreground event. The pause screen should then block Chrome touches without changing the current tab, Incognito state, or destination.",
+            "Chrome may appear briefly before the gate covers it. Your tab stays unchanged.",
         )
     }
 }
