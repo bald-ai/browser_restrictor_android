@@ -49,7 +49,7 @@ import com.michalkrsik.internetrestrictor.ui.theme.editorialTitle
 fun DashboardScreen(
     snapshot: StateSnapshot,
     onOpenSettings: () -> Unit,
-    onTestChrome: () -> Unit,
+    onTestBrowser: () -> Unit,
     onHealthAction: () -> Unit,
 ) {
     Column(
@@ -97,13 +97,13 @@ fun DashboardScreen(
         }
         Spacer(Modifier.height(10.dp))
         OutlinedButton(
-            onClick = onTestChrome,
+            onClick = onTestBrowser,
             modifier = Modifier.fillMaxWidth().height(52.dp),
             shape = PillShape,
             border = BorderStroke(1.dp, EditorialTheme.colors.hairline),
-            enabled = snapshot.chromeInstalled,
+            enabled = snapshot.supportedBrowserInstalled,
         ) {
-            Text("Test Chrome gate", color = MaterialTheme.colorScheme.onSurface)
+            Text("Test browser gate", color = MaterialTheme.colorScheme.onSurface)
         }
     }
 }
@@ -187,7 +187,7 @@ private fun StatusLine(snapshot: StateSnapshot) {
         snapshot.enforcementHealth in setOf(
             ProtectionHealth.READY,
             ProtectionHealth.READY_LIMITED_RECOVERY,
-        ) -> "Chrome protected" to EditorialTheme.colors.go
+        ) -> "Browsers protected" to EditorialTheme.colors.go
         else -> "Needs attention" to EditorialTheme.colors.low
     }
     val detail = buildString {
@@ -237,7 +237,7 @@ private fun HeroBudgetCard(snapshot: StateSnapshot) {
             val enabled = snapshot.budgetSnapshots.filter { it.enabled }
             if (enabled.isEmpty()) {
                 Text(
-                    "No budget currently blocks Chrome. Today's usage is still counted.",
+                    "No budget currently blocks supported browsers. Today's usage is still counted.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

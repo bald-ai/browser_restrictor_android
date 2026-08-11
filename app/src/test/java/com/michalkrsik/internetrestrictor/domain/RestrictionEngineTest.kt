@@ -18,8 +18,8 @@ class RestrictionEngineTest {
     }
     private val engine = RestrictionEngine(ids)
     private val ready = RuntimeSignals(
-        foregroundClass = ForegroundClass.CHROME,
-        chromeActive = true,
+        foregroundClass = ForegroundClass.BROWSER,
+        browserActive = true,
         gateFocused = true,
         screenInteractive = true,
         keyguardUnlocked = true,
@@ -192,7 +192,7 @@ class RestrictionEngineTest {
     }
 
     @Test
-    fun pushupRoundAddsBudgetButDoesNotUnlockChrome() {
+    fun pushupRoundAddsBudgetButDoesNotUnlockBrowser() {
         val state = initial().copy(
             dailyUsage = initial().dailyUsage.copy(usedMs = 30 * MINUTE_MS),
         )
@@ -215,7 +215,7 @@ class RestrictionEngineTest {
     }
 
     @Test
-    fun pushupRoundPreservesOrdinaryWaitInsteadOfOpeningChrome() {
+    fun pushupRoundPreservesOrdinaryWaitInsteadOfOpeningBrowser() {
         val state = initial()
         val waiting = applied(
             engine.startWait(state, ready, state.stateRevision, 30, now, zone),
@@ -415,7 +415,7 @@ class RestrictionEngineTest {
     }
 
     @Test
-    fun resumedProtectionAllowsCurrentChromeVisitUntilChromeExits() {
+    fun resumedProtectionAllowsCurrentBrowserVisitUntilBrowserExits() {
         val off = engine.setEnforcement(initial(), false, null, now, zone)
         val resumed = engine.setEnforcement(
             off,
@@ -475,9 +475,9 @@ class RestrictionEngineTest {
 
     @Test
     fun currentVisitGraceSurvivesDisconnectAndClearsAfterConfirmedExit() {
-        assertTrue(engine.retainCurrentVisitGrace(true, serviceConnected = false, chromeActive = false))
-        assertTrue(engine.retainCurrentVisitGrace(true, serviceConnected = true, chromeActive = true))
-        assertFalse(engine.retainCurrentVisitGrace(true, serviceConnected = true, chromeActive = false))
+        assertTrue(engine.retainCurrentVisitGrace(true, serviceConnected = false, browserActive = false))
+        assertTrue(engine.retainCurrentVisitGrace(true, serviceConnected = true, browserActive = true))
+        assertFalse(engine.retainCurrentVisitGrace(true, serviceConnected = true, browserActive = false))
     }
 
     @Test

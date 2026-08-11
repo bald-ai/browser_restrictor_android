@@ -94,7 +94,7 @@ class RestrictorRepository(
     suspend fun updateDeviceAccess(
         accessibilityEnabled: Boolean,
         usageAccessGranted: Boolean,
-        chromeInstalled: Boolean,
+        supportedBrowserInstalled: Boolean,
         advancedProtectionEnabled: Boolean,
     ) {
         awaitLoaded()
@@ -108,7 +108,7 @@ class RestrictorRepository(
             runtime = runtime.copy(
                 accessibilityEnabled = accessibilityEnabled,
                 usageAccessGranted = usageAccessGranted,
-                chromeInstalled = chromeInstalled,
+                supportedBrowserInstalled = supportedBrowserInstalled,
                 advancedProtectionEnabled = advancedProtectionEnabled,
             )
             manageGateTokensLocked()
@@ -119,7 +119,7 @@ class RestrictorRepository(
 
     suspend fun updateServiceRuntime(
         foregroundClass: ForegroundClass = runtime.foregroundClass,
-        chromeActive: Boolean = runtime.chromeActive,
+        browserActive: Boolean = runtime.browserActive,
         gateFocused: Boolean = runtime.gateFocused,
         screenInteractive: Boolean = runtime.screenInteractive,
         keyguardUnlocked: Boolean = runtime.keyguardUnlocked,
@@ -136,13 +136,13 @@ class RestrictorRepository(
             val retainedGrace = engine.retainCurrentVisitGrace(
                 currentGrace = persistedState.currentVisitGraceActive,
                 serviceConnected = serviceConnected,
-                chromeActive = chromeActive,
+                browserActive = browserActive,
             )
             val graceChanged = retainedGrace != persistedState.currentVisitGraceActive
             val waitWasPending = persistedState.pendingWait != null
             val updatedState = abortPendingWaitAfterServiceUpdate(
                 state = persistedState.copy(currentVisitGraceActive = retainedGrace),
-                chromeActive = chromeActive,
+                browserActive = browserActive,
             )
             val waitAborted = waitWasPending && updatedState.pendingWait == null
             if (graceChanged || waitAborted) {
@@ -150,7 +150,7 @@ class RestrictorRepository(
             }
             runtime = runtime.copy(
                 foregroundClass = foregroundClass,
-                chromeActive = chromeActive,
+                browserActive = browserActive,
                 gateFocused = gateFocused,
                 screenInteractive = screenInteractive,
                 keyguardUnlocked = keyguardUnlocked,
@@ -176,8 +176,8 @@ class RestrictorRepository(
             if (old.policyFingerprint() != runtime.policyFingerprint() || graceChanged || waitAborted) {
                 bumpRevisionLocked()
             }
-            if (waitAborted) diagnosticSink("Focused wait aborted after leaving Chrome")
-            if (old.foregroundClass != runtime.foregroundClass || old.chromeActive != runtime.chromeActive) {
+            if (waitAborted) diagnosticSink("Focused wait aborted after leaving the browser")
+            if (old.foregroundClass != runtime.foregroundClass || old.browserActive != runtime.browserActive) {
                 diagnosticSink("Foreground transition: ${runtime.foregroundClass.name}")
             }
             publishLocked()
@@ -247,7 +247,7 @@ class RestrictorRepository(
                 runtime.outOfTimeLatchToken != null &&
                 runtime.outOfTimeLatchToken == expectedLatchToken
             if (!valid) {
-                lastError = "Chrome state changed. The latest gate is still active."
+                lastError = "Browser state changed. The latest gate is still active."
                 publishLocked()
                 return@withLock false
             }
@@ -280,9 +280,9 @@ class RestrictorRepository(
         enabled: Boolean,
         allowCurrentVisit: Boolean = false,
     ): Boolean = immediateMutation(clearOutOfTimeLatch = true) {
-        val currentVisitWasOpen = runtime.chromeActive ||
+        val currentVisitWasOpen = runtime.browserActive ||
             (!runtime.serviceConnected &&
-                it.runtimeMetadata.lastKnownForegroundClass == ForegroundClass.CHROME)
+                it.runtimeMetadata.lastKnownForegroundClass == ForegroundClass.BROWSER)
         engine.setEnforcement(
             it,
             enabled = enabled,
@@ -582,9 +582,9 @@ class RestrictorRepository(
     }
 
     private suspend fun reconcileProtectionDueLocked(wallTimeMs: Long) {
-        val currentVisitWasOpen = runtime.chromeActive ||
+        val currentVisitWasOpen = runtime.browserActive ||
             (!runtime.serviceConnected &&
-                persistedState.runtimeMetadata.lastKnownForegroundClass == ForegroundClass.CHROME)
+                persistedState.runtimeMetadata.lastKnownForegroundClass == ForegroundClass.BROWSER)
         val next = engine.reconcileProtectionSchedule(
             input = persistedState,
             nowWallMs = wallTimeMs,
@@ -624,7 +624,7 @@ class RestrictorRepository(
                 engine.budgetSnapshots(next).any { it.exhausted }
             persistedState = next
             diagnosticSink("${if (wasOff) "Off-mode report" else "Usage"} interval committed: ${end - start}ms")
-            if (becameExhausted) diagnosticSink("Chrome budget exhausted")
+            if (becameExhausted) diagnosticSink("Browser budget exhausted")
             if (reminderFired) offUsageNotificationSink()
         }
     }
@@ -650,7 +650,7 @@ class RestrictorRepository(
 
     private fun manageGateTokensLocked() {
         val underlying = engine.underlyingMode(persistedState, runtime, timeSource.wallTimeMs())
-        if (!runtime.chromeActive) {
+        if (!runtime.browserActive) {
             runtime = runtime.copy(
                 gateSessionId = null,
                 outOfTimeLatchToken = null,
@@ -712,7 +712,7 @@ class RestrictorRepository(
 
     private fun RuntimeSignals.policyFingerprint() = listOf(
         foregroundClass,
-        chromeActive,
+        browserActive,
         gateFocused,
         screenInteractive,
         keyguardUnlocked,
@@ -728,7 +728,7 @@ class RestrictorRepository(
     private fun RuntimeSignals.healthFingerprint() = listOf(
         accessibilityEnabled,
         usageAccessGranted,
-        chromeInstalled,
+        supportedBrowserInstalled,
         advancedProtectionEnabled,
         serviceConnected,
         storageReady,
@@ -745,7 +745,7 @@ class RestrictorRepository(
             GateMode.ACCESS_GRANTED_EMERGENCY,
             GateMode.ACCESS_GRANTED_NO_DELAY,
             GateMode.ACCESS_GRANTED_CURRENT_VISIT,
-            GateMode.CHROME_BACKGROUND,
+            GateMode.BROWSER_BACKGROUND,
             GateMode.ENFORCEMENT_DISABLED,
             GateMode.SERVICE_UNAVAILABLE,
             GateMode.STORAGE_ERROR,
@@ -761,8 +761,8 @@ internal fun persistedForegroundAfterServiceUpdate(
 
 internal fun abortPendingWaitAfterServiceUpdate(
     state: PersistedState,
-    chromeActive: Boolean,
-): PersistedState = if (!chromeActive && state.pendingWait != null) {
+    browserActive: Boolean,
+): PersistedState = if (!browserActive && state.pendingWait != null) {
     state.copy(pendingWait = null)
 } else {
     state

@@ -18,7 +18,7 @@ class SystemEventReceiver : BroadcastReceiver() {
                 container.repository.updateDeviceAccess(
                     access.accessibilityEnabled,
                     access.usageAccessGranted,
-                    access.chromeInstalled,
+                    access.supportedBrowserInstalled,
                     access.advancedProtectionEnabled,
                 )
                 container.reconcileProtectionSchedule()

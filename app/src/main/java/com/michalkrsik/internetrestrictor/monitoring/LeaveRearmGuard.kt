@@ -1,39 +1,39 @@
 package com.michalkrsik.internetrestrictor.monitoring
 
 /**
- * Keeps a completed Leave action fail-open until Chrome has genuinely been left.
+ * Keeps a completed Leave action fail-open until the browser has genuinely been left.
  *
  * This prevents the Accessibility event caused by detaching the gate from immediately
- * showing the gate again over the same Chrome window.
+ * showing the gate again over the same browser window.
  */
 class LeaveRearmGuard {
     var suppressingOverlays: Boolean = false
         private set
 
-    private var observedNonChrome = false
+    private var observedNonBrowser = false
 
     fun beginSuppression() {
         suppressingOverlays = true
-        observedNonChrome = false
+        observedNonBrowser = false
     }
 
     /**
-     * Returns true only when a later Chrome entry is allowed to re-arm overlays.
+     * Returns true only when a later browser entry is allowed to re-arm overlays.
      */
-    fun observe(chromeActive: Boolean): Boolean {
+    fun observe(browserActive: Boolean): Boolean {
         if (!suppressingOverlays) return false
-        if (!chromeActive) {
-            observedNonChrome = true
+        if (!browserActive) {
+            observedNonBrowser = true
             return false
         }
-        if (!observedNonChrome) return false
+        if (!observedNonBrowser) return false
         suppressingOverlays = false
-        observedNonChrome = false
+        observedNonBrowser = false
         return true
     }
 
     fun reset() {
         suppressingOverlays = false
-        observedNonChrome = false
+        observedNonBrowser = false
     }
 }

@@ -41,7 +41,7 @@ class GateExitStabilizerTest {
     }
 
     @Test
-    fun delayedCheckCancelsCandidateWhenChromeIsStillForeground() {
+    fun delayedCheckCancelsCandidateWhenBrowserIsStillForeground() {
         val stabilizer = GateExitStabilizer(stableForMs = 300)
 
         assertFalse(stabilizer.observe("com.example.popup", 1_000))

@@ -8,12 +8,12 @@ import android.os.Build
 import android.os.Process
 import android.provider.Settings
 import android.security.advancedprotection.AdvancedProtectionManager
-import com.michalkrsik.internetrestrictor.domain.CHROME_PACKAGE
+import com.michalkrsik.internetrestrictor.domain.SUPPORTED_BROWSER_PACKAGES
 
 data class DeviceAccessSnapshot(
     val accessibilityEnabled: Boolean,
     val usageAccessGranted: Boolean,
-    val chromeInstalled: Boolean,
+    val supportedBrowserInstalled: Boolean,
     val advancedProtectionEnabled: Boolean,
 )
 
@@ -21,7 +21,7 @@ class DeviceAccessChecker(private val context: Context) {
     fun read(): DeviceAccessSnapshot = DeviceAccessSnapshot(
         accessibilityEnabled = isAccessibilityEnabled(),
         usageAccessGranted = hasUsageAccess(),
-        chromeInstalled = isChromeInstalled(),
+        supportedBrowserInstalled = isSupportedBrowserInstalled(),
         advancedProtectionEnabled = isAdvancedProtectionEnabled(),
     )
 
@@ -46,15 +46,18 @@ class DeviceAccessChecker(private val context: Context) {
         return mode == AppOpsManager.MODE_ALLOWED
     }
 
-    fun isChromeInstalled(): Boolean = try {
+    fun isSupportedBrowserInstalled(): Boolean =
+        SUPPORTED_BROWSER_PACKAGES.any(::isPackageInstalled)
+
+    private fun isPackageInstalled(packageName: String): Boolean = try {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             context.packageManager.getApplicationInfo(
-                CHROME_PACKAGE,
+                packageName,
                 PackageManager.ApplicationInfoFlags.of(0),
             )
         } else {
             @Suppress("DEPRECATION")
-            context.packageManager.getApplicationInfo(CHROME_PACKAGE, 0)
+            context.packageManager.getApplicationInfo(packageName, 0)
         }
         true
     } catch (_: PackageManager.NameNotFoundException) {
@@ -71,4 +74,3 @@ class DeviceAccessChecker(private val context: Context) {
         }
     }
 }
-

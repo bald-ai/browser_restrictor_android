@@ -35,7 +35,7 @@ class DeviceAccessMonitor(
             container.repository.updateDeviceAccess(
                 accessibilityEnabled = access.accessibilityEnabled,
                 usageAccessGranted = access.usageAccessGranted,
-                chromeInstalled = access.chromeInstalled,
+                supportedBrowserInstalled = access.supportedBrowserInstalled,
                 advancedProtectionEnabled = access.advancedProtectionEnabled,
             )
             container.reconcileProtectionSchedule()

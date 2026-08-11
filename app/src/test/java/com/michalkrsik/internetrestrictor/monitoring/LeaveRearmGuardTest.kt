@@ -6,31 +6,31 @@ import org.junit.Test
 
 class LeaveRearmGuardTest {
     @Test
-    fun sameChromeWindowCannotImmediatelyRelockAfterLeave() {
+    fun sameBrowserWindowCannotImmediatelyRelockAfterLeave() {
         val guard = LeaveRearmGuard()
         guard.beginSuppression()
 
-        assertFalse(guard.observe(chromeActive = true))
+        assertFalse(guard.observe(browserActive = true))
         assertTrue(guard.suppressingOverlays)
     }
 
     @Test
-    fun chromeRearmsOnlyAfterConfirmedNonChromeObservation() {
+    fun browserRearmsOnlyAfterConfirmedNonBrowserObservation() {
         val guard = LeaveRearmGuard()
         guard.beginSuppression()
 
-        assertFalse(guard.observe(chromeActive = false))
-        assertTrue(guard.observe(chromeActive = true))
+        assertFalse(guard.observe(browserActive = false))
+        assertTrue(guard.observe(browserActive = true))
         assertFalse(guard.suppressingOverlays)
     }
 
     @Test
-    fun repeatedNonChromeObservationsKeepSuppressionActive() {
+    fun repeatedNonBrowserObservationsKeepSuppressionActive() {
         val guard = LeaveRearmGuard()
         guard.beginSuppression()
 
-        assertFalse(guard.observe(chromeActive = false))
-        assertFalse(guard.observe(chromeActive = false))
+        assertFalse(guard.observe(browserActive = false))
+        assertFalse(guard.observe(browserActive = false))
         assertTrue(guard.suppressingOverlays)
     }
 }

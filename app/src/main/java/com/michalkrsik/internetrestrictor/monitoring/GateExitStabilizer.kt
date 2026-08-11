@@ -1,7 +1,7 @@
 package com.michalkrsik.internetrestrictor.monitoring
 
 /**
- * Prevents a single noisy Accessibility window event from releasing the Chrome gate.
+ * Prevents a single noisy Accessibility window event from releasing the browser gate.
  *
  * A candidate must be observed twice and remain unchanged for [stableForMs]. The service
  * also performs a delayed foreground re-check so a legitimate app switch does not depend

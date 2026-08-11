@@ -87,7 +87,7 @@ class BadgeOverlayController(
         gravity = Gravity.TOP or Gravity.END
         x = 0
         y = (context.resources.displayMetrics.heightPixels * 0.29f).toInt()
-        title = "Internet Restrictor Chrome status"
+        title = "Internet Restrictor browser status"
     }
 
     private fun moveBy(deltaY: Float) {

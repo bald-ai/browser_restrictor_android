@@ -71,7 +71,7 @@ data class GateActions(
     val onEmergencySkip: () -> Unit,
     val onPushupChallenge: () -> Unit,
     val onTryAgain: () -> Unit,
-    val onLeaveChrome: () -> Unit,
+    val onLeaveBrowser: () -> Unit,
 )
 
 @Composable
@@ -90,9 +90,9 @@ fun GateScreen(snapshot: StateSnapshot, actions: GateActions) {
                 .padding(horizontal = 22.dp, vertical = 10.dp),
         ) {
             Row(modifier = Modifier.fillMaxWidth()) {
-                TextButton(onClick = actions.onLeaveChrome) {
+                TextButton(onClick = actions.onLeaveBrowser) {
                     Text(
-                        "←  Leave Chrome",
+                        "←  Leave browser",
                         style = MaterialTheme.typography.labelLarge,
                         color = EditorialTheme.colors.accent,
                     )
@@ -214,7 +214,7 @@ private fun PausedControls(
             }
         }
         Text(
-            "Every normal Chrome session starts with the same ${WaitCalculator.formatWait(waitMs)} focused wait.",
+            "Every normal browser session starts with the same ${WaitCalculator.formatWait(waitMs)} focused wait.",
             style = MaterialTheme.typography.bodySmall,
             color = EditorialTheme.colors.ink3,
             textAlign = TextAlign.Center,
@@ -356,7 +356,7 @@ private fun SkipButton(snapshot: StateSnapshot, actionInFlight: Boolean, onClick
                 color = EditorialTheme.colors.accent,
             )
             Text(
-                "Opens Chrome for $label",
+                "Opens a browser for $label",
                 style = MaterialTheme.typography.bodySmall,
                 color = EditorialTheme.colors.ink3,
             )
@@ -443,14 +443,14 @@ private fun eyebrow(mode: GateMode): String = when (mode) {
     GateMode.PAUSED -> "TAKE A MOMENT"
     GateMode.WAITING -> "ALMOST THERE"
     GateMode.OUT_OF_TIME, GateMode.OUT_OF_TIME_LATCHED -> "BUDGET USED"
-    else -> "CHROME"
+    else -> "BROWSER"
 }
 
 private fun headline(mode: GateMode): String = when (mode) {
-    GateMode.PAUSED -> "Pause before Chrome."
+    GateMode.PAUSED -> "Pause before browsing."
     GateMode.WAITING -> "Hang on a moment."
-    GateMode.OUT_OF_TIME, GateMode.OUT_OF_TIME_LATCHED -> "Chrome is out of time."
-    else -> "Chrome"
+    GateMode.OUT_OF_TIME, GateMode.OUT_OF_TIME_LATCHED -> "Browser time is used up."
+    else -> "Browser"
 }
 
 private fun supportingCopy(snapshot: StateSnapshot): String = when (snapshot.canonicalMode) {

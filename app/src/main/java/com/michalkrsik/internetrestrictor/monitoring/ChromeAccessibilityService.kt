@@ -41,7 +41,7 @@ class ChromeAccessibilityService : AccessibilityService() {
     private val timeSource by lazy { appContainer.timeSource }
     private val powerManager by lazy { getSystemService(PowerManager::class.java) }
     private val keyguardManager by lazy { getSystemService(KeyguardManager::class.java) }
-    private lateinit var foregroundMonitor: ChromeForegroundMonitor
+    private lateinit var foregroundMonitor: BrowserForegroundMonitor
     private lateinit var gateController: GateOverlayController
     private lateinit var badgeController: BadgeOverlayController
     private lateinit var overlayCoordinator: OverlayCoordinator
@@ -67,7 +67,7 @@ class ChromeAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         serviceGeneration = nextServiceGeneration.incrementAndGet()
         activeServiceGeneration.set(serviceGeneration)
-        foregroundMonitor = ChromeForegroundMonitor(this)
+        foregroundMonitor = BrowserForegroundMonitor(this)
         val windowManager = getSystemService(WindowManager::class.java)
         gateController = GateOverlayController(
             context = this,
@@ -75,7 +75,7 @@ class ChromeAccessibilityService : AccessibilityService() {
             repository = repository,
             scope = serviceScope,
             onPushupChallenge = ::openPushupChallenge,
-            onLeaveChrome = ::leaveChrome,
+            onLeaveBrowser = ::leaveBrowser,
             onFocusChanged = ::onGateFocusChanged,
             onAttachFailure = ::onOverlayAttachFailure,
         )
@@ -100,12 +100,12 @@ class ChromeAccessibilityService : AccessibilityService() {
             repository.updateDeviceAccess(
                 accessibilityEnabled = true,
                 usageAccessGranted = access.usageAccessGranted,
-                chromeInstalled = access.chromeInstalled,
+                supportedBrowserInstalled = access.supportedBrowserInstalled,
                 advancedProtectionEnabled = access.advancedProtectionEnabled,
             )
             repository.updateServiceRuntime(
                 foregroundClass = decision.foregroundClass,
-                chromeActive = decision.chromeActive,
+                browserActive = decision.browserActive,
                 gateFocused = decision.gateFocused,
                 screenInteractive = powerManager.isInteractive,
                 keyguardUnlocked = !keyguardManager.isKeyguardLocked,
@@ -120,7 +120,7 @@ class ChromeAccessibilityService : AccessibilityService() {
         val decision = foregroundMonitor.evaluate(event)
         if (::overlayCoordinator.isInitialized &&
             overlayCoordinator.isLeaving &&
-            !decision.chromeActive
+            !decision.browserActive
         ) {
             completeLeave("Home transition confirmed")
         } else {
@@ -198,19 +198,19 @@ class ChromeAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun leaveChrome() {
+    private fun leaveBrowser() {
         if (!::overlayCoordinator.isInitialized || overlayCoordinator.isLeaving) return
         overlayCoordinator.beginLeaving()
         gateExitConfirmationJob?.cancel()
         if (performGlobalAction(GLOBAL_ACTION_HOME)) {
-            eventLog.record("Leave Chrome requested; bounded Home transition started")
+            eventLog.record("Leave browser requested; bounded Home transition started")
             leaveTimeoutJob?.cancel()
             leaveTimeoutJob = serviceScope.launch {
                 delay(LEAVE_TIMEOUT_MS)
                 completeLeave("Home confirmation timed out; gate failed open")
             }
         } else {
-            eventLog.record("Leave Chrome failed: Home action was rejected")
+            eventLog.record("Leave browser failed: Home action was rejected")
             completeLeave("Home action rejected; gate failed open")
         }
     }
@@ -220,6 +220,9 @@ class ChromeAccessibilityService : AccessibilityService() {
         PushupChallengeVisibility.prepareLaunch()
         val intent = Intent(this, PushupChallengeActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            foregroundMonitor.lastBrowserPackageName?.let { packageName ->
+                putExtra(PushupChallengeActivity.EXTRA_BROWSER_PACKAGE, packageName)
+            }
         }
         try {
             // Submit the Activity launch while the user-interactive gate is still attached.
@@ -250,7 +253,7 @@ class ChromeAccessibilityService : AccessibilityService() {
         serviceScope.launch {
             repository.updateServiceRuntime(
                 foregroundClass = ForegroundClass.OTHER,
-                chromeActive = false,
+                browserActive = false,
                 gateFocused = false,
                 serviceConnected = false,
             )
@@ -265,7 +268,7 @@ class ChromeAccessibilityService : AccessibilityService() {
             if (activeServiceGeneration.compareAndSet(disconnectingGeneration, 0)) {
                 repository.updateServiceRuntime(
                     foregroundClass = ForegroundClass.OTHER,
-                    chromeActive = false,
+                    browserActive = false,
                     gateFocused = false,
                     serviceConnected = false,
                 )
@@ -308,13 +311,13 @@ class ChromeAccessibilityService : AccessibilityService() {
         serviceScope.launch {
             repository.updateServiceRuntime(
                 foregroundClass = decision.foregroundClass,
-                chromeActive = decision.chromeActive,
+                browserActive = decision.browserActive,
                 gateFocused = decision.gateFocused,
                 screenInteractive = powerManager.isInteractive,
                 keyguardUnlocked = !keyguardManager.isKeyguardLocked,
                 serviceConnected = true,
             )
-            if (leaveRearmGuard.observe(decision.chromeActive)) {
+            if (leaveRearmGuard.observe(decision.browserActive)) {
                 renderCurrentOverlayState()
             }
             afterUpdate?.invoke()
@@ -334,7 +337,7 @@ class ChromeAccessibilityService : AccessibilityService() {
         serviceScope.launch {
             repository.updateServiceRuntime(
                 foregroundClass = exited.foregroundClass,
-                chromeActive = exited.chromeActive,
+                browserActive = exited.browserActive,
                 gateFocused = exited.gateFocused,
                 screenInteractive = powerManager.isInteractive,
                 keyguardUnlocked = !keyguardManager.isKeyguardLocked,
