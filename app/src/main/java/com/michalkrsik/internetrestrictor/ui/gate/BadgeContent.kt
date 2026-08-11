@@ -78,7 +78,7 @@ fun BadgeContent(
     val opacity by animateFloatAsState(
         targetValue = if (interacting) ACTIVE_ALPHA else RESTING_ALPHA,
         animationSpec = tween(durationMillis = 500),
-        label = "Chrome badge opacity",
+        label = "Browser badge opacity",
     )
     val shape = RoundedCornerShape(18.dp)
     val horizontalSwipeThresholdPx = with(LocalDensity.current) {
@@ -269,5 +269,5 @@ private fun badgeDescription(snapshot: StateSnapshot, expanded: Boolean): String
 private fun nonSessionStatus(snapshot: StateSnapshot): String = when (snapshot.canonicalMode) {
     GateMode.ACCESS_GRANTED_CURRENT_VISIT -> "This visit"
     GateMode.ACCESS_GRANTED_NO_DELAY -> "No delay"
-    else -> "Chrome available"
+    else -> "Browser available"
 }

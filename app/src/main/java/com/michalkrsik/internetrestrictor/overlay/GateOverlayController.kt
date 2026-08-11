@@ -28,7 +28,7 @@ class GateOverlayController(
     private val repository: RestrictorRepository,
     private val scope: CoroutineScope,
     private val onPushupChallenge: () -> Unit,
-    private val onLeaveChrome: () -> Unit,
+    private val onLeaveBrowser: () -> Unit,
     private val onFocusChanged: (Boolean) -> Unit,
     private val onAttachFailure: (Throwable) -> Unit,
 ) {
@@ -44,11 +44,11 @@ class GateOverlayController(
         val composeView = ComposeView(context).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
             importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_YES
-            contentDescription = "Internet Restrictor Chrome pause screen"
+            contentDescription = "Internet Restrictor browser pause screen"
             isFocusableInTouchMode = true
             setOnKeyListener { _, keyCode, event ->
                 if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
-                    onLeaveChrome()
+                    onLeaveBrowser()
                     true
                 } else {
                     false
@@ -94,7 +94,7 @@ class GateOverlayController(
                                     )
                                 }
                             },
-                            onLeaveChrome = onLeaveChrome,
+                            onLeaveBrowser = onLeaveBrowser,
                         ),
                     )
                 }
@@ -151,7 +151,7 @@ class GateOverlayController(
         PixelFormat.OPAQUE,
     ).apply {
         gravity = Gravity.FILL
-        title = "Internet Restrictor Chrome gate"
+        title = "Internet Restrictor browser gate"
         softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
     }
 }

@@ -2,7 +2,22 @@ package com.michalkrsik.internetrestrictor.domain
 
 import java.util.UUID
 
-const val CHROME_PACKAGE = "com.android.chrome"
+data class SupportedBrowser(
+    val name: String,
+    val packageName: String,
+)
+
+val SUPPORTED_BROWSERS = listOf(
+    SupportedBrowser("Chrome", "com.android.chrome"),
+    SupportedBrowser("Firefox", "org.mozilla.firefox"),
+    SupportedBrowser("Edge", "com.microsoft.emmx"),
+    SupportedBrowser("Opera", "com.opera.browser"),
+)
+
+val SUPPORTED_BROWSER_PACKAGES = SUPPORTED_BROWSERS.mapTo(linkedSetOf()) { it.packageName }
+
+fun isSupportedBrowserPackage(packageName: String?): Boolean =
+    packageName != null && packageName in SUPPORTED_BROWSER_PACKAGES
 const val RESTRICTOR_SCHEMA_VERSION = 3
 const val MINUTE_MS = 60_000L
 const val HOUR_MS = 60L * MINUTE_MS
@@ -22,12 +37,12 @@ enum class BudgetPeriod { DAILY }
 
 enum class UnlockSource { NORMAL, EMERGENCY }
 
-enum class ForegroundClass { CHROME, RESTRICTOR, OTHER }
+enum class ForegroundClass { BROWSER, RESTRICTOR, OTHER }
 
 enum class GateMode {
     SERVICE_UNAVAILABLE,
     ENFORCEMENT_DISABLED,
-    CHROME_BACKGROUND,
+    BROWSER_BACKGROUND,
     PAUSED,
     WAITING,
     ACCESS_GRANTED_NORMAL,
@@ -46,7 +61,7 @@ enum class ProtectionHealth {
     ACCESSIBILITY_REQUIRED,
     USAGE_ACCESS_RECOMMENDED,
     SERVICE_DISCONNECTED,
-    CHROME_NOT_FOUND,
+    BROWSERS_NOT_FOUND,
     STORAGE_ERROR,
     RESTRICTED_SETTINGS_BLOCKED,
     ADVANCED_PROTECTION_BLOCKED,
@@ -127,7 +142,7 @@ data class PersistedState(
 
 data class RuntimeSignals(
     val foregroundClass: ForegroundClass = ForegroundClass.OTHER,
-    val chromeActive: Boolean = false,
+    val browserActive: Boolean = false,
     val gateFocused: Boolean = false,
     val screenInteractive: Boolean = true,
     val keyguardUnlocked: Boolean = true,
@@ -135,7 +150,7 @@ data class RuntimeSignals(
     val accessibilityEnabled: Boolean = false,
     val usageAccessGranted: Boolean = false,
     val usageRecoveryOperational: Boolean = false,
-    val chromeInstalled: Boolean = true,
+    val supportedBrowserInstalled: Boolean = true,
     val advancedProtectionEnabled: Boolean = false,
     val storageReady: Boolean = false,
     val storageError: Boolean = false,
@@ -188,7 +203,7 @@ data class StateSnapshot(
     val accessibilityEnabled: Boolean,
     val serviceConnected: Boolean,
     val usageAccessGranted: Boolean,
-    val chromeInstalled: Boolean,
+    val supportedBrowserInstalled: Boolean,
     val activeUnlock: UnlockSession?,
     val earnedBudgetRoundsToday: Long,
     val offSessionStartedAtWallMs: Long,

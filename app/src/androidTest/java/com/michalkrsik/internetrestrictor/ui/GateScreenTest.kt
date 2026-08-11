@@ -26,8 +26,8 @@ class GateScreenTest {
     private val engine = RestrictionEngine()
     private val now = 1_783_683_200_000L
     private val runtime = RuntimeSignals(
-        foregroundClass = ForegroundClass.CHROME,
-        chromeActive = true,
+        foregroundClass = ForegroundClass.BROWSER,
+        browserActive = true,
         gateFocused = true,
         serviceConnected = true,
         accessibilityEnabled = true,
@@ -44,17 +44,17 @@ class GateScreenTest {
             RestrictorTheme(snapshot.settings.theme) { GateScreen(snapshot, actions) }
         }
 
-        composeRule.onNodeWithText("Pause before Chrome.").assertIsDisplayed()
+        composeRule.onNodeWithText("Pause before browsing.").assertIsDisplayed()
         composeRule.onNodeWithText("10 min").assertIsDisplayed()
         composeRule.onNodeWithText("30 min").assertIsDisplayed()
         composeRule.onNodeWithText("60 min").assertIsDisplayed()
         composeRule.onNodeWithText("Begin 10 minute session").assertIsDisplayed()
         composeRule.onNodeWithText(
-            "Every normal Chrome session starts with the same 12 sec focused wait.",
+            "Every normal browser session starts with the same 12 sec focused wait.",
         ).assertIsDisplayed()
         composeRule.onNodeWithText("Earn +30 minutes today").assertIsDisplayed()
         composeRule.onNodeWithText("Complete 5 push-ups · adds to the daily budget").assertIsDisplayed()
-        composeRule.onNodeWithText("←  Leave Chrome").assertIsDisplayed()
+        composeRule.onNodeWithText("←  Leave browser").assertIsDisplayed()
         composeRule.onAllNodesWithText("Settings", substring = true).assertCountEquals(0)
     }
 
@@ -77,7 +77,7 @@ class GateScreenTest {
             RestrictorTheme(snapshot.settings.theme) { GateScreen(snapshot, actions) }
         }
 
-        composeRule.onNodeWithText("Chrome is out of time.").assertIsDisplayed()
+        composeRule.onNodeWithText("Browser time is used up.").assertIsDisplayed()
         composeRule.onNodeWithText("Earn +30 minutes today").assertIsDisplayed()
         composeRule.onNodeWithText("Try again").assertIsDisplayed()
         composeRule.onAllNodesWithText("minute session", substring = true).assertCountEquals(0)

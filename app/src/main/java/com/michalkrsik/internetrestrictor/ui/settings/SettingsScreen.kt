@@ -89,7 +89,7 @@ fun SettingsScreen(
             style = MaterialTheme.typography.labelSmall,
             color = EditorialTheme.colors.ink3,
         )
-        Text(editorialTitle("Chrome rules."), style = MaterialTheme.typography.headlineLarge)
+        Text(editorialTitle("Browser rules."), style = MaterialTheme.typography.headlineLarge)
 
         SettingsCard("Appearance") {
             ToggleRow(
@@ -123,7 +123,7 @@ fun SettingsScreen(
 
         SettingsCard("Developer controls") {
             Text(
-                "Cancels only the currently granted Chrome session. Usage totals, budgets, skips, reports, and settings stay unchanged.",
+                "Cancels only the currently granted browser session. Usage totals, budgets, skips, reports, and settings stay unchanged.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -137,8 +137,8 @@ fun SettingsScreen(
 
         SettingsCard("Enforcement") {
             Text(
-                if (snapshot.settings.enforcementEnabled) "Chrome protection is on." else
-                    "Protection is off. Active Chrome use is still added to your report.",
+                if (snapshot.settings.enforcementEnabled) "Browser protection is on." else
+                    "Protection is off. Active browser use is still added to your report.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -173,16 +173,16 @@ fun SettingsScreen(
 
         SettingsCard("Budgets") {
             Text(
-                "Every local day starts with 30 minutes for Chrome. Each verified five-push-up round adds another 30 minutes to today's budget. There are no weekly or monthly pools.",
+                "Every local day starts with 30 minutes for supported browsers. Each verified five-push-up round adds another 30 minutes to today's shared budget. There are no weekly or monthly pools.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
-        SettingsCard("Chrome access") {
+        SettingsCard("Browser access") {
             ToggleRow(
-                title = "Require wait before Chrome access",
-                supporting = "When off, Chrome opens directly but budgets and active-use accounting remain active.",
+                title = "Require wait before browser access",
+                supporting = "When off, supported browsers open directly but budgets and active-use accounting remain active.",
                 checked = delayEnabled,
                 onCheckedChange = { delayEnabled = it },
             )
@@ -191,7 +191,7 @@ fun SettingsScreen(
         SettingsCard("Emergency skips") {
             ToggleRow(
                 title = "Enable skips",
-                supporting = "Skips open Chrome for 30 minutes, including after a budget is exhausted.",
+                supporting = "Skips open supported browsers for 30 minutes, including after the shared budget is exhausted.",
                 checked = skipsEnabled,
                 onCheckedChange = { skipsEnabled = it },
             )
@@ -241,7 +241,7 @@ fun SettingsScreen(
             containerColor = MaterialTheme.colorScheme.surface,
             title = { Text("Reset all usage?") },
             text = {
-                Text("This also removes today's earned budget, the current Chrome session, and any waiting progress. Your delay setting, skip limit, and theme remain.")
+                Text("This also removes today's earned budget, the current browser session, and any waiting progress. Your delay setting, skip limit, and theme remain.")
             },
             confirmButton = {
                 Button(onClick = {

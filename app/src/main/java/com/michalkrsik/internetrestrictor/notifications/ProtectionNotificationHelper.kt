@@ -26,7 +26,7 @@ class ProtectionNotificationHelper(private val context: Context) {
                 "Protection reminders",
                 NotificationManager.IMPORTANCE_DEFAULT,
             ).apply {
-                description = "Reminds you when Chrome usage continues while protection is off."
+                description = "Reminds you when browser usage continues while protection is off."
             },
         )
         manager.notify(
@@ -34,10 +34,10 @@ class ProtectionNotificationHelper(private val context: Context) {
             NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_launcher_foreground)
                 .setContentTitle("Protection is off")
-                .setContentText("Chrome usage has reached your reminder point while restrictions are paused.")
+                .setContentText("Browser usage has reached your reminder point while restrictions are paused.")
                 .setStyle(
                     NotificationCompat.BigTextStyle().bigText(
-                        "Protection is off and Chrome usage has reached your reminder point. This is an informational reminder.",
+                        "Protection is off and browser usage has reached your reminder point. This is an informational reminder.",
                     ),
                 )
                 .setAutoCancel(true)

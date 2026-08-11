@@ -6,23 +6,26 @@ import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
-import com.michalkrsik.internetrestrictor.domain.CHROME_PACKAGE
 import com.michalkrsik.internetrestrictor.domain.ForegroundClass
+import com.michalkrsik.internetrestrictor.domain.isSupportedBrowserPackage
 
 data class ForegroundDecision(
     val foregroundClass: ForegroundClass,
-    val chromeActive: Boolean,
+    val browserActive: Boolean,
     val gateFocused: Boolean,
 )
 
-class ChromeForegroundMonitor(
+class BrowserForegroundMonitor(
     private val service: AccessibilityService,
 ) {
-    private var latchedChromeContext = false
+    private var latchedBrowserContext = false
     private var gateVisible = false
     private var gateHasFocus = false
     private var lastDecision = ForegroundDecision(ForegroundClass.OTHER, false, false)
     private val exitStabilizer = GateExitStabilizer()
+
+    var lastBrowserPackageName: String? = null
+        private set
 
     val hasPendingGateExit: Boolean get() = exitStabilizer.hasPendingCandidate
 
@@ -45,7 +48,7 @@ class ChromeForegroundMonitor(
         val windows = service.windows.orEmpty()
         val focused = windows.firstOrNull { it.isFocused }
         val decision = when {
-            gateVisible && latchedChromeContext -> {
+            gateVisible && latchedBrowserContext -> {
                 val exitCandidate = gateExitCandidatePackage(event, focused, windows)
                 if (exitStabilizer.observe(exitCandidate, nowElapsedMs)) {
                     ForegroundDecision(ForegroundClass.OTHER, false, false)
@@ -69,11 +72,11 @@ class ChromeForegroundMonitor(
         }
 
         when {
-            decision.foregroundClass == ForegroundClass.CHROME && decision.chromeActive -> {
-                latchedChromeContext = true
+            decision.foregroundClass == ForegroundClass.BROWSER && decision.browserActive -> {
+                latchedBrowserContext = true
             }
-            decision.foregroundClass == ForegroundClass.RESTRICTOR && gateVisible && decision.chromeActive -> Unit
-            else -> latchedChromeContext = false
+            decision.foregroundClass == ForegroundClass.RESTRICTOR && gateVisible && decision.browserActive -> Unit
+            else -> latchedBrowserContext = false
         }
         lastDecision = decision
         return decision
@@ -82,7 +85,7 @@ class ChromeForegroundMonitor(
     fun confirmPendingGateExit(
         nowElapsedMs: Long = SystemClock.elapsedRealtime(),
     ): ForegroundDecision? {
-        if (!gateVisible || !latchedChromeContext || !exitStabilizer.hasPendingCandidate) {
+        if (!gateVisible || !latchedBrowserContext || !exitStabilizer.hasPendingCandidate) {
             return null
         }
         val windows = service.windows.orEmpty()
@@ -96,7 +99,7 @@ class ChromeForegroundMonitor(
 
     fun forceExit(): ForegroundDecision {
         exitStabilizer.reset()
-        latchedChromeContext = false
+        latchedBrowserContext = false
         gateHasFocus = false
         lastDecision = ForegroundDecision(ForegroundClass.OTHER, false, false)
         return lastDecision
@@ -122,8 +125,8 @@ class ChromeForegroundMonitor(
             it.type == AccessibilityWindowInfo.TYPE_APPLICATION && it.isActive
         } ?: return ForegroundDecision(ForegroundClass.OTHER, false, false)
         val owner = ownerClass(underlying) ?: ForegroundClass.OTHER
-        return if (owner == ForegroundClass.CHROME) {
-            ForegroundDecision(ForegroundClass.CHROME, true, false)
+        return if (owner == ForegroundClass.BROWSER) {
+            ForegroundDecision(ForegroundClass.BROWSER, true, false)
         } else {
             ForegroundDecision(owner, false, false)
         }
@@ -134,8 +137,8 @@ class ChromeForegroundMonitor(
         event: AccessibilityEvent?,
     ): ForegroundDecision {
         val owner = ownerClass(window) ?: packageClass(event?.packageName?.toString())
-        return if (owner == ForegroundClass.CHROME && window.isFocused && window.isActive) {
-            ForegroundDecision(ForegroundClass.CHROME, true, false)
+        return if (owner == ForegroundClass.BROWSER && window.isFocused && window.isActive) {
+            ForegroundDecision(ForegroundClass.BROWSER, true, false)
         } else {
             ForegroundDecision(owner, false, false)
         }
@@ -143,17 +146,19 @@ class ChromeForegroundMonitor(
 
     private fun classifyEventFallback(event: AccessibilityEvent?): ForegroundDecision {
         val owner = packageClass(event?.packageName?.toString())
-        return if (owner == ForegroundClass.CHROME) {
+        return if (owner == ForegroundClass.BROWSER) {
             ForegroundDecision(owner, true, false)
         } else {
             ForegroundDecision(owner, false, false)
         }
     }
 
-    private fun packageClass(packageName: String?): ForegroundClass = when (packageName) {
-        CHROME_PACKAGE -> ForegroundClass.CHROME
-        service.packageName -> ForegroundClass.RESTRICTOR
-        else -> ForegroundClass.OTHER
+    private fun packageClass(packageName: String?): ForegroundClass {
+        val classification = classifyForegroundPackage(packageName, service.packageName)
+        if (classification == ForegroundClass.BROWSER && packageName != null) {
+            lastBrowserPackageName = packageName
+        }
+        return classification
     }
 
     private fun ownerClass(window: AccessibilityWindowInfo): ForegroundClass? {
@@ -187,11 +192,20 @@ class ChromeForegroundMonitor(
     }
 
     private fun isGateExitPackage(packageName: String): Boolean =
-        packageName != CHROME_PACKAGE &&
+        !isSupportedBrowserPackage(packageName) &&
             packageName != service.packageName &&
             packageName != SYSTEM_UI_PACKAGE
 
     private companion object {
         const val SYSTEM_UI_PACKAGE = "com.android.systemui"
     }
+}
+
+internal fun classifyForegroundPackage(
+    packageName: String?,
+    restrictorPackageName: String,
+): ForegroundClass = when {
+    isSupportedBrowserPackage(packageName) -> ForegroundClass.BROWSER
+    packageName == restrictorPackageName -> ForegroundClass.RESTRICTOR
+    else -> ForegroundClass.OTHER
 }

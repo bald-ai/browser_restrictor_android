@@ -31,7 +31,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.core.view.WindowCompat
 import androidx.core.net.toUri
 import androidx.lifecycle.lifecycleScope
-import com.michalkrsik.internetrestrictor.domain.CHROME_PACKAGE
+import com.michalkrsik.internetrestrictor.domain.SUPPORTED_BROWSERS
 import com.michalkrsik.internetrestrictor.domain.ProtectionHealth
 import com.michalkrsik.internetrestrictor.domain.StateSnapshot
 import com.michalkrsik.internetrestrictor.domain.ThemePreference
@@ -127,7 +127,7 @@ class MainActivity : ComponentActivity() {
                 onOpenAccessibility = ::openAccessibilitySettings,
                 onOpenUsageAccess = ::openUsageAccessSettings,
                 onOpenAppInfo = ::openAppInfo,
-                onTestChrome = ::launchChrome,
+                onTestBrowser = ::launchBrowser,
                 onComplete = {
                     lifecycleScope.launch {
                         if (appContainer.repository.completeOnboarding()) {
@@ -173,7 +173,7 @@ class MainActivity : ComponentActivity() {
             else -> DashboardScreen(
                 snapshot = snapshot,
                 onOpenSettings = { destination = DESTINATION_SETTINGS },
-                onTestChrome = ::launchChrome,
+                onTestBrowser = ::launchBrowser,
                 onHealthAction = { handleHealthAction(snapshot.enforcementHealth) },
             )
         }
@@ -185,7 +185,7 @@ class MainActivity : ComponentActivity() {
             appContainer.repository.updateDeviceAccess(
                 accessibilityEnabled = access.accessibilityEnabled,
                 usageAccessGranted = access.usageAccessGranted,
-                chromeInstalled = access.chromeInstalled,
+                supportedBrowserInstalled = access.supportedBrowserInstalled,
                 advancedProtectionEnabled = access.advancedProtectionEnabled,
             )
             appContainer.reconcileProtectionSchedule()
@@ -205,7 +205,7 @@ class MainActivity : ComponentActivity() {
             ProtectionHealth.SERVICE_DISCONNECTED,
             ProtectionHealth.RESTRICTED_SETTINGS_BLOCKED,
             -> openAccessibilitySettings()
-            ProtectionHealth.CHROME_NOT_FOUND -> openChromeListing()
+            ProtectionHealth.BROWSERS_NOT_FOUND -> openBrowserListing()
             ProtectionHealth.STORAGE_ERROR -> openAppInfo()
             ProtectionHealth.ADVANCED_PROTECTION_BLOCKED -> startActivity(
                 Intent(Intent.ACTION_VIEW, "https://support.google.com/android/answer/16339980".toUri()),
@@ -256,20 +256,23 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    private fun launchChrome() {
-        val launch = packageManager.getLaunchIntentForPackage(CHROME_PACKAGE)
+    private fun launchBrowser() {
+        val launch = SUPPORTED_BROWSERS.firstNotNullOfOrNull { browser ->
+            packageManager.getLaunchIntentForPackage(browser.packageName)
+        }
         if (launch != null) {
             startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         } else {
-            openChromeListing()
+            openBrowserListing()
         }
     }
 
-    private fun openChromeListing() {
-        val market = Intent(Intent.ACTION_VIEW, "market://details?id=$CHROME_PACKAGE".toUri())
+    private fun openBrowserListing() {
+        val fallbackPackage = SUPPORTED_BROWSERS.first().packageName
+        val market = Intent(Intent.ACTION_VIEW, "market://details?id=$fallbackPackage".toUri())
         val web = Intent(
             Intent.ACTION_VIEW,
-            "https://play.google.com/store/apps/details?id=$CHROME_PACKAGE".toUri(),
+            "https://play.google.com/store/apps/details?id=$fallbackPackage".toUri(),
         )
         try {
             startActivity(market)

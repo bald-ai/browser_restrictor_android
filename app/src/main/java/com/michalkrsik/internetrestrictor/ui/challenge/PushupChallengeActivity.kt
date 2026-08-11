@@ -64,7 +64,8 @@ import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
 import com.michalkrsik.internetrestrictor.BuildConfig
 import com.michalkrsik.internetrestrictor.appContainer
-import com.michalkrsik.internetrestrictor.domain.CHROME_PACKAGE
+import com.michalkrsik.internetrestrictor.domain.SUPPORTED_BROWSERS
+import com.michalkrsik.internetrestrictor.domain.isSupportedBrowserPackage
 import com.michalkrsik.internetrestrictor.ui.theme.EditorialTheme
 import com.michalkrsik.internetrestrictor.ui.theme.PillShape
 import com.michalkrsik.internetrestrictor.ui.theme.RestrictorTheme
@@ -503,7 +504,7 @@ class PushupChallengeActivity : ComponentActivity() {
                                 "Push-up challenge passed with ${verdict.repetitionCount} reps; " +
                                     "30 daily budget minutes earned",
                             )
-                            returnToChrome()
+                            returnToBrowser()
                         } else {
                             showRetry("Push-ups passed, but the budget reward could not be saved.")
                         }
@@ -615,10 +616,18 @@ class PushupChallengeActivity : ComponentActivity() {
         return JSONObject(trimmed.substring(start, end + 1))
     }
 
-    private fun returnToChrome() {
-        val launchIntent = packageManager.getLaunchIntentForPackage(CHROME_PACKAGE)
+    private fun returnToBrowser() {
+        val preferredPackage = intent.getStringExtra(EXTRA_BROWSER_PACKAGE)
+            ?.takeIf(::isSupportedBrowserPackage)
+        val candidatePackages = buildList {
+            preferredPackage?.let(::add)
+            SUPPORTED_BROWSERS.mapTo(this) { it.packageName }
+        }.distinct()
+        val launchIntent = candidatePackages.firstNotNullOfOrNull { packageName ->
+            packageManager.getLaunchIntentForPackage(packageName)
+        }
         if (launchIntent == null) {
-            showRetry("Chrome could not be opened.")
+            showRetry("A supported browser could not be opened.")
             return
         }
         launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
@@ -642,12 +651,13 @@ class PushupChallengeActivity : ComponentActivity() {
         val reason: String,
     )
 
-    private companion object {
-        const val TAG = "PushupChallenge"
-        const val OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-        const val MODEL = "google/gemini-3.5-flash-lite"
-        const val REQUIRED_PUSHUPS = 5
-        const val MAX_RECORDING_MS = 60_000L
+    companion object {
+        const val EXTRA_BROWSER_PACKAGE = "browser_package"
+        private const val TAG = "PushupChallenge"
+        private const val OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+        private const val MODEL = "google/gemini-3.5-flash-lite"
+        private const val REQUIRED_PUSHUPS = 5
+        private const val MAX_RECORDING_MS = 60_000L
     }
 }
 

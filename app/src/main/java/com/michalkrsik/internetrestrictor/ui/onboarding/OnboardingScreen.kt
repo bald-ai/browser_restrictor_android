@@ -40,7 +40,7 @@ fun OnboardingScreen(
     onOpenAccessibility: () -> Unit,
     onOpenUsageAccess: () -> Unit,
     onOpenAppInfo: () -> Unit,
-    onTestChrome: () -> Unit,
+    onTestBrowser: () -> Unit,
     onComplete: () -> Unit,
 ) {
     var page by rememberSaveable { mutableIntStateOf(0) }
@@ -70,7 +70,7 @@ fun OnboardingScreen(
                 granted = snapshot.usageAccessGranted,
                 onOpenUsageAccess = onOpenUsageAccess,
             )
-            else -> ReadyStep(snapshot, onTestChrome)
+            else -> ReadyStep(snapshot, onTestBrowser)
         }
         Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -99,9 +99,9 @@ fun OnboardingScreen(
 private fun WelcomeStep() {
     Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
         PauseEmblem()
-        Text(editorialTitle("Pause before Chrome."), style = MaterialTheme.typography.headlineLarge)
+        Text(editorialTitle("Pause before browsing."), style = MaterialTheme.typography.headlineLarge)
         Text(
-            "Internet Restrictor adds a deliberate pause before Chrome, then measures active Chrome use against today's time pool.",
+            "Internet Restrictor adds a deliberate pause before supported browsers, then measures their active use against today's shared time pool.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -121,7 +121,7 @@ private fun DefaultsStep() {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text(editorialTitle("Your starting rules."), style = MaterialTheme.typography.headlineLarge)
         Text(
-            "These rules apply to every Chrome site.",
+            "These rules apply across Chrome, Firefox, Edge, and Opera.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -142,7 +142,7 @@ private fun AccessibilityStep(
     onOpenAppInfo: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(editorialTitle("Allow the Chrome gate."), style = MaterialTheme.typography.headlineLarge)
+        Text(editorialTitle("Allow the browser gate."), style = MaterialTheme.typography.headlineLarge)
         Text(
             "Accessibility access is required for the real-time gate. Android asks you to enable it manually.",
             style = MaterialTheme.typography.bodyLarge,
@@ -164,7 +164,7 @@ private fun AccessibilityStep(
         }
         if (!enabled) {
             Text(
-                "Setup cannot claim Chrome is protected until Android reports this access as enabled.",
+                "Setup cannot claim browsers are protected until Android reports this access as enabled.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
@@ -184,9 +184,9 @@ private fun DisclosureCard() {
             Text("What the service does", style = MaterialTheme.typography.titleMedium)
             listOf(
                 "Observes which app is currently in front.",
-                "Only needs to know whether stable Chrome is active.",
-                "Draws the pause screen over Chrome.",
-                "Measures active, focused Chrome time.",
+                "Only needs to know whether a supported browser is active.",
+                "Draws the pause screen over supported browsers.",
+                "Measures active, focused browser time.",
                 "Does not inspect URLs, webpages, text, typing, or screenshots.",
                 "Keeps usage and settings on this device.",
             ).forEach { Text("•  $it", style = MaterialTheme.typography.bodyMedium) }
@@ -199,7 +199,7 @@ private fun UsageStep(granted: Boolean, onOpenUsageAccess: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text(editorialTitle("Improve recovery."), style = MaterialTheme.typography.headlineLarge)
         Text(
-            "Usage Access can help confirm recent Chrome boundaries after a brief process interruption. It is not used to trigger the gate.",
+            "Usage Access can help confirm recent browser boundaries after a brief process interruption. It is not used to trigger the gate.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -225,27 +225,27 @@ private fun UsageStep(granted: Boolean, onOpenUsageAccess: () -> Unit) {
 }
 
 @Composable
-private fun ReadyStep(snapshot: StateSnapshot, onTestChrome: () -> Unit) {
+private fun ReadyStep(snapshot: StateSnapshot, onTestBrowser: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text(editorialTitle("Test the real gate."), style = MaterialTheme.typography.headlineLarge)
         Text(
             if (snapshot.serviceConnected) {
-                "The protection service is connected. Opening Chrome should show the pause screen over the existing Chrome surface."
+                "The protection service is connected. Opening a supported browser should show the pause screen over its existing surface."
             } else {
-                "Accessibility is enabled, but Android has not reported the service connected yet. Open Chrome to prompt a live check."
+                "Accessibility is enabled, but Android has not reported the service connected yet. Open a supported browser to prompt a live check."
             },
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Button(
-            onClick = onTestChrome,
-            enabled = snapshot.chromeInstalled,
+            onClick = onTestBrowser,
+            enabled = snapshot.supportedBrowserInstalled,
             modifier = Modifier.fillMaxWidth().height(52.dp),
             shape = PillShape,
-        ) { Text("Test Chrome gate") }
+        ) { Text("Test browser gate") }
         InfoCard(
             "What to expect",
-            "Chrome may draw a brief frame before Android sends the foreground event. The pause screen should then block Chrome touches without changing the current tab, Incognito state, or destination.",
+            "The browser may draw a brief frame before Android sends the foreground event. The pause screen should then block browser touches without changing the current tab, private-browsing state, or destination.",
         )
     }
 }

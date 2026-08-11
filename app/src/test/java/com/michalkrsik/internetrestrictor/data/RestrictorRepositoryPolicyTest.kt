@@ -10,11 +10,11 @@ import org.junit.Test
 
 class RestrictorRepositoryPolicyTest {
     @Test
-    fun disconnectPreservesLastConfirmedChromeForeground() {
+    fun disconnectPreservesLastConfirmedBrowserForeground() {
         assertEquals(
-            ForegroundClass.CHROME,
+            ForegroundClass.BROWSER,
             persistedForegroundAfterServiceUpdate(
-                previous = ForegroundClass.CHROME,
+                previous = ForegroundClass.BROWSER,
                 observed = ForegroundClass.OTHER,
                 serviceConnected = false,
             ),
@@ -26,7 +26,7 @@ class RestrictorRepositoryPolicyTest {
         assertEquals(
             ForegroundClass.OTHER,
             persistedForegroundAfterServiceUpdate(
-                previous = ForegroundClass.CHROME,
+                previous = ForegroundClass.BROWSER,
                 observed = ForegroundClass.OTHER,
                 serviceConnected = true,
             ),
@@ -34,7 +34,7 @@ class RestrictorRepositoryPolicyTest {
     }
 
     @Test
-    fun leavingChromeAbortsPendingWait() {
+    fun leavingBrowserAbortsPendingWait() {
         val state = PersistedState(
             pendingWait = PendingWait(
                 id = "wait",
@@ -46,18 +46,18 @@ class RestrictorRepositoryPolicyTest {
             ),
         )
 
-        val updated = abortPendingWaitAfterServiceUpdate(state, chromeActive = false)
+        val updated = abortPendingWaitAfterServiceUpdate(state, browserActive = false)
 
         assertNull(updated.pendingWait)
     }
 
     @Test
-    fun pendingWaitRemainsWhileChromeFlowIsActive() {
+    fun pendingWaitRemainsWhileBrowserFlowIsActive() {
         val state = PersistedState(
             pendingWait = PendingWait("wait", 10_000, 5_000, 2_000, 1_000, 3_000),
         )
 
-        val updated = abortPendingWaitAfterServiceUpdate(state, chromeActive = true)
+        val updated = abortPendingWaitAfterServiceUpdate(state, browserActive = true)
 
         assertNotNull(updated.pendingWait)
     }

@@ -103,8 +103,8 @@ class RestrictionEngine(
 
     fun underlyingMode(state: PersistedState, runtime: RuntimeSignals, nowWallMs: Long): GateMode {
         if (runtime.storageError) return GateMode.STORAGE_ERROR
-        if (!runtime.chromeActive || !runtime.screenInteractive || !runtime.keyguardUnlocked) {
-            return GateMode.CHROME_BACKGROUND
+        if (!runtime.browserActive || !runtime.screenInteractive || !runtime.keyguardUnlocked) {
+            return GateMode.BROWSER_BACKGROUND
         }
         if (!state.settings.enforcementEnabled) return GateMode.ENFORCEMENT_DISABLED
         if (!runtime.storageReady || !runtime.accessibilityEnabled || !runtime.serviceConnected) {
@@ -138,7 +138,7 @@ class RestrictionEngine(
         val mode = if (
             underlying != GateMode.OUT_OF_TIME &&
             runtime.outOfTimeLatchToken != null &&
-            runtime.chromeActive &&
+            runtime.browserActive &&
             state.settings.enforcementEnabled &&
             runtime.serviceConnected
         ) {
@@ -196,7 +196,7 @@ class RestrictionEngine(
             accessibilityEnabled = runtime.accessibilityEnabled,
             serviceConnected = runtime.serviceConnected,
             usageAccessGranted = runtime.usageAccessGranted,
-            chromeInstalled = runtime.chromeInstalled,
+            supportedBrowserInstalled = runtime.supportedBrowserInstalled,
             activeUnlock = state.activeUnlock,
             earnedBudgetRoundsToday = state.dailyCounter.earnedBudgetRounds,
             offSessionStartedAtWallMs = state.offUsageReminder.sessionStartedAtWallMs,
@@ -222,7 +222,7 @@ class RestrictionEngine(
         val state = normalize(input, nowWallMs, zoneId)
         if (state.stateRevision != expectedRevision) return rejected(state, "State changed")
         if (underlyingMode(state, runtime, nowWallMs) != GateMode.PAUSED) {
-            return rejected(state, "Chrome is no longer paused")
+            return rejected(state, "The browser is no longer paused")
         }
         if (requestedMinutes !in WaitCalculator.sessionMinutes) {
             return rejected(state, "Unsupported session duration")
@@ -548,8 +548,8 @@ class RestrictionEngine(
     fun retainCurrentVisitGrace(
         currentGrace: Boolean,
         serviceConnected: Boolean,
-        chromeActive: Boolean,
-    ): Boolean = currentGrace && (!serviceConnected || chromeActive)
+        browserActive: Boolean,
+    ): Boolean = currentGrace && (!serviceConnected || browserActive)
 
     fun rebaseOffUsageReminderAfterClockChange(
         reminder: OffUsageReminderState,
@@ -662,7 +662,7 @@ class RestrictionEngine(
 
     private fun health(state: PersistedState, runtime: RuntimeSignals): ProtectionHealth = when {
         runtime.storageError || runtime.storageWriteError -> ProtectionHealth.STORAGE_ERROR
-        !runtime.chromeInstalled -> ProtectionHealth.CHROME_NOT_FOUND
+        !runtime.supportedBrowserInstalled -> ProtectionHealth.BROWSERS_NOT_FOUND
         runtime.advancedProtectionEnabled && !runtime.accessibilityEnabled ->
             ProtectionHealth.ADVANCED_PROTECTION_BLOCKED
         !runtime.accessibilityEnabled -> ProtectionHealth.ACCESSIBILITY_REQUIRED
