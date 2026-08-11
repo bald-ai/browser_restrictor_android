@@ -11,8 +11,6 @@ fun BudgetPeriod.lowerLabel(): String = name.lowercase()
 
 fun BudgetPeriod.friendlyLabel(): String = when (this) {
     BudgetPeriod.DAILY -> "Today"
-    BudgetPeriod.WEEKLY -> "This week"
-    BudgetPeriod.MONTHLY -> "This month"
 }
 
 fun formatCompactTime(ms: Long): String {

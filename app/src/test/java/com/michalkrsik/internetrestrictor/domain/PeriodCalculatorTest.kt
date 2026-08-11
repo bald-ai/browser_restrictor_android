@@ -8,13 +8,11 @@ import org.junit.Test
 
 class PeriodCalculatorTest {
     @Test
-    fun mondayIsWeeklyStart() {
+    fun localDayKeyUsesRequestedTimezone() {
         val zone = ZoneId.of("Europe/Prague")
         val instant = ZonedDateTime.of(2026, 7, 10, 12, 0, 0, 0, zone).toInstant().toEpochMilli()
         val keys = PeriodCalculator.keysAt(instant, zone)
         assertEquals("2026-07-10", keys.daily)
-        assertEquals("2026-07-06", keys.weekly)
-        assertEquals("2026-07", keys.monthly)
     }
 
     @Test
@@ -33,4 +31,3 @@ class PeriodCalculatorTest {
         assertEquals(23 * HOUR_MS, next - start)
     }
 }
-

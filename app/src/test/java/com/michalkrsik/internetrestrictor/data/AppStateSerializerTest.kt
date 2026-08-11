@@ -31,9 +31,7 @@ class AppStateSerializerTest {
                 pauseUntilWallMs = 999_999,
             ),
             dailyUsage = UsagePeriodState(BudgetPeriod.DAILY, "2026-07-10", 12_345),
-            weeklyUsage = UsagePeriodState(BudgetPeriod.WEEKLY, "2026-07-06", 23_456),
-            monthlyUsage = UsagePeriodState(BudgetPeriod.MONTHLY, "2026-07", 34_567),
-            activeUnlock = UnlockSession("unlock", UnlockSource.PUSHUP, 100, 200),
+            activeUnlock = UnlockSession("unlock", UnlockSource.NORMAL, 100, 200),
             dailyCounter = DailyCounter("2026-07-10", 2, 1),
             usageReports = listOf(DailyUsageReport("2026-07-10", 5_000, 6_000)),
             offUsageReminder = OffUsageReminderState(
@@ -73,7 +71,13 @@ class AppStateSerializerTest {
                 target.writeUTF("2026-07")
                 target.writeLong(34_567)
                 target.writeBoolean(false)
-                target.writeBoolean(false)
+                target.writeBoolean(true)
+                target.writeUTF("legacy-wait")
+                target.writeLong(30 * 60_000L)
+                target.writeLong(15_000)
+                target.writeLong(3_000)
+                target.writeLong(1_000)
+                target.writeLong(2_000)
                 target.writeUTF("2026-07-19")
                 target.writeLong(4)
                 target.writeLong(1)
@@ -86,22 +90,20 @@ class AppStateSerializerTest {
 
         val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
 
-        assertEquals(2, migrated.schemaVersion)
+        assertEquals(3, migrated.schemaVersion)
         assertEquals(77, migrated.stateRevision)
         assertEquals(false, migrated.settings.enforcementEnabled)
         assertEquals(false, migrated.settings.delayEnabled)
-        assertEquals(17, migrated.settings.dailyBudgetMinutes)
         assertEquals(12_345, migrated.dailyUsage.usedMs)
-        assertEquals(23_456, migrated.weeklyUsage.usedMs)
-        assertEquals(34_567, migrated.monthlyUsage.usedMs)
-        assertEquals(4, migrated.dailyCounter.completedNormalUnlocks)
+        assertEquals(0, migrated.dailyCounter.earnedBudgetRounds)
+        assertEquals(null, migrated.pendingWait)
         assertEquals("legacy-epoch", migrated.runtimeMetadata.recoveryEpochId)
         assertEquals(emptyList<DailyUsageReport>(), migrated.usageReports)
         assertEquals(false, migrated.currentVisitGraceActive)
     }
 
     @Test
-    fun currentVisitGraceSurvivesV2PersistenceRoundTrip() = runTest {
+    fun currentVisitGraceSurvivesV3PersistenceRoundTrip() = runTest {
         val state = PersistedState(currentVisitGraceActive = true)
         val output = ByteArrayOutputStream()
         AppStateSerializer.writeTo(state, output)
@@ -111,24 +113,69 @@ class AppStateSerializerTest {
 
     @Test
     fun earlySchemaV2BytesWithoutGraceFieldKeepMeasuredUsage() = runTest {
-        val state = PersistedState(
-            stateRevision = 12,
-            dailyUsage = UsagePeriodState(BudgetPeriod.DAILY, "2026-07-20", 1_494_393),
-            weeklyUsage = UsagePeriodState(BudgetPeriod.WEEKLY, "2026-07-20", 1_494_393),
-            monthlyUsage = UsagePeriodState(BudgetPeriod.MONTHLY, "2026-07", 3_663_000),
-            usageReports = listOf(
-                DailyUsageReport("2026-07-19", offUsageMs = 22_935),
-                DailyUsageReport("2026-07-20", protectedUsageMs = 1_494_393),
-            ),
-            currentVisitGraceActive = true,
-        )
+        val bytes = ByteArrayOutputStream().also { output ->
+            DataOutputStream(output).use { target ->
+                target.writeInt(0x49525354)
+                target.writeInt(2)
+                target.writeLong(12)
+                target.writeBoolean(true)
+                target.writeBoolean(false)
+                target.writeBoolean(true)
+                repeat(3) {
+                    target.writeBoolean(true)
+                    target.writeLong(listOf(60L, 600L, 2_400L)[it])
+                }
+                target.writeBoolean(true)
+                target.writeLong(3)
+                target.writeInt(ThemePreference.DARK.ordinal)
+                target.writeBoolean(false)
+                target.writeUTF("2026-07-20")
+                target.writeLong(1_494_393)
+                target.writeUTF("2026-07-20")
+                target.writeLong(1_494_393)
+                target.writeUTF("2026-07")
+                target.writeLong(3_663_000)
+                target.writeBoolean(true)
+                target.writeUTF("legacy-pushup")
+                target.writeInt(2)
+                target.writeLong(100)
+                target.writeLong(200)
+                target.writeBoolean(false)
+                target.writeUTF("2026-07-20")
+                target.writeLong(0)
+                target.writeLong(0)
+                target.writeLong(0)
+                target.writeUTF("")
+                target.writeLong(0)
+                target.writeInt(2)
+                target.writeInt(2)
+                target.writeUTF("2026-07-19")
+                target.writeLong(0)
+                target.writeLong(22_935)
+                target.writeUTF("2026-07-20")
+                target.writeLong(1_494_393)
+                target.writeLong(0)
+                repeat(2) { target.writeLong(0) }
+                target.writeBoolean(false)
+                repeat(2) { target.writeLong(0) }
+                // Early schema-v2 state ended here, before currentVisitGraceActive.
+            }
+        }.toByteArray()
+
+        val restored = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
+
+        assertEquals(1_494_393, restored.dailyUsage.usedMs)
+        assertEquals(2, restored.usageReports.size)
+        assertEquals(null, restored.activeUnlock)
+        assertEquals(false, restored.currentVisitGraceActive)
+    }
+
+    @Test(expected = CorruptionException::class)
+    fun truncatedSchemaV3StateIsCorruption() = runTest {
         val output = ByteArrayOutputStream()
-        AppStateSerializer.writeTo(state, output)
-        val earlyV2Bytes = output.toByteArray().copyOf(output.size() - 1)
-
-        val restored = AppStateSerializer.readFrom(ByteArrayInputStream(earlyV2Bytes))
-
-        assertEquals(state.copy(currentVisitGraceActive = false), restored)
+        AppStateSerializer.writeTo(PersistedState(currentVisitGraceActive = true), output)
+        val truncated = output.toByteArray().copyOf(output.size() - 1)
+        AppStateSerializer.readFrom(ByteArrayInputStream(truncated))
     }
 
     @Test(expected = CorruptionException::class)

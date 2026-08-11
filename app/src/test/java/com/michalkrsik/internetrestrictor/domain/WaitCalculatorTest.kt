@@ -5,22 +5,15 @@ import org.junit.Test
 
 class WaitCalculatorTest {
     @Test
-    fun firstUnlockCostsMatchSpec() {
-        assertEquals(5_000, WaitCalculator.requiredFocusMs(10, 0))
-        assertEquals(15_000, WaitCalculator.requiredFocusMs(30, 0))
-        assertEquals(30_000, WaitCalculator.requiredFocusMs(60, 0))
-    }
-
-    @Test
-    fun costEscalatesOnlyFromCompletedCount() {
-        assertEquals(10, WaitCalculator.costPerTenSeconds(1))
-        assertEquals(15, WaitCalculator.costPerTenSeconds(2))
-        assertEquals(60_000, WaitCalculator.requiredFocusMs(30, 3))
+    fun everySupportedSessionUsesFixedTwelveSecondWait() {
+        assertEquals(12_000, WaitCalculator.requiredFocusMs(10))
+        assertEquals(12_000, WaitCalculator.requiredFocusMs(30))
+        assertEquals(12_000, WaitCalculator.requiredFocusMs(60))
     }
 
     @Test(expected = IllegalArgumentException::class)
     fun unsupportedSessionIsRejected() {
-        WaitCalculator.requiredFocusMs(20, 0)
+        WaitCalculator.requiredFocusMs(20)
     }
 
     @Test
@@ -30,4 +23,3 @@ class WaitCalculatorTest {
         assertEquals(0, WaitCalculator.displaySeconds(0))
     }
 }
-

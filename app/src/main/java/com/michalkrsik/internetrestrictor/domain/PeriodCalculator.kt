@@ -1,16 +1,11 @@
 package com.michalkrsik.internetrestrictor.domain
 
-import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
-import java.time.YearMonth
 import java.time.ZoneId
-import java.time.temporal.TemporalAdjusters
 
 data class PeriodKeys(
     val daily: String,
-    val weekly: String,
-    val monthly: String,
 )
 
 data class WallInterval(val startMs: Long, val endMs: Long) {
@@ -24,11 +19,8 @@ data class WallInterval(val startMs: Long, val endMs: Long) {
 object PeriodCalculator {
     fun keysAt(wallMs: Long, zoneId: ZoneId): PeriodKeys {
         val date = Instant.ofEpochMilli(wallMs).atZone(zoneId).toLocalDate()
-        val monday = date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
         return PeriodKeys(
             daily = date.toString(),
-            weekly = monday.toString(),
-            monthly = YearMonth.from(date).toString(),
         )
     }
 
@@ -53,4 +45,3 @@ object PeriodCalculator {
     fun localDate(wallMs: Long, zoneId: ZoneId): LocalDate =
         Instant.ofEpochMilli(wallMs).atZone(zoneId).toLocalDate()
 }
-

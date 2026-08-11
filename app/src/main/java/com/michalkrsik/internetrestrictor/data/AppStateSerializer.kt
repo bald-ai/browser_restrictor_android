@@ -6,6 +6,7 @@ import com.michalkrsik.internetrestrictor.domain.BudgetPeriod
 import com.michalkrsik.internetrestrictor.domain.DailyCounter
 import com.michalkrsik.internetrestrictor.domain.DailyUsageReport
 import com.michalkrsik.internetrestrictor.domain.ForegroundClass
+import com.michalkrsik.internetrestrictor.domain.MAX_SAFE_BUDGET_ROUNDS
 import com.michalkrsik.internetrestrictor.domain.MAX_SAFE_MINUTES
 import com.michalkrsik.internetrestrictor.domain.PendingWait
 import com.michalkrsik.internetrestrictor.domain.OffUsageReminderState
@@ -38,34 +39,54 @@ object AppStateSerializer : Serializer<PersistedState> {
                 throw CorruptionException("Unsupported state schema: $schema")
             }
             val revision = source.readLong()
+            val enforcementEnabled = source.readBoolean()
+            val pauseUntilWallMs = if (schema >= 2 && source.readBoolean()) source.readLong() else null
+            val delayEnabled = source.readBoolean()
+            if (schema <= 2) {
+                // Legacy builds stored configurable daily, weekly, and monthly limits.
+                repeat(3) {
+                    source.readBoolean()
+                    source.readLong()
+                }
+            }
             val settings = RestrictorSettings(
-                enforcementEnabled = source.readBoolean(),
-                pauseUntilWallMs = if (schema >= 2 && source.readBoolean()) source.readLong() else null,
-                delayEnabled = source.readBoolean(),
-                dailyBudgetEnabled = source.readBoolean(),
-                dailyBudgetMinutes = source.readLong(),
-                weeklyBudgetEnabled = source.readBoolean(),
-                weeklyBudgetMinutes = source.readLong(),
-                monthlyBudgetEnabled = source.readBoolean(),
-                monthlyBudgetMinutes = source.readLong(),
+                enforcementEnabled = enforcementEnabled,
+                pauseUntilWallMs = pauseUntilWallMs,
+                delayEnabled = delayEnabled,
                 emergencySkipsEnabled = source.readBoolean(),
                 emergencySkipDailyLimit = source.readLong(),
                 theme = source.readEnum<ThemePreference>(),
                 onboardingCompleted = source.readBoolean(),
             )
             val daily = source.readUsage(BudgetPeriod.DAILY)
-            val weekly = source.readUsage(BudgetPeriod.WEEKLY)
-            val monthly = source.readUsage(BudgetPeriod.MONTHLY)
+            if (schema <= 2) {
+                // Consume the retired weekly and monthly usage records.
+                source.readUTF()
+                source.readLong()
+                source.readUTF()
+                source.readLong()
+            }
             val unlock = if (source.readBoolean()) {
-                UnlockSession(
-                    id = source.readUTF(),
-                    source = source.readEnum<UnlockSource>(),
-                    grantedAtWallMs = source.readLong(),
-                    expiresAtWallMs = source.readLong(),
-                )
+                val id = source.readUTF()
+                val sourceOrdinal = source.readInt()
+                val grantedAtWallMs = source.readLong()
+                val expiresAtWallMs = source.readLong()
+                val unlockSource = UnlockSource.entries.getOrNull(sourceOrdinal)
+                if (schema <= 2 && sourceOrdinal == 2) {
+                    // A legacy push-up unlock is deliberately not migrated into earned budget.
+                    null
+                } else {
+                    UnlockSession(
+                        id = id,
+                        source = unlockSource
+                            ?: throw CorruptionException("Invalid unlock source"),
+                        grantedAtWallMs = grantedAtWallMs,
+                        expiresAtWallMs = expiresAtWallMs,
+                    )
+                }
             } else null
             val pending = if (source.readBoolean()) {
-                PendingWait(
+                val storedPending = PendingWait(
                     id = source.readUTF(),
                     selectedDurationMs = source.readLong(),
                     requiredFocusMs = source.readLong(),
@@ -73,10 +94,24 @@ object AppStateSerializer : Serializer<PersistedState> {
                     createdAtWallMs = source.readLong(),
                     updatedAtWallMs = source.readLong(),
                 )
+                if (schema <= 2) {
+                    // Legacy waits used the retired escalating formula. Restart at the fixed
+                    // 12-second gate instead of carrying an incompatible partial wait forward.
+                    null
+                } else {
+                    storedPending
+                }
             } else null
+            val localDayKey = source.readUTF()
+            val earnedBudgetRounds = if (schema >= 3) {
+                source.readLong()
+            } else {
+                source.readLong() // Retired completed-normal-unlock count.
+                0L
+            }
             val counter = DailyCounter(
-                localDayKey = source.readUTF(),
-                completedNormalUnlocks = source.readLong(),
+                localDayKey = localDayKey,
+                earnedBudgetRounds = earnedBudgetRounds,
                 emergencySkipsUsed = source.readLong(),
             )
             val metadata = RuntimeMetadata(
@@ -103,21 +138,21 @@ object AppStateSerializer : Serializer<PersistedState> {
                     usageAtLastNotificationMs = source.readLong(),
                 )
             } else OffUsageReminderState()
-            val currentVisitGraceActive = if (schema >= 2) {
+            val currentVisitGraceActive = if (schema == 2) {
                 try {
                     source.readBoolean()
                 } catch (_: EOFException) {
                     // Early schema-v2 development builds ended after the reminder state.
                     false
                 }
+            } else if (schema >= 3) {
+                source.readBoolean()
             } else false
             val state = PersistedState(
                 schemaVersion = RESTRICTOR_SCHEMA_VERSION,
                 stateRevision = revision,
                 settings = settings,
                 dailyUsage = daily,
-                weeklyUsage = weekly,
-                monthlyUsage = monthly,
                 activeUnlock = unlock,
                 pendingWait = pending,
                 dailyCounter = counter,
@@ -146,20 +181,12 @@ object AppStateSerializer : Serializer<PersistedState> {
             target.writeBoolean(pauseUntilWallMs != null)
             pauseUntilWallMs?.let(target::writeLong)
             target.writeBoolean(delayEnabled)
-            target.writeBoolean(dailyBudgetEnabled)
-            target.writeLong(dailyBudgetMinutes)
-            target.writeBoolean(weeklyBudgetEnabled)
-            target.writeLong(weeklyBudgetMinutes)
-            target.writeBoolean(monthlyBudgetEnabled)
-            target.writeLong(monthlyBudgetMinutes)
             target.writeBoolean(emergencySkipsEnabled)
             target.writeLong(emergencySkipDailyLimit)
             target.writeInt(theme.ordinal)
             target.writeBoolean(onboardingCompleted)
         }
         target.writeUsage(t.dailyUsage)
-        target.writeUsage(t.weeklyUsage)
-        target.writeUsage(t.monthlyUsage)
         target.writeBoolean(t.activeUnlock != null)
         t.activeUnlock?.let {
             target.writeUTF(it.id)
@@ -178,7 +205,7 @@ object AppStateSerializer : Serializer<PersistedState> {
         }
         with(t.dailyCounter) {
             target.writeUTF(localDayKey)
-            target.writeLong(completedNormalUnlocks)
+            target.writeLong(earnedBudgetRounds)
             target.writeLong(emergencySkipsUsed)
         }
         with(t.runtimeMetadata) {
@@ -209,16 +236,10 @@ object AppStateSerializer : Serializer<PersistedState> {
         if (state.schemaVersion != RESTRICTOR_SCHEMA_VERSION) invalid("Wrong schema")
         if (state.stateRevision < 0) invalid("Negative revision")
         if ((state.settings.pauseUntilWallMs ?: 0) < 0) invalid("Invalid pause end")
-        val numericSettings = listOf(
-            state.settings.dailyBudgetMinutes,
-            state.settings.weeklyBudgetMinutes,
-            state.settings.monthlyBudgetMinutes,
-            state.settings.emergencySkipDailyLimit,
-        )
-        if (numericSettings.any { it !in 0..MAX_SAFE_MINUTES }) invalid("Invalid setting value")
-        listOf(state.dailyUsage, state.weeklyUsage, state.monthlyUsage).forEach {
-            if (it.usedMs < 0) invalid("Negative usage")
+        if (state.settings.emergencySkipDailyLimit !in 0..MAX_SAFE_MINUTES) {
+            invalid("Invalid setting value")
         }
+        if (state.dailyUsage.usedMs < 0) invalid("Negative usage")
         state.activeUnlock?.let {
             if (it.id.isBlank() || it.grantedAtWallMs < 0 || it.expiresAtWallMs < it.grantedAtWallMs) {
                 invalid("Invalid unlock")
@@ -232,7 +253,10 @@ object AppStateSerializer : Serializer<PersistedState> {
             ) invalid("Invalid pending wait")
         }
         if (state.activeUnlock != null && state.pendingWait != null) invalid("Unlock and wait overlap")
-        if (state.dailyCounter.completedNormalUnlocks < 0 || state.dailyCounter.emergencySkipsUsed < 0) {
+        if (
+            state.dailyCounter.earnedBudgetRounds !in 0..MAX_SAFE_BUDGET_ROUNDS ||
+            state.dailyCounter.emergencySkipsUsed < 0
+        ) {
             invalid("Invalid daily counter")
         }
         if (state.usageReports.size > RestrictionEngine.MAX_REPORT_DAYS) invalid("Too many report days")

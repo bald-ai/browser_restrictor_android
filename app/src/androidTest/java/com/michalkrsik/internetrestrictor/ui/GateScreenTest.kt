@@ -6,6 +6,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import com.michalkrsik.internetrestrictor.domain.BudgetPeriod
+import com.michalkrsik.internetrestrictor.domain.DAILY_BASE_BUDGET_MINUTES
 import com.michalkrsik.internetrestrictor.domain.ForegroundClass
 import com.michalkrsik.internetrestrictor.domain.PersistedState
 import com.michalkrsik.internetrestrictor.domain.RestrictionEngine
@@ -48,8 +49,11 @@ class GateScreenTest {
         composeRule.onNodeWithText("30 min").assertIsDisplayed()
         composeRule.onNodeWithText("60 min").assertIsDisplayed()
         composeRule.onNodeWithText("Begin 10 minute session").assertIsDisplayed()
-        composeRule.onNodeWithText("Earn 30 minutes").assertIsDisplayed()
-        composeRule.onNodeWithText("Complete 5 push-ups · no budget used").assertIsDisplayed()
+        composeRule.onNodeWithText(
+            "Every normal Chrome session starts with the same 12 sec focused wait.",
+        ).assertIsDisplayed()
+        composeRule.onNodeWithText("Earn +30 minutes today").assertIsDisplayed()
+        composeRule.onNodeWithText("Complete 5 push-ups · adds to the daily budget").assertIsDisplayed()
         composeRule.onNodeWithText("←  Leave Chrome").assertIsDisplayed()
         composeRule.onAllNodesWithText("Settings", substring = true).assertCountEquals(0)
     }
@@ -61,7 +65,7 @@ class GateScreenTest {
             dailyUsage = UsagePeriodState(
                 BudgetPeriod.DAILY,
                 base.dailyUsage.key,
-                base.settings.dailyBudgetMinutes * 60_000,
+                DAILY_BASE_BUDGET_MINUTES * 60_000,
             ),
         )
         val snapshot = engine.snapshot(
@@ -74,7 +78,7 @@ class GateScreenTest {
         }
 
         composeRule.onNodeWithText("Chrome is out of time.").assertIsDisplayed()
-        composeRule.onNodeWithText("Earn 30 minutes").assertIsDisplayed()
+        composeRule.onNodeWithText("Earn +30 minutes today").assertIsDisplayed()
         composeRule.onNodeWithText("Try again").assertIsDisplayed()
         composeRule.onAllNodesWithText("minute session", substring = true).assertCountEquals(0)
         composeRule.onAllNodesWithText("emergency skip", substring = true).assertCountEquals(0)

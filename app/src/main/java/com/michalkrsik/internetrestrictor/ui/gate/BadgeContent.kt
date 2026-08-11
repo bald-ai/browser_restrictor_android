@@ -48,8 +48,8 @@ import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.ceil
 
-private val BadgeGrey = Color(0xFF3D3D3D)
-private val BadgeContentColor = Color(0xFFF5F5F5)
+private val BadgeGrey = Color(0xFF171310)
+private val BadgeContentColor = Color(0xFFF5F2EA)
 private const val RESTING_ALPHA = 0.46f
 private const val ACTIVE_ALPHA = 0.96f
 private const val FADE_DELAY_MS = 3_000L

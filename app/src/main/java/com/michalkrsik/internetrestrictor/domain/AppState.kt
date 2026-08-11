@@ -3,20 +3,24 @@ package com.michalkrsik.internetrestrictor.domain
 import java.util.UUID
 
 const val CHROME_PACKAGE = "com.android.chrome"
-const val RESTRICTOR_SCHEMA_VERSION = 2
+const val RESTRICTOR_SCHEMA_VERSION = 3
 const val MINUTE_MS = 60_000L
 const val HOUR_MS = 60L * MINUTE_MS
 const val DAY_MS = 24L * HOUR_MS
 const val PENDING_WAIT_EXPIRY_MS = DAY_MS
 const val EMERGENCY_UNLOCK_MS = 30L * MINUTE_MS
-const val PUSHUP_UNLOCK_MS = 30L * MINUTE_MS
+const val DAILY_BASE_BUDGET_MINUTES = 30L
+const val PUSHUP_BUDGET_REWARD_MINUTES = 30L
+const val FIXED_WAIT_MS = 12_000L
 const val MAX_SAFE_MINUTES = Long.MAX_VALUE / MINUTE_MS
+const val MAX_SAFE_BUDGET_ROUNDS =
+    (MAX_SAFE_MINUTES - DAILY_BASE_BUDGET_MINUTES) / PUSHUP_BUDGET_REWARD_MINUTES
 
 enum class ThemePreference { DARK, LIGHT }
 
-enum class BudgetPeriod { DAILY, WEEKLY, MONTHLY }
+enum class BudgetPeriod { DAILY }
 
-enum class UnlockSource { NORMAL, EMERGENCY, PUSHUP }
+enum class UnlockSource { NORMAL, EMERGENCY }
 
 enum class ForegroundClass { CHROME, RESTRICTOR, OTHER }
 
@@ -28,7 +32,6 @@ enum class GateMode {
     WAITING,
     ACCESS_GRANTED_NORMAL,
     ACCESS_GRANTED_EMERGENCY,
-    ACCESS_GRANTED_PUSHUP,
     ACCESS_GRANTED_NO_DELAY,
     ACCESS_GRANTED_CURRENT_VISIT,
     OUT_OF_TIME,
@@ -53,12 +56,6 @@ data class RestrictorSettings(
     val enforcementEnabled: Boolean = true,
     val pauseUntilWallMs: Long? = null,
     val delayEnabled: Boolean = true,
-    val dailyBudgetEnabled: Boolean = true,
-    val dailyBudgetMinutes: Long = 60,
-    val weeklyBudgetEnabled: Boolean = true,
-    val weeklyBudgetMinutes: Long = 600,
-    val monthlyBudgetEnabled: Boolean = true,
-    val monthlyBudgetMinutes: Long = 2_400,
     val emergencySkipsEnabled: Boolean = true,
     val emergencySkipDailyLimit: Long = 3,
     val theme: ThemePreference = ThemePreference.DARK,
@@ -103,7 +100,7 @@ data class PendingWait(
 
 data class DailyCounter(
     val localDayKey: String = "",
-    val completedNormalUnlocks: Long = 0,
+    val earnedBudgetRounds: Long = 0,
     val emergencySkipsUsed: Long = 0,
 )
 
@@ -119,8 +116,6 @@ data class PersistedState(
     val stateRevision: Long = 0,
     val settings: RestrictorSettings = RestrictorSettings(),
     val dailyUsage: UsagePeriodState = UsagePeriodState(BudgetPeriod.DAILY),
-    val weeklyUsage: UsagePeriodState = UsagePeriodState(BudgetPeriod.WEEKLY),
-    val monthlyUsage: UsagePeriodState = UsagePeriodState(BudgetPeriod.MONTHLY),
     val activeUnlock: UnlockSession? = null,
     val pendingWait: PendingWait? = null,
     val dailyCounter: DailyCounter = DailyCounter(),
@@ -128,19 +123,7 @@ data class PersistedState(
     val usageReports: List<DailyUsageReport> = emptyList(),
     val offUsageReminder: OffUsageReminderState = OffUsageReminderState(),
     val currentVisitGraceActive: Boolean = false,
-) {
-    fun usage(period: BudgetPeriod): UsagePeriodState = when (period) {
-        BudgetPeriod.DAILY -> dailyUsage
-        BudgetPeriod.WEEKLY -> weeklyUsage
-        BudgetPeriod.MONTHLY -> monthlyUsage
-    }
-
-    fun withUsage(value: UsagePeriodState): PersistedState = when (value.period) {
-        BudgetPeriod.DAILY -> copy(dailyUsage = value)
-        BudgetPeriod.WEEKLY -> copy(weeklyUsage = value)
-        BudgetPeriod.MONTHLY -> copy(monthlyUsage = value)
-    }
-}
+)
 
 data class RuntimeSignals(
     val foregroundClass: ForegroundClass = ForegroundClass.OTHER,
@@ -207,7 +190,7 @@ data class StateSnapshot(
     val usageAccessGranted: Boolean,
     val chromeInstalled: Boolean,
     val activeUnlock: UnlockSession?,
-    val completedNormalUnlocksToday: Long,
+    val earnedBudgetRoundsToday: Long,
     val offSessionStartedAtWallMs: Long,
     val usageReports: List<DailyUsageReport>,
     val todayUsageReport: DailyUsageReport,
@@ -228,7 +211,6 @@ data class StateSnapshot(
         get() = canonicalMode in setOf(
             GateMode.ACCESS_GRANTED_NORMAL,
             GateMode.ACCESS_GRANTED_EMERGENCY,
-            GateMode.ACCESS_GRANTED_PUSHUP,
             GateMode.ACCESS_GRANTED_NO_DELAY,
             GateMode.ACCESS_GRANTED_CURRENT_VISIT,
         )

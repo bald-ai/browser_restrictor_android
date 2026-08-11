@@ -17,9 +17,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.michalkrsik.internetrestrictor.domain.BudgetSnapshot
-import com.michalkrsik.internetrestrictor.ui.theme.Danger
-import com.michalkrsik.internetrestrictor.ui.theme.Emerald
-import com.michalkrsik.internetrestrictor.ui.theme.Violet
+import com.michalkrsik.internetrestrictor.ui.theme.EditorialTheme
 
 @Composable
 fun BudgetBar(
@@ -32,9 +30,9 @@ fun BudgetBar(
     val exhausted = budget.exhausted || forceExhausted
     val percent = if (forceExhausted) 100 else budget.percentage
     val color = when {
-        exhausted -> Danger
-        percent >= 80 -> Violet
-        else -> Emerald
+        exhausted -> EditorialTheme.colors.low
+        percent >= 80 -> EditorialTheme.colors.warn
+        else -> EditorialTheme.colors.go
     }
     val remaining = if (forceExhausted) 0L else budget.remainingMs ?: 0
     Column(
@@ -48,26 +46,29 @@ fun BudgetBar(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(label ?: budget.period.label(), style = MaterialTheme.typography.labelMedium)
+            Text(
+                label ?: budget.period.label(),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Text(
                 if (exhausted) "Used" else "${formatCompactTime(remaining)} left",
                 style = MaterialTheme.typography.bodySmall,
-                color = if (exhausted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (exhausted) EditorialTheme.colors.low else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(7.dp)
-                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(100)),
+                .height(4.dp)
+                .background(EditorialTheme.colors.hairlineSoft, RoundedCornerShape(100)),
         ) {
             Box(
                 Modifier
                     .fillMaxWidth((percent / 100f).coerceIn(0f, 1f))
-                    .height(7.dp)
+                    .height(4.dp)
                     .background(color, RoundedCornerShape(100)),
             )
         }
     }
 }
-
