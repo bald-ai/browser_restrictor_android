@@ -5,5 +5,12 @@
 /build/
 /app/build/
 /captures/
-.DS_Store
 
+# Keep local agent instructions and personal notes out of Git.
+# Project-facing Markdown documents must be explicitly allowed here.
+*.md
+!/README.md
+!/THIRD_PARTY_NOTICES.md
+/Dev/
+
+.DS_Store
