@@ -27,6 +27,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.core.view.WindowCompat
 import androidx.core.net.toUri
 import androidx.lifecycle.lifecycleScope
@@ -37,6 +38,9 @@ import com.michalkrsik.internetrestrictor.domain.ThemePreference
 import com.michalkrsik.internetrestrictor.ui.dashboard.DashboardScreen
 import com.michalkrsik.internetrestrictor.ui.onboarding.OnboardingScreen
 import com.michalkrsik.internetrestrictor.ui.settings.SettingsScreen
+import com.michalkrsik.internetrestrictor.ui.theme.EditorialTheme
+import com.michalkrsik.internetrestrictor.ui.theme.PaperDark
+import com.michalkrsik.internetrestrictor.ui.theme.PaperLight
 import com.michalkrsik.internetrestrictor.ui.theme.RestrictorTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -278,6 +282,9 @@ class MainActivity : ComponentActivity() {
     private fun ConfigureSystemBars(theme: ThemePreference) {
         val light = theme == ThemePreference.LIGHT
         SideEffect {
+            val barColor = (if (light) PaperLight else PaperDark).toArgb()
+            window.statusBarColor = barColor
+            window.navigationBarColor = barColor
             WindowCompat.getInsetsController(window, window.decorView).apply {
                 isAppearanceLightStatusBars = light
                 isAppearanceLightNavigationBars = light
@@ -299,6 +306,6 @@ private fun LoadingScreen() {
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
-        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+        CircularProgressIndicator(color = EditorialTheme.colors.accent)
     }
 }

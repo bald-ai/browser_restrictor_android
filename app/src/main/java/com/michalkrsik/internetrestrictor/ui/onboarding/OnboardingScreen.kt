@@ -13,9 +13,9 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -30,6 +30,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.michalkrsik.internetrestrictor.domain.StateSnapshot
 import com.michalkrsik.internetrestrictor.ui.components.PauseEmblem
+import com.michalkrsik.internetrestrictor.ui.theme.EditorialTheme
+import com.michalkrsik.internetrestrictor.ui.theme.PillShape
+import com.michalkrsik.internetrestrictor.ui.theme.editorialTitle
 
 @Composable
 fun OnboardingScreen(
@@ -53,7 +56,7 @@ fun OnboardingScreen(
         Text(
             "SETUP  ${page + 1} / 5",
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.primary,
+            color = EditorialTheme.colors.ink3,
         )
         when (page) {
             0 -> WelcomeStep()
@@ -75,14 +78,16 @@ fun OnboardingScreen(
                 OutlinedButton(
                     onClick = { page-- },
                     modifier = Modifier.weight(1f).height(52.dp),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = PillShape,
+                    border = BorderStroke(1.dp, EditorialTheme.colors.hairline),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
                 ) { Text("Back") }
             }
             Button(
                 onClick = { if (page < 4) page++ else onComplete() },
                 enabled = page != 2 || snapshot.accessibilityEnabled,
                 modifier = Modifier.weight(1f).height(52.dp),
-                shape = RoundedCornerShape(16.dp),
+                shape = PillShape,
             ) {
                 Text(if (page == 4) "Finish setup" else "Continue")
             }
@@ -94,9 +99,9 @@ fun OnboardingScreen(
 private fun WelcomeStep() {
     Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
         PauseEmblem()
-        Text("Pause before Chrome.", style = MaterialTheme.typography.headlineLarge)
+        Text(editorialTitle("Pause before Chrome."), style = MaterialTheme.typography.headlineLarge)
         Text(
-            "Internet Restrictor adds a deliberate pause before Chrome, then measures only active Chrome use against one daily, weekly, and monthly time pool.",
+            "Internet Restrictor adds a deliberate pause before Chrome, then measures active Chrome use against today's time pool.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -114,17 +119,19 @@ private fun WelcomeStep() {
 @Composable
 private fun DefaultsStep() {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text("Your starting rules.", style = MaterialTheme.typography.headlineLarge)
+        Text(editorialTitle("Your starting rules."), style = MaterialTheme.typography.headlineLarge)
         Text(
-            "You can change these after setup.",
+            "These rules apply to every Chrome site.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        InfoCard("Daily budget", "60 minutes")
-        InfoCard("Weekly budget", "600 minutes")
-        InfoCard("Monthly budget", "2,400 minutes")
-        InfoCard("Sessions", "Choose 10, 30, or 60 minutes. The first wait costs 5 seconds per 10 minutes requested.")
-        InfoCard("Emergency skips", "Three wait skips per local day. A skip never bypasses an exhausted budget.")
+        InfoCard("Daily budget", "30 minutes at the start of every local day")
+        InfoCard("Earn more", "Five verified push-ups add 30 minutes to today's budget")
+        InfoCard("Sessions", "Choose 10, 30, or 60 minutes. Every normal opening has one fixed 12-second focused wait.")
+        InfoCard(
+            "Emergency skips",
+            "Three 30-minute access skips per local day, including after today's budget is used.",
+        )
     }
 }
 
@@ -135,7 +142,7 @@ private fun AccessibilityStep(
     onOpenAppInfo: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text("Allow the Chrome gate.", style = MaterialTheme.typography.headlineLarge)
+        Text(editorialTitle("Allow the Chrome gate."), style = MaterialTheme.typography.headlineLarge)
         Text(
             "Accessibility access is required for the real-time gate. Android asks you to enable it manually.",
             style = MaterialTheme.typography.bodyLarge,
@@ -145,7 +152,7 @@ private fun AccessibilityStep(
         Button(
             onClick = onOpenAccessibility,
             modifier = Modifier.fillMaxWidth().height(52.dp),
-            shape = RoundedCornerShape(16.dp),
+            shape = PillShape,
         ) { Text(if (enabled) "Accessibility enabled ✓" else "Open Accessibility settings") }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             InfoCard(
@@ -167,10 +174,11 @@ private fun AccessibilityStep(
 
 @Composable
 private fun DisclosureCard() {
+    val accent = EditorialTheme.colors.accent
     Surface(
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+        color = accent.copy(alpha = 0.10f),
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.28f)),
     ) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("What the service does", style = MaterialTheme.typography.titleMedium)
@@ -189,7 +197,7 @@ private fun DisclosureCard() {
 @Composable
 private fun UsageStep(granted: Boolean, onOpenUsageAccess: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text("Improve recovery.", style = MaterialTheme.typography.headlineLarge)
+        Text(editorialTitle("Improve recovery."), style = MaterialTheme.typography.headlineLarge)
         Text(
             "Usage Access can help confirm recent Chrome boundaries after a brief process interruption. It is not used to trigger the gate.",
             style = MaterialTheme.typography.bodyLarge,
@@ -202,7 +210,7 @@ private fun UsageStep(granted: Boolean, onOpenUsageAccess: () -> Unit) {
         Button(
             onClick = onOpenUsageAccess,
             modifier = Modifier.fillMaxWidth().height(52.dp),
-            shape = RoundedCornerShape(16.dp),
+            shape = PillShape,
         ) { Text(if (granted) "Usage Access granted ✓" else "Open Usage Access settings") }
         Text(
             if (granted) {
@@ -219,7 +227,7 @@ private fun UsageStep(granted: Boolean, onOpenUsageAccess: () -> Unit) {
 @Composable
 private fun ReadyStep(snapshot: StateSnapshot, onTestChrome: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text("Test the real gate.", style = MaterialTheme.typography.headlineLarge)
+        Text(editorialTitle("Test the real gate."), style = MaterialTheme.typography.headlineLarge)
         Text(
             if (snapshot.serviceConnected) {
                 "The protection service is connected. Opening Chrome should show the pause screen over the existing Chrome surface."
@@ -233,7 +241,7 @@ private fun ReadyStep(snapshot: StateSnapshot, onTestChrome: () -> Unit) {
             onClick = onTestChrome,
             enabled = snapshot.chromeInstalled,
             modifier = Modifier.fillMaxWidth().height(52.dp),
-            shape = RoundedCornerShape(16.dp),
+            shape = PillShape,
         ) { Text("Test Chrome gate") }
         InfoCard(
             "What to expect",
@@ -251,15 +259,20 @@ private fun InfoCard(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)),
+        border = BorderStroke(1.dp, EditorialTheme.colors.hairlineSoft),
     ) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(body, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             actionLabel?.let {
-                OutlinedButton(onClick = onAction, shape = RoundedCornerShape(14.dp)) { Text(it) }
+                OutlinedButton(
+                    onClick = onAction,
+                    shape = PillShape,
+                    border = BorderStroke(1.dp, EditorialTheme.colors.hairline),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+                ) { Text(it) }
             }
         }
     }

@@ -2,7 +2,7 @@
 
 A native Android version of Internet Restrictor, built from the sibling [Android Chrome project specification](../internet_restrictor_desktop/Dev/ANDROID_CHROME_PROJECT_SPEC.md).
 
-Internet Restrictor adds deliberate friction before stable Google Chrome opens. The user chooses a 10, 30, or 60 minute session, completes a focused wait, and then receives a wall-clock unlock. Only active, focused Chrome use is charged to the daily, weekly, and monthly budgets.
+Internet Restrictor adds deliberate friction before stable Google Chrome opens. The user chooses a 10, 30, or 60 minute session, completes a fixed 12-second focused wait, and then receives a wall-clock unlock. Only active, focused Chrome use is charged to today's Chrome-wide budget: 30 minutes at local-day start plus 30 minutes for every verified five-push-up round completed that day.
 
 This is a personal, user-controlled tool—not parental control, device management, or a tamper-proof blocker.
 
@@ -10,12 +10,12 @@ This is a personal, user-controlled tool—not parental control, device manageme
 
 - A five-step native onboarding flow with clear privacy and accessibility disclosure.
 - A touch-blocking accessibility overlay over stable Chrome (`com.android.chrome`).
-- Focused waits with the extension's escalating wait-cost rules.
+- A fixed 12-second focused wait before every normal Chrome session.
 - Normal 10, 30, and 60 minute wall-clock sessions.
-- A rotatable front/back-camera five-push-up challenge on every gate that grants 30 budget-free minutes after forgiving AI verification.
-- Three emergency wait skips per local day, without budget bypass.
-- Daily, Monday-based weekly, and calendar-month budgets.
-- Exact local-midnight usage splitting and all-period usage accounting.
+- A rotatable front/back-camera five-push-up challenge on every gate that adds 30 minutes to today's budget after forgiving AI verification. It never opens Chrome by itself and its use is charged normally.
+- Three emergency 30-minute access skips per local day, including when the daily budget is exhausted.
+- A 30-minute base daily budget with unlimited 30-minute earned increments and no weekly or monthly pool.
+- Exact local-midnight usage splitting and daily usage accounting.
 - Out-of-time latching, expiry handling, stale-command protection, and reset semantics.
 - A non-interactive Chrome status badge during an active unlock.
 - Dashboard, health status, settings, reset confirmation, theme selection, and local diagnostic export.
@@ -23,7 +23,7 @@ This is a personal, user-controlled tool—not parental control, device manageme
 - Transactional typed persistence with corruption detection and fail-open startup behavior.
 - Boot, user-unlock, date, time, timezone, screen, keyguard, and service-restart handling.
 - Android 16 Advanced Protection status reporting.
-- No account, backend, telemetry, advertising ID, or network permission.
+- No account, backend, telemetry, or advertising ID. Network access is used only to submit a user-recorded challenge video to the configured OpenRouter model for verification.
 - One, two, and four hour protection pauses with automatic re-enabling at local noon.
 - Active Chrome reporting while protection is off, kept separate from restriction budgets.
 - Informational notifications after 30 minutes of off-mode Chrome use, with bounded hourly follow-ups.
@@ -85,7 +85,7 @@ Run the complete local verification suite with:
 ./gradlew clean testDebugUnitTest :app:compileDebugAndroidTestKotlin lintDebug assembleDebug
 ```
 
-The unit suite covers period boundaries, wait formulas, gate priority, unlocks, active-use accounting, skips, budget exhaustion, reset behavior, stale commands, latches, corruption detection, and persistence round trips. Compose gate tests are also compiled as part of the command.
+The unit suite covers local-day boundaries, fixed waits, gate priority, unlocks, earned budget, active-use accounting, skips, budget exhaustion, reset behavior, stale commands, latches, corruption detection, and persistence round trips. Compose gate tests are also compiled as part of the command.
 
 To run the Compose instrumentation tests on a connected emulator or device:
 
@@ -93,11 +93,11 @@ To run the Compose instrumentation tests on a connected emulator or device:
 ./gradlew connectedDebugAndroidTest
 ```
 
-The checked emulator captures are in `validation_artifacts/`: [onboarding](validation_artifacts/final_onboarding.png), [dashboard](validation_artifacts/dashboard.png), [live Chrome gate](validation_artifacts/chrome_gate_final.png), and [active-session badge](validation_artifacts/chrome_badge_home_02.png).
+The captures in `validation_artifacts/` predate this redesign and are retained only as a baseline. They are not current visual proof of the daily-only earned-budget flow.
 
 ## Architecture
 
-- `domain/`: pure restriction engine, period math, wait pricing, and immutable state models.
+- `domain/`: pure restriction engine, local-day math, fixed wait rules, and immutable state models.
 - `data/`: serialized repository mutations and a typed binary DataStore serializer.
 - `monitoring/`: Chrome foreground classification, Accessibility service, permissions, and device health.
 - `overlay/`: full-screen gate and compact session badge window controllers.
@@ -122,7 +122,7 @@ The first informational reminder is sent after 30 minutes of active Chrome use w
 
 ## Privacy and permissions
 
-The manifest intentionally contains no `INTERNET`, VPN, or general system-overlay permission. It requests only what the product needs:
+The manifest intentionally contains no VPN or general system-overlay permission. It requests only what the product needs:
 
 - Accessibility service binding, granted manually by the user, for foreground detection and the accessibility overlay.
 - Usage Access, granted manually and optional in this MVP, for the future bounded recovery path.
@@ -131,5 +131,6 @@ The manifest intentionally contains no `INTERNET`, VPN, or general system-overla
 - Notifications, to deliver informational off-mode usage reminders when permitted.
 - Android 16 Advanced Protection status query, to report device compatibility honestly.
 - Package visibility for stable Chrome only.
+- Camera and internet access for the explicit push-up recording and OpenRouter verification flow.
 
 Backups are disabled so private usage state does not leave the device through Android backup. Bundled typefaces and their license are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

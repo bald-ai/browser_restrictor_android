@@ -2,15 +2,20 @@ package com.michalkrsik.internetrestrictor.overlay
 
 import android.content.Context
 import android.graphics.PixelFormat
+import android.os.Build
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.View
 import android.view.ViewGroup
+import android.view.WindowInsetsController
 import android.view.WindowManager
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import com.michalkrsik.internetrestrictor.data.RestrictorRepository
+import com.michalkrsik.internetrestrictor.domain.ThemePreference
 import com.michalkrsik.internetrestrictor.ui.gate.GateActions
 import com.michalkrsik.internetrestrictor.ui.gate.GateScreen
 import com.michalkrsik.internetrestrictor.ui.theme.RestrictorTheme
@@ -52,6 +57,18 @@ class GateOverlayController(
             owner.attachTo(this)
             setContent {
                 val snapshot by repository.snapshot.collectAsState()
+                SideEffect {
+                    val lightBars = snapshot.settings.theme == ThemePreference.LIGHT
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        windowInsetsController?.setSystemBarsAppearance(
+                            if (lightBars) WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS else 0,
+                            WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS,
+                        )
+                    } else {
+                        @Suppress("DEPRECATION")
+                        systemUiVisibility = if (lightBars) View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR else 0
+                    }
+                }
                 RestrictorTheme(snapshot.settings.theme) {
                     GateScreen(
                         snapshot = snapshot,

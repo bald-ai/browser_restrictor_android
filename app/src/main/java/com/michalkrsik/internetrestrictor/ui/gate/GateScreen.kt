@@ -3,6 +3,7 @@ package com.michalkrsik.internetrestrictor.ui.gate
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -46,8 +47,11 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.michalkrsik.internetrestrictor.domain.GateMode
@@ -57,6 +61,10 @@ import com.michalkrsik.internetrestrictor.domain.WaitCalculator
 import com.michalkrsik.internetrestrictor.ui.components.BudgetBar
 import com.michalkrsik.internetrestrictor.ui.components.PauseEmblem
 import com.michalkrsik.internetrestrictor.ui.components.friendlyLabel
+import com.michalkrsik.internetrestrictor.ui.theme.EditorialTheme
+import com.michalkrsik.internetrestrictor.ui.theme.PillShape
+import com.michalkrsik.internetrestrictor.ui.theme.SerifNote
+import com.michalkrsik.internetrestrictor.ui.theme.editorialTitle
 
 data class GateActions(
     val onStartSession: (Long) -> Unit,
@@ -86,7 +94,7 @@ fun GateScreen(snapshot: StateSnapshot, actions: GateActions) {
                     Text(
                         "←  Leave Chrome",
                         style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary,
+                        color = EditorialTheme.colors.accent,
                     )
                 }
             }
@@ -101,11 +109,10 @@ fun GateScreen(snapshot: StateSnapshot, actions: GateActions) {
                 Text(
                     text = eyebrow(snapshot.canonicalMode),
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    letterSpacing = 1.5.sp,
+                    color = EditorialTheme.colors.ink3,
                 )
                 Text(
-                    text = headline(snapshot.canonicalMode),
+                    text = editorialTitle(headline(snapshot.canonicalMode)),
                     style = MaterialTheme.typography.headlineLarge,
                     textAlign = TextAlign.Center,
                 )
@@ -171,9 +178,9 @@ fun GateScreen(snapshot: StateSnapshot, actions: GateActions) {
                     Text(
                         text = it,
                         modifier = Modifier.padding(vertical = 8.dp),
-                        style = MaterialTheme.typography.bodySmall,
+                        style = SerifNote,
                         textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.error,
+                        color = EditorialTheme.colors.accentInk,
                     )
                 }
             }
@@ -191,8 +198,7 @@ private fun PausedControls(
     onSkip: () -> Unit,
     onPushupChallenge: () -> Unit,
 ) {
-    val waitMs = WaitCalculator.requiredFocusMs(selectedMinutes, snapshot.completedNormalUnlocksToday)
-    val cost = WaitCalculator.costPerTenSeconds(snapshot.completedNormalUnlocksToday)
+    val waitMs = WaitCalculator.requiredFocusMs(selectedMinutes)
     Column(
         Modifier.padding(vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -208,9 +214,9 @@ private fun PausedControls(
             }
         }
         Text(
-            "Today's cost: $cost sec per 10 min unlock. This includes a ${WaitCalculator.formatWait(waitMs)} wait.",
+            "Every normal Chrome session starts with the same ${WaitCalculator.formatWait(waitMs)} focused wait.",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = EditorialTheme.colors.ink3,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -218,7 +224,7 @@ private fun PausedControls(
             onClick = onStart,
             enabled = !actionInFlight,
             modifier = Modifier.fillMaxWidth().height(52.dp),
-            shape = RoundedCornerShape(16.dp),
+            shape = PillShape,
         ) {
             Text("Begin $selectedMinutes minute session", style = MaterialTheme.typography.labelLarge)
         }
@@ -254,16 +260,22 @@ private fun WaitingControls(
             },
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(seconds.toString(), style = MaterialTheme.typography.displayLarge)
-            Text("SECONDS", style = MaterialTheme.typography.labelSmall, letterSpacing = 2.sp)
+            Text(
+                seconds.toString(),
+                style = MaterialTheme.typography.displayLarge.copy(
+                    fontSize = 92.sp,
+                    letterSpacing = (-3).sp,
+                ),
+            )
+            Text("SECONDS", style = MaterialTheme.typography.labelSmall, color = EditorialTheme.colors.ink3)
         }
         Box(
-            Modifier.fillMaxWidth().height(7.dp)
-                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(100)),
+            Modifier.fillMaxWidth().height(4.dp)
+                .background(EditorialTheme.colors.hairlineSoft, RoundedCornerShape(100)),
         ) {
             Box(
-                Modifier.fillMaxWidth(animatedProgress).height(7.dp)
-                    .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(100)),
+                Modifier.fillMaxWidth(animatedProgress).height(4.dp)
+                    .background(EditorialTheme.colors.accent, RoundedCornerShape(100)),
             )
         }
         Text(
@@ -298,7 +310,7 @@ private fun OutOfTimeControls(
             onClick = onTryAgain,
             enabled = !actionInFlight,
             modifier = Modifier.fillMaxWidth().height(52.dp),
-            shape = RoundedCornerShape(16.dp),
+            shape = PillShape,
         ) {
             Text("Try again", style = MaterialTheme.typography.labelLarge)
         }
@@ -307,15 +319,21 @@ private fun OutOfTimeControls(
 
 @Composable
 private fun PushupButton(actionInFlight: Boolean, onClick: () -> Unit) {
-    Button(
+    OutlinedButton(
         onClick = onClick,
         enabled = !actionInFlight,
         modifier = Modifier.fillMaxWidth().height(58.dp),
-        shape = RoundedCornerShape(16.dp),
+        shape = PillShape,
+        border = BorderStroke(1.dp, EditorialTheme.colors.hairline),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Earn 30 minutes", fontWeight = FontWeight.Bold)
-            Text("Complete 5 push-ups · no budget used", style = MaterialTheme.typography.bodySmall)
+            Text("Earn +30 minutes today", fontWeight = FontWeight.Bold)
+            Text(
+                "Complete 5 push-ups · adds to the daily budget",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -325,16 +343,23 @@ private fun SkipButton(snapshot: StateSnapshot, actionInFlight: Boolean, onClick
     if (!snapshot.skipSnapshot.eligible) return
     val actual = snapshot.skipSnapshot.grantDurationMs
     val label = if (actual < MINUTE_MS) "<1 min" else "${actual / MINUTE_MS} min"
-    OutlinedButton(
+    TextButton(
         onClick = onClick,
         enabled = !actionInFlight,
-        modifier = Modifier.fillMaxWidth().height(58.dp),
-        shape = RoundedCornerShape(16.dp),
-        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
+        modifier = Modifier.fillMaxWidth(),
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Use emergency skip · ${snapshot.skipSnapshot.remaining} left today", fontWeight = FontWeight.Bold)
-            Text("Opens Chrome for $label", style = MaterialTheme.typography.bodySmall)
+            Text(
+                "Use emergency skip · ${snapshot.skipSnapshot.remaining} left today",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = EditorialTheme.colors.accent,
+            )
+            Text(
+                "Opens Chrome for $label",
+                style = MaterialTheme.typography.bodySmall,
+                color = EditorialTheme.colors.ink3,
+            )
         }
     }
 }
@@ -344,7 +369,7 @@ private fun Budgets(snapshot: StateSnapshot) {
     val enabled = snapshot.budgetSnapshots.filter { it.enabled }
     if (enabled.isEmpty()) return
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(15.dp)) {
-        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+        HorizontalDivider(color = EditorialTheme.colors.hairline)
         enabled.forEach {
             BudgetBar(
                 budget = it,
@@ -363,7 +388,11 @@ private fun DurationCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val shape = RoundedCornerShape(13.dp)
+    val shape = RoundedCornerShape(16.dp)
+    val numberColor = if (selected) MaterialTheme.colorScheme.onPrimary
+    else MaterialTheme.colorScheme.onSurface
+    val unitColor = if (selected) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.65f)
+    else EditorialTheme.colors.ink3
     Column(
         modifier = modifier
             .clip(shape)
@@ -374,7 +403,7 @@ private fun DurationCard(
             .border(
                 width = 1.dp,
                 color = if (selected) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
+                else EditorialTheme.colors.hairline,
                 shape = shape,
             )
             .clickable(role = Role.RadioButton, onClick = onClick)
@@ -387,10 +416,16 @@ private fun DurationCard(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            "$minutes min",
+            text = buildAnnotatedString {
+                withStyle(SpanStyle(fontSize = 20.sp, fontWeight = FontWeight.SemiBold)) {
+                    append("$minutes")
+                }
+                withStyle(SpanStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, color = unitColor)) {
+                    append(" min")
+                }
+            },
             style = MaterialTheme.typography.labelLarge,
-            color = if (selected) MaterialTheme.colorScheme.onPrimary
-            else MaterialTheme.colorScheme.onSurfaceVariant,
+            color = numberColor,
         )
     }
 }
@@ -400,8 +435,7 @@ private fun SectionLabel(text: String) {
     Text(
         text.uppercase(),
         style = MaterialTheme.typography.labelSmall,
-        letterSpacing = 1.7.sp,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = EditorialTheme.colors.ink3,
     )
 }
 

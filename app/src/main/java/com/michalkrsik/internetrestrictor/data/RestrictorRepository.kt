@@ -3,7 +3,6 @@ package com.michalkrsik.internetrestrictor.data
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.core.DataStoreFactory
-import com.michalkrsik.internetrestrictor.domain.BudgetPeriod
 import com.michalkrsik.internetrestrictor.domain.CommandResult
 import com.michalkrsik.internetrestrictor.domain.ForegroundClass
 import com.michalkrsik.internetrestrictor.domain.GateMode
@@ -225,8 +224,8 @@ class RestrictorRepository(
         )
     }
 
-    suspend fun grantPushupUnlock(): Boolean = command(clearOutOfTimeLatch = true) {
-        engine.grantPushupUnlock(
+    suspend fun earnPushupBudget(): Boolean = command(clearOutOfTimeLatch = true) {
+        engine.earnPushupBudget(
             input = persistedState,
             nowWallMs = timeSource.wallTimeMs(),
             zoneId = timeSource.zoneId(),
@@ -524,7 +523,6 @@ class RestrictorRepository(
             }
             GateMode.ACCESS_GRANTED_NORMAL,
             GateMode.ACCESS_GRANTED_EMERGENCY,
-            GateMode.ACCESS_GRANTED_PUSHUP,
             GateMode.ACCESS_GRANTED_NO_DELAY,
             -> {
                 if (bufferedUsageStartWallMs != null && (bufferedUsageIsOff || bufferedUsageIsCurrentVisit)) {
@@ -644,7 +642,7 @@ class RestrictorRepository(
         true
     } catch (error: Exception) {
         runtime = runtime.copy(storageWriteError = true)
-        lastError = "A state change could not be saved. Chrome has not been unlocked."
+        lastError = "A state change could not be saved. The requested change was not applied."
         diagnosticSink("State store write failed")
         publishLocked()
         false
@@ -706,8 +704,8 @@ class RestrictorRepository(
                 diagnosticSink("Normal unlock granted")
             before.activeUnlock == null && after.activeUnlock?.source?.name == "EMERGENCY" ->
                 diagnosticSink("Emergency skip granted")
-            before.activeUnlock == null && after.activeUnlock?.source?.name == "PUSHUP" ->
-                diagnosticSink("Push-up unlock granted")
+            before.dailyCounter.earnedBudgetRounds < after.dailyCounter.earnedBudgetRounds ->
+                diagnosticSink("Push-up round added 30 minutes to today's budget")
             before.settings != after.settings -> diagnosticSink("Settings changed")
         }
     }
@@ -745,7 +743,6 @@ class RestrictorRepository(
         val nonGateModes = setOf(
             GateMode.ACCESS_GRANTED_NORMAL,
             GateMode.ACCESS_GRANTED_EMERGENCY,
-            GateMode.ACCESS_GRANTED_PUSHUP,
             GateMode.ACCESS_GRANTED_NO_DELAY,
             GateMode.ACCESS_GRANTED_CURRENT_VISIT,
             GateMode.CHROME_BACKGROUND,

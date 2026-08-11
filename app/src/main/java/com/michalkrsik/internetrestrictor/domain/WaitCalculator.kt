@@ -5,18 +5,9 @@ import kotlin.math.ceil
 object WaitCalculator {
     val sessionMinutes = listOf(10L, 30L, 60L)
 
-    fun costPerTenSeconds(completedNormalUnlocks: Long): Long {
-        require(completedNormalUnlocks >= 0)
-        return Math.multiplyExact(Math.addExact(completedNormalUnlocks, 1), 5)
-    }
-
-    fun requiredFocusMs(requestedMinutes: Long, completedNormalUnlocks: Long): Long {
+    fun requiredFocusMs(requestedMinutes: Long): Long {
         require(requestedMinutes in sessionMinutes)
-        val tenMinuteBlocks = requestedMinutes / 10
-        return Math.multiplyExact(
-            Math.multiplyExact(tenMinuteBlocks, costPerTenSeconds(completedNormalUnlocks)),
-            1_000,
-        )
+        return FIXED_WAIT_MS
     }
 
     fun displaySeconds(remainingMs: Long): Long =
@@ -29,4 +20,3 @@ object WaitCalculator {
         "%.1f min".format(minutes)
     }
 }
-

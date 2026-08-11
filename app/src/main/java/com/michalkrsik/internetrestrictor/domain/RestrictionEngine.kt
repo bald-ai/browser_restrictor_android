@@ -7,12 +7,8 @@ import kotlin.math.roundToInt
 class RestrictionEngine(
     private val idGenerator: IdGenerator = RandomIdGenerator,
 ) {
-    fun validateSettings(settings: RestrictorSettings): Boolean = listOf(
-        settings.dailyBudgetMinutes,
-        settings.weeklyBudgetMinutes,
-        settings.monthlyBudgetMinutes,
-        settings.emergencySkipDailyLimit,
-    ).all { it in 0..MAX_SAFE_MINUTES }
+    fun validateSettings(settings: RestrictorSettings): Boolean =
+        settings.emergencySkipDailyLimit in 0..MAX_SAFE_MINUTES
 
     fun normalize(input: PersistedState, nowWallMs: Long, zoneId: ZoneId): PersistedState {
         val keys = PeriodCalculator.keysAt(nowWallMs, zoneId)
@@ -27,8 +23,6 @@ class RestrictionEngine(
 
         state = state.copy(
             dailyUsage = normalizedUsage(state.dailyUsage, keys.daily),
-            weeklyUsage = normalizedUsage(state.weeklyUsage, keys.weekly),
-            monthlyUsage = normalizedUsage(state.monthlyUsage, keys.monthly),
         )
 
         if (state.dailyCounter.localDayKey != keys.daily) {
@@ -80,30 +74,31 @@ class RestrictionEngine(
         return if (revisionRelevant) state.copy(stateRevision = nextRevision(state.stateRevision)) else state
     }
 
-    fun budgetSnapshots(state: PersistedState): List<BudgetSnapshot> = BudgetPeriod.entries.map { period ->
-        val usage = state.usage(period)
-        val (enabled, minutes) = when (period) {
-            BudgetPeriod.DAILY -> state.settings.dailyBudgetEnabled to state.settings.dailyBudgetMinutes
-            BudgetPeriod.WEEKLY -> state.settings.weeklyBudgetEnabled to state.settings.weeklyBudgetMinutes
-            BudgetPeriod.MONTHLY -> state.settings.monthlyBudgetEnabled to state.settings.monthlyBudgetMinutes
-        }
+    fun budgetSnapshots(state: PersistedState): List<BudgetSnapshot> {
+        val usage = state.dailyUsage
+        val minutes = Math.addExact(
+            DAILY_BASE_BUDGET_MINUTES,
+            Math.multiplyExact(
+                state.dailyCounter.earnedBudgetRounds,
+                PUSHUP_BUDGET_REWARD_MINUTES,
+            ),
+        )
         val limitMs = safeMinutesToMs(minutes)
-        val remaining = if (enabled) (limitMs - usage.usedMs).coerceAtLeast(0) else null
-        val exhausted = enabled && remaining == 0L
+        val remaining = (limitMs - usage.usedMs).coerceAtLeast(0)
+        val exhausted = remaining == 0L
         val percentage = when {
-            !enabled -> 0
             limitMs == 0L -> 100
             else -> ((usage.usedMs.coerceAtMost(limitMs).toDouble() / limitMs) * 100).roundToInt()
         }
-        BudgetSnapshot(
-            period = period,
-            enabled = enabled,
+        return listOf(BudgetSnapshot(
+            period = BudgetPeriod.DAILY,
+            enabled = true,
             limitMinutes = minutes,
             usedMs = usage.usedMs,
             remainingMs = remaining,
             percentage = percentage,
             exhausted = exhausted,
-        )
+        ))
     }
 
     fun underlyingMode(state: PersistedState, runtime: RuntimeSignals, nowWallMs: Long): GateMode {
@@ -119,7 +114,6 @@ class RestrictionEngine(
         state.activeUnlock?.takeIf { it.expiresAtWallMs > nowWallMs }?.let {
             when (it.source) {
                 UnlockSource.EMERGENCY -> return GateMode.ACCESS_GRANTED_EMERGENCY
-                UnlockSource.PUSHUP -> return GateMode.ACCESS_GRANTED_PUSHUP
                 UnlockSource.NORMAL -> Unit
             }
         }
@@ -204,7 +198,7 @@ class RestrictionEngine(
             usageAccessGranted = runtime.usageAccessGranted,
             chromeInstalled = runtime.chromeInstalled,
             activeUnlock = state.activeUnlock,
-            completedNormalUnlocksToday = state.dailyCounter.completedNormalUnlocks,
+            earnedBudgetRoundsToday = state.dailyCounter.earnedBudgetRounds,
             offSessionStartedAtWallMs = state.offUsageReminder.sessionStartedAtWallMs,
             usageReports = state.usageReports,
             todayUsageReport = state.usageReports.firstOrNull {
@@ -237,10 +231,7 @@ class RestrictionEngine(
         val wait = PendingWait(
             id = idGenerator.nextId(),
             selectedDurationMs = selectedDuration,
-            requiredFocusMs = WaitCalculator.requiredFocusMs(
-                requestedMinutes,
-                state.dailyCounter.completedNormalUnlocks,
-            ),
+            requiredFocusMs = WaitCalculator.requiredFocusMs(requestedMinutes),
             accumulatedFocusMs = 0,
             createdAtWallMs = nowWallMs,
             updatedAtWallMs = nowWallMs,
@@ -313,12 +304,6 @@ class RestrictionEngine(
                 stateRevision = nextRevision(state.stateRevision),
                 activeUnlock = unlock,
                 pendingWait = null,
-                dailyCounter = state.dailyCounter.copy(
-                    completedNormalUnlocks = Math.addExact(
-                        state.dailyCounter.completedNormalUnlocks,
-                        1,
-                    ),
-                ),
             ),
         )
     }
@@ -373,24 +358,24 @@ class RestrictionEngine(
         )
     }
 
-    fun grantPushupUnlock(
+    fun earnPushupBudget(
         input: PersistedState,
         nowWallMs: Long,
         zoneId: ZoneId,
     ): CommandResult {
         val state = normalize(input, nowWallMs, zoneId)
-        if (state.activeUnlock != null) return rejected(state, "Chrome is already unlocked")
-        val unlock = UnlockSession(
-            id = idGenerator.nextId(),
-            source = UnlockSource.PUSHUP,
-            grantedAtWallMs = nowWallMs,
-            expiresAtWallMs = Math.addExact(nowWallMs, PUSHUP_UNLOCK_MS),
-        )
+        if (state.dailyCounter.earnedBudgetRounds >= MAX_SAFE_BUDGET_ROUNDS) {
+            return rejected(state, "Daily earned budget is at its safe limit")
+        }
         return CommandResult.Applied(
             state.copy(
                 stateRevision = nextRevision(state.stateRevision),
-                activeUnlock = unlock,
-                pendingWait = null,
+                dailyCounter = state.dailyCounter.copy(
+                    earnedBudgetRounds = Math.addExact(
+                        state.dailyCounter.earnedBudgetRounds,
+                        1,
+                    ),
+                ),
             ),
         )
     }
@@ -416,55 +401,41 @@ class RestrictionEngine(
         )) {
             state = normalize(state, interval.startMs, zoneId)
             val budgets = budgetSnapshots(state)
-            val budgetFreeAccess = state.activeUnlock?.let {
-                it.source == UnlockSource.PUSHUP &&
-                    it.expiresAtWallMs > interval.startMs
-            } == true
             val overBudgetAccess = state.activeUnlock?.let {
-                it.source in setOf(UnlockSource.EMERGENCY, UnlockSource.PUSHUP) &&
+                it.source == UnlockSource.EMERGENCY &&
                     it.expiresAtWallMs > interval.startMs
             } == true
-            val maximum = if (overBudgetAccess) {
+            val accessibleMaximum = if (overBudgetAccess) {
                 interval.durationMs
             } else {
                 budgets.filter { it.enabled }
                     .minOfOrNull { it.remainingMs ?: Long.MAX_VALUE }
                     ?: interval.durationMs
             }
-            val charged = minOf(interval.durationMs, maximum).coerceAtLeast(0)
-            if (charged > 0) {
-                state = if (budgetFreeAccess) {
-                    state.copy(
-                        runtimeMetadata = state.runtimeMetadata.copy(
-                            lastCommittedWallMs = interval.startMs + charged,
-                        ),
-                    )
-                } else {
-                    state.copy(
-                        dailyUsage = state.dailyUsage.copy(
-                            usedMs = Math.addExact(state.dailyUsage.usedMs, charged),
-                        ),
-                        weeklyUsage = state.weeklyUsage.copy(
-                            usedMs = Math.addExact(state.weeklyUsage.usedMs, charged),
-                        ),
-                        monthlyUsage = state.monthlyUsage.copy(
-                            usedMs = Math.addExact(state.monthlyUsage.usedMs, charged),
-                        ),
-                        runtimeMetadata = state.runtimeMetadata.copy(
-                            lastCommittedWallMs = interval.startMs + charged,
-                        ),
-                    )
-                }
+            val accessible = minOf(interval.durationMs, accessibleMaximum).coerceAtLeast(0)
+            val budgetRemaining = budgets.filter { it.enabled }
+                .minOfOrNull { it.remainingMs ?: Long.MAX_VALUE }
+                ?: accessible
+            val budgetCharged = minOf(accessible, budgetRemaining).coerceAtLeast(0)
+            if (accessible > 0) {
+                state = state.copy(
+                    dailyUsage = state.dailyUsage.copy(
+                        usedMs = Math.addExact(state.dailyUsage.usedMs, budgetCharged),
+                    ),
+                    runtimeMetadata = state.runtimeMetadata.copy(
+                        lastCommittedWallMs = interval.startMs + accessible,
+                    ),
+                )
                 state = addReportInterval(
                     state = state,
                     intervalStartWallMs = interval.startMs,
-                    intervalEndWallMs = interval.startMs + charged,
+                    intervalEndWallMs = interval.startMs + accessible,
                     zoneId = zoneId,
                     protectionOff = false,
                 )
-                cursor = interval.startMs + charged
+                cursor = interval.startMs + accessible
             }
-            if (charged < interval.durationMs) break
+            if (accessible < interval.durationMs) break
         }
         val nowExhausted = budgetSnapshots(state).any { it.exhausted }
         if (!originalExhausted && nowExhausted) {
@@ -665,8 +636,6 @@ class RestrictionEngine(
         return state.copy(
             stateRevision = nextRevision(state.stateRevision),
             dailyUsage = UsagePeriodState(BudgetPeriod.DAILY, keys.daily, 0),
-            weeklyUsage = UsagePeriodState(BudgetPeriod.WEEKLY, keys.weekly, 0),
-            monthlyUsage = UsagePeriodState(BudgetPeriod.MONTHLY, keys.monthly, 0),
             activeUnlock = null,
             pendingWait = null,
             currentVisitGraceActive = false,
@@ -721,7 +690,6 @@ class RestrictionEngine(
         val accessGrantedModes = setOf(
             GateMode.ACCESS_GRANTED_NORMAL,
             GateMode.ACCESS_GRANTED_EMERGENCY,
-            GateMode.ACCESS_GRANTED_PUSHUP,
             GateMode.ACCESS_GRANTED_NO_DELAY,
         )
     }
