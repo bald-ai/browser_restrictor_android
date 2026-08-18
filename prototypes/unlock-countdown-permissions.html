@@ -1,0 +1,918 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Browser Restrictor — Unlock and permission prototype</title>
+  <style>
+    @font-face {
+      font-family: "Manrope";
+      src: url("../app/src/main/res/font/manrope_variable.ttf") format("truetype");
+      font-weight: 200 800;
+    }
+    @font-face {
+      font-family: "Instrument Serif";
+      src: url("../app/src/main/res/font/instrument_serif_regular.ttf") format("truetype");
+    }
+    @font-face {
+      font-family: "Instrument Serif";
+      src: url("../app/src/main/res/font/instrument_serif_italic.ttf") format("truetype");
+      font-style: italic;
+    }
+
+    * { box-sizing: border-box; }
+    :root {
+      color-scheme: dark;
+      --paper: #14110b;
+      --paper-raised: #1b1710;
+      --card: #1e1913;
+      --card-strong: #262017;
+      --ink: #f0ebdf;
+      --ink-2: #a79f8e;
+      --ink-3: #726a5a;
+      --hairline: rgba(240, 235, 223, .15);
+      --hairline-soft: rgba(240, 235, 223, .075);
+      --accent: #ff5a26;
+      --accent-ink: #ff7a4d;
+      --good: #4db284;
+      --warn: #e0a33e;
+      --bad: #f0563f;
+      --font-ui: "Manrope", system-ui, sans-serif;
+      --font-editorial: "Instrument Serif", Georgia, serif;
+    }
+
+    html, body { min-height: 100%; }
+    body {
+      margin: 0;
+      background: #0b0906;
+      color: var(--ink);
+      font-family: var(--font-ui);
+    }
+    button { font: inherit; }
+    button:focus-visible {
+      outline: 2px solid var(--accent-ink);
+      outline-offset: 3px;
+    }
+
+    .workbench {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: minmax(330px, 430px) minmax(500px, 1fr);
+    }
+
+    .controls {
+      position: relative;
+      z-index: 3;
+      min-height: 100vh;
+      padding: 38px 34px 30px;
+      border-right: 1px solid var(--hairline-soft);
+      background: #100d08;
+      overflow-y: auto;
+    }
+    .kicker {
+      margin: 0 0 18px;
+      color: var(--accent-ink);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+    }
+    h1 {
+      max-width: 360px;
+      margin: 0;
+      font: 400 48px/.94 var(--font-editorial);
+      letter-spacing: -.025em;
+    }
+    .lede {
+      margin: 18px 0 26px;
+      color: var(--ink-2);
+      font-size: 13px;
+      line-height: 1.65;
+    }
+    .prototype-note {
+      display: flex;
+      gap: 9px;
+      align-items: center;
+      margin: 0 0 22px;
+      color: var(--ink-3);
+      font-size: 11px;
+    }
+    .prototype-note::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--warn);
+      box-shadow: 0 0 0 4px rgba(224, 163, 62, .10);
+    }
+
+    .segmented {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
+      padding: 4px;
+      border: 1px solid var(--hairline-soft);
+      border-radius: 15px;
+      background: #090704;
+    }
+    .segmented button,
+    .mini-tabs button,
+    .choice-row button,
+    .state-choice,
+    .surface-choice {
+      border: 0;
+      color: var(--ink-2);
+      background: transparent;
+      cursor: pointer;
+    }
+    .segmented button {
+      min-height: 44px;
+      border-radius: 11px;
+      font-size: 12px;
+      font-weight: 750;
+    }
+    .segmented button.active {
+      color: var(--paper);
+      background: var(--ink);
+    }
+
+    .control-panel { display: none; }
+    .control-panel.active { display: block; }
+    .control-section {
+      margin-top: 24px;
+      padding-top: 22px;
+      border-top: 1px solid var(--hairline-soft);
+    }
+    .control-label {
+      display: block;
+      margin-bottom: 10px;
+      color: var(--ink-3);
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+    .choice-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .choice-row button,
+    .state-choice,
+    .surface-choice {
+      min-height: 42px;
+      padding: 10px;
+      border: 1px solid var(--hairline);
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .choice-row button.active,
+    .state-choice.active,
+    .surface-choice.active {
+      color: var(--ink);
+      border-color: rgba(255, 90, 38, .72);
+      background: rgba(255, 90, 38, .10);
+      box-shadow: inset 0 0 0 1px rgba(255, 90, 38, .2);
+    }
+    .transport { display: flex; gap: 9px; }
+    .transport button {
+      flex: 1;
+      min-height: 42px;
+      border: 1px solid var(--hairline);
+      border-radius: 999px;
+      color: var(--ink);
+      background: transparent;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 750;
+    }
+    .transport .primary { color: var(--paper); border-color: var(--accent); background: var(--accent); }
+
+    .pattern-list { display: grid; gap: 9px; }
+    .pattern {
+      width: 100%;
+      padding: 14px 15px;
+      border: 1px solid var(--hairline-soft);
+      border-radius: 14px;
+      color: var(--ink);
+      background: var(--paper-raised);
+      text-align: left;
+      cursor: pointer;
+    }
+    .pattern strong { display: flex; align-items: center; gap: 7px; font-size: 12px; }
+    .pattern small { display: block; margin-top: 5px; color: var(--ink-3); font-size: 10px; line-height: 1.45; }
+    .pattern.active { border-color: var(--accent); background: rgba(255, 90, 38, .08); }
+    .recommended {
+      padding: 3px 7px;
+      border-radius: 999px;
+      color: var(--paper);
+      background: var(--accent);
+      font-size: 7px;
+      letter-spacing: .08em;
+    }
+    .state-list, .surface-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .surface-list { grid-template-columns: repeat(3, 1fr); }
+
+    .rationale {
+      margin: 22px 0 0;
+      padding: 15px 16px;
+      border-left: 2px solid var(--accent);
+      color: var(--ink-2);
+      background: rgba(255, 90, 38, .055);
+      font-size: 11px;
+      line-height: 1.6;
+    }
+    .rationale strong { color: var(--ink); }
+
+    .stage {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 38px;
+      background:
+        radial-gradient(circle at 50% 28%, rgba(255, 90, 38, .09), transparent 34%),
+        #0b0906;
+    }
+    .stage-inner { width: min(100%, 920px); display: grid; place-items: center; }
+    .phone-shell {
+      position: relative;
+      width: 390px;
+      height: min(844px, calc(100vh - 76px));
+      min-height: 690px;
+      padding: 7px;
+      border-radius: 48px;
+      background: #302a23;
+      box-shadow: 0 34px 100px rgba(0, 0, 0, .64), inset 0 0 0 1px rgba(255,255,255,.08);
+    }
+    .phone {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      border-radius: 41px;
+      color: var(--ink);
+      background: var(--paper);
+    }
+    .camera {
+      position: absolute;
+      z-index: 30;
+      top: 12px;
+      left: 50%;
+      width: 84px;
+      height: 23px;
+      transform: translateX(-50%);
+      border-radius: 20px;
+      background: #090704;
+    }
+    .status-bar {
+      position: absolute;
+      z-index: 20;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 46px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 21px;
+      font-size: 11px;
+      font-weight: 750;
+    }
+    .status-icons { letter-spacing: 2px; }
+    .gesture-bar {
+      position: absolute;
+      z-index: 30;
+      bottom: 9px;
+      left: 50%;
+      width: 104px;
+      height: 4px;
+      transform: translateX(-50%);
+      border-radius: 10px;
+      background: var(--ink);
+      opacity: .72;
+    }
+    .screen {
+      display: none;
+      height: 100%;
+      padding: 51px 22px 35px;
+      overflow-y: auto;
+      scrollbar-width: none;
+    }
+    .screen::-webkit-scrollbar { display: none; }
+    .screen.active { display: block; }
+
+    /* Countdown */
+    .countdown-screen { position: relative; }
+    .leave {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 38px;
+      padding: 0 2px;
+      border: 0;
+      color: var(--accent-ink);
+      background: transparent;
+      font-size: 12px;
+      font-weight: 650;
+      cursor: pointer;
+    }
+    .unlock-heading { margin-top: 64px; text-align: center; }
+    .eyebrow {
+      color: var(--ink-3);
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+    }
+    .unlock-heading h2 {
+      margin: 11px auto 0;
+      font: 400 46px/.95 var(--font-editorial);
+      letter-spacing: -.02em;
+    }
+    .unlock-heading h2 em { color: var(--accent); font-weight: 400; }
+    .timer-stage {
+      position: relative;
+      width: 206px;
+      height: 206px;
+      display: grid;
+      place-items: center;
+      margin: 42px auto 24px;
+    }
+    .timer-stage svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+    .timer-track { fill: none; stroke: rgba(240,235,223,.075); stroke-width: 4; }
+    .timer-progress {
+      fill: none;
+      stroke: var(--accent);
+      stroke-width: 5;
+      stroke-linecap: round;
+      stroke-dasharray: 603.19;
+      stroke-dashoffset: 0;
+      transition: stroke-dashoffset .18s linear;
+    }
+    .timer-copy { position: relative; z-index: 2; text-align: center; }
+    .timer-number {
+      display: block;
+      font: 400 92px/.78 var(--font-editorial);
+      letter-spacing: -.05em;
+    }
+    .timer-unit {
+      display: block;
+      margin-top: 9px;
+      color: var(--ink-3);
+      font-size: 8px;
+      font-weight: 800;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+    }
+    .countdown-budget {
+      width: 206px;
+      margin: 0 auto;
+      padding: 8px 0;
+      color: var(--ink-2);
+      font-size: 11px;
+    }
+    .countdown-budget-copy { display: flex; align-items: center; justify-content: space-between; }
+    .countdown-budget strong { color: var(--ink); font-weight: 750; }
+    .countdown-budget-track {
+      height: 6px;
+      margin-top: 10px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(240,235,223,.09);
+      box-shadow: inset 0 0 0 1px rgba(240,235,223,.035);
+    }
+    .countdown-budget-track i {
+      display: block;
+      width: 63%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--accent), #ff825e);
+      box-shadow: 0 0 12px rgba(255,82,43,.28);
+    }
+    .budget-track { height: 4px; margin-top: 8px; overflow: hidden; border-radius: 8px; background: var(--hairline-soft); }
+    .budget-track i { display: block; width: 64%; height: 100%; border-radius: inherit; background: var(--good); }
+
+    /* Permissions */
+    .permission-screen { padding-left: 20px; padding-right: 20px; }
+    .permission-top { margin: 10px 2px 18px; }
+    .permission-top .eyebrow { color: var(--accent-ink); }
+    .permission-top h2 { margin: 10px 0 6px; font: 400 41px/.98 var(--font-editorial); }
+    .permission-top p { margin: 0; color: var(--ink-2); font-size: 11px; line-height: 1.55; }
+    .surface-tag {
+      display: inline-flex;
+      margin-bottom: 8px;
+      padding: 5px 8px;
+      border: 1px solid var(--hairline-soft);
+      border-radius: 999px;
+      color: var(--ink-3);
+      font-size: 8px;
+      font-weight: 800;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    .health-summary {
+      margin-bottom: 12px;
+      padding: 16px;
+      border: 1px solid color-mix(in srgb, var(--state-color) 42%, transparent);
+      border-radius: 18px;
+      background: color-mix(in srgb, var(--state-color) 10%, var(--card));
+    }
+    .health-summary.good { --state-color: var(--good); }
+    .health-summary.warn { --state-color: var(--warn); }
+    .health-summary.bad { --state-color: var(--bad); }
+    .summary-title { display: flex; gap: 10px; align-items: center; }
+    .summary-icon {
+      width: 26px;
+      height: 26px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      color: var(--paper);
+      background: var(--state-color);
+      font-size: 13px;
+      font-weight: 900;
+    }
+    .summary-title strong { font-size: 13px; }
+    .health-summary > p { margin: 8px 0 0 36px; color: var(--ink-2); font-size: 10px; line-height: 1.5; }
+
+    .permission-card {
+      overflow: hidden;
+      border: 1px solid var(--hairline-soft);
+      border-radius: 18px;
+      background: var(--card);
+    }
+    .permission-row {
+      display: grid;
+      grid-template-columns: 34px 1fr auto;
+      gap: 11px;
+      align-items: center;
+      min-height: 74px;
+      padding: 13px 14px;
+      border-bottom: 1px solid var(--hairline-soft);
+    }
+    .permission-row:last-child { border-bottom: 0; }
+    .permission-icon {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border-radius: 11px;
+      color: var(--row-color);
+      background: color-mix(in srgb, var(--row-color) 13%, transparent);
+      font-size: 14px;
+      font-weight: 900;
+    }
+    .permission-row.good { --row-color: var(--good); }
+    .permission-row.warn { --row-color: var(--warn); }
+    .permission-row.bad { --row-color: var(--bad); }
+    .permission-copy strong { display: block; font-size: 11px; }
+    .permission-copy small { display: block; margin-top: 3px; color: var(--ink-3); font-size: 8.5px; line-height: 1.45; }
+    .role-label { color: var(--ink-3); font-size: 7px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+    .state-pill {
+      min-width: 56px;
+      padding: 7px 9px;
+      border: 1px solid color-mix(in srgb, var(--row-color) 45%, transparent);
+      border-radius: 999px;
+      color: var(--row-color);
+      background: color-mix(in srgb, var(--row-color) 8%, transparent);
+      text-align: center;
+      font-size: 8px;
+      font-weight: 850;
+    }
+    .permission-cta {
+      width: 100%;
+      min-height: 48px;
+      margin-top: 13px;
+      border: 0;
+      border-radius: 999px;
+      color: var(--paper);
+      background: var(--accent);
+      font-size: 11px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .permission-cta.secondary { color: var(--ink); border: 1px solid var(--hairline); background: transparent; }
+    .permission-footnote { margin: 12px 4px 0; color: var(--ink-3); font-size: 9px; line-height: 1.55; }
+
+    /* Alternative patterns */
+    .compact-banner {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      padding: 14px;
+      border: 1px solid var(--hairline);
+      border-radius: 16px;
+      background: var(--card);
+    }
+    .compact-banner .summary-icon { flex: 0 0 auto; }
+    .compact-banner .copy { min-width: 0; flex: 1; }
+    .compact-banner strong { display: block; font-size: 11px; }
+    .compact-banner small { display: block; margin-top: 3px; color: var(--ink-3); font-size: 8.5px; }
+    .compact-banner .chevron { color: var(--ink-3); font-size: 18px; }
+    .status-chips { display: flex; gap: 7px; margin-top: 10px; }
+    .status-chip { padding: 7px 9px; border: 1px solid var(--hairline); border-radius: 999px; color: var(--ink-2); font-size: 8px; }
+    .status-chip b { color: var(--good); }
+    .status-chip.needs b { color: var(--warn); }
+    .status-chip.off b { color: var(--bad); }
+
+    .checklist { padding: 17px; border: 1px solid var(--hairline-soft); border-radius: 18px; background: var(--card); }
+    .checklist-head { display: flex; justify-content: space-between; align-items: end; margin-bottom: 15px; }
+    .checklist-head strong { font: 400 25px/1 var(--font-editorial); }
+    .checklist-head span { color: var(--ink-3); font-size: 8px; font-weight: 800; letter-spacing: .1em; }
+    .checklist-row { display: flex; gap: 11px; padding: 12px 0; border-top: 1px solid var(--hairline-soft); }
+    .checkmark { width: 22px; height: 22px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 50%; color: var(--paper); background: var(--good); font-size: 10px; font-weight: 900; }
+    .checkmark.warn { background: var(--warn); }
+    .checkmark.bad { background: var(--bad); }
+    .checklist-row strong { display: block; font-size: 10px; }
+    .checklist-row small { display: block; margin-top: 3px; color: var(--ink-3); font-size: 8px; line-height: 1.4; }
+
+    .demo-content {
+      margin-top: 15px;
+      padding: 18px 16px;
+      border: 1px solid var(--hairline-soft);
+      border-radius: 18px;
+      background: var(--card);
+    }
+    .demo-content h3 { margin: 0; font: 400 25px/1 var(--font-editorial); }
+    .demo-content p { margin: 8px 0 15px; color: var(--ink-3); font-size: 9px; }
+    .demo-budget { display: flex; justify-content: space-between; align-items: end; }
+    .demo-budget strong { font: 400 44px/.9 var(--font-editorial); }
+    .demo-budget span { color: var(--ink-3); font-size: 9px; }
+
+    .hidden { display: none !important; }
+
+    @media (max-width: 880px) {
+      .workbench { display: block; }
+      .controls { min-height: auto; padding: 25px 20px; border-right: 0; border-bottom: 1px solid var(--hairline-soft); }
+      h1 { font-size: 38px; }
+      .lede { margin-bottom: 18px; }
+      .stage { min-height: 760px; padding: 26px 8px; }
+      .phone-shell { width: min(390px, calc(100vw - 20px)); height: 760px; min-height: 0; }
+    }
+  </style>
+</head>
+<body>
+  <main class="workbench">
+    <aside class="controls">
+      <p class="kicker">Browser Restrictor · interaction study</p>
+      <h1>Make the state impossible to miss.</h1>
+      <p class="lede">A working prototype for the focused unlock countdown and for clearer permission feedback throughout setup, dashboard, and settings.</p>
+      <p class="prototype-note">Prototype only — no Android behavior is changed.</p>
+
+      <nav class="segmented" aria-label="Prototype view">
+        <button class="active" data-view="countdown">Unlock countdown</button>
+        <button data-view="permissions">Permission states</button>
+      </nav>
+
+      <section class="control-panel active" data-controls="countdown">
+        <div class="control-section">
+          <span class="control-label">Session being unlocked</span>
+          <div class="choice-row" id="sessionChoices">
+            <button class="active" data-minutes="10">10 min</button>
+            <button data-minutes="30">30 min</button>
+            <button data-minutes="60">60 min</button>
+          </div>
+        </div>
+        <div class="control-section">
+          <span class="control-label">Countdown simulation</span>
+          <div class="transport">
+            <button class="primary" id="playPause">Pause</button>
+            <button id="restartCountdown">Restart 12s</button>
+          </div>
+        </div>
+        <p class="rationale"><strong>Simplified direction:</strong> the countdown contains only cancel, the selected duration, the timer, and the useful daily-budget value. Push-ups and emergency unlock stay outside this focused state.</p>
+      </section>
+
+      <section class="control-panel" data-controls="permissions">
+        <div class="control-section">
+          <span class="control-label">Proposed visibility pattern</span>
+          <div class="pattern-list">
+            <button class="pattern active" data-pattern="explicit">
+              <strong>A · Explicit state rows <span class="recommended">RECOMMENDED</span></strong>
+              <small>Shows required versus optional access separately, with a readable state and action.</small>
+            </button>
+            <button class="pattern" data-pattern="compact">
+              <strong>B · Persistent compact strip</strong>
+              <small>Keeps health visible with less space, but hides some explanation.</small>
+            </button>
+            <button class="pattern" data-pattern="checklist">
+              <strong>C · Setup checklist</strong>
+              <small>Best for onboarding and repair, but heavier for the everyday dashboard.</small>
+            </button>
+          </div>
+        </div>
+        <div class="control-section">
+          <span class="control-label">Permission condition</span>
+          <div class="state-list">
+            <button class="state-choice active" data-state="ready">All ready</button>
+            <button class="state-choice" data-state="usage">Usage missing</button>
+            <button class="state-choice" data-state="accessibility">Accessibility missing</button>
+            <button class="state-choice" data-state="service">Service disconnected</button>
+          </div>
+        </div>
+        <div class="control-section">
+          <span class="control-label">Where it appears</span>
+          <div class="surface-list">
+            <button class="surface-choice active" data-surface="onboarding">Onboarding</button>
+            <button class="surface-choice" data-surface="dashboard">Dashboard</button>
+            <button class="surface-choice" data-surface="settings">Settings</button>
+          </div>
+        </div>
+        <p class="rationale" id="permissionRationale"><strong>Recommendation:</strong> use explicit rows as the shared component everywhere. Onboarding can celebrate a successful grant; the dashboard remains scannable; Settings retains repair actions.</p>
+      </section>
+    </aside>
+
+    <section class="stage">
+      <div class="stage-inner">
+        <div class="phone-shell">
+          <div class="phone">
+            <div class="camera"></div>
+            <div class="status-bar"><span>9:41</span><span class="status-icons">◒  VoLTE  ▮▮  92</span></div>
+            <div class="gesture-bar"></div>
+
+            <section class="screen countdown-screen active" data-screen="countdown">
+              <button class="leave">← <span>Cancel</span></button>
+              <div class="unlock-heading">
+                <div class="eyebrow">Unlocking browser</div>
+                <h2><em id="sessionTitle">10 min</em> session</h2>
+              </div>
+
+              <div class="timer-stage" aria-live="polite">
+                <svg viewBox="0 0 206 206" aria-hidden="true">
+                  <circle class="timer-track" cx="103" cy="103" r="96"></circle>
+                  <circle class="timer-progress" id="timerProgress" cx="103" cy="103" r="96"></circle>
+                </svg>
+                <div class="timer-copy">
+                  <span class="timer-number" id="timerNumber">8</span>
+                  <span class="timer-unit">seconds</span>
+                </div>
+              </div>
+
+              <div class="countdown-budget">
+                <div class="countdown-budget-copy"><span>Daily budget</span><strong>19 min left</strong></div>
+                <div class="countdown-budget-track" role="progressbar" aria-label="Daily budget remaining" aria-valuemin="0" aria-valuemax="30" aria-valuenow="19"><i></i></div>
+              </div>
+            </section>
+
+            <section class="screen permission-screen" data-screen="permissions">
+              <div class="permission-top">
+                <span class="surface-tag" id="surfaceTag">Setup · access</span>
+                <div class="eyebrow">Internet Restrictor</div>
+                <h2 id="permissionHeading">Confirm access.</h2>
+                <p id="permissionIntro">Protection and recovery are separate. Each state should be visible without decoding a paragraph.</p>
+              </div>
+
+              <div id="permissionPrototype"></div>
+
+              <div class="demo-content" id="demoContent">
+                <h3 id="demoHeading">Ready for the browser.</h3>
+                <p id="demoCopy">Both access states remain visible after setup, not only while something is wrong.</p>
+                <div class="demo-budget"><strong>19</strong><span>minutes left today</span></div>
+                <div class="budget-track"><i></i></div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const viewButtons = [...document.querySelectorAll('[data-view]')];
+    const screens = [...document.querySelectorAll('[data-screen]')];
+    const controlPanels = [...document.querySelectorAll('[data-controls]')];
+    const sessionButtons = [...document.querySelectorAll('[data-minutes]')];
+    const patternButtons = [...document.querySelectorAll('[data-pattern]')];
+    const stateButtons = [...document.querySelectorAll('[data-state]')];
+    const surfaceButtons = [...document.querySelectorAll('[data-surface]')];
+
+    let view = 'countdown';
+    let sessionMinutes = 10;
+    let countdown = 8;
+    let running = true;
+    let pattern = 'explicit';
+    let permissionState = 'ready';
+    let surface = 'onboarding';
+    let countdownTimer;
+
+    const permissionStates = {
+      ready: {
+        tone: 'good', icon: '✓', title: 'Protection ready',
+        body: 'The browser gate is active and interruption recovery is available.',
+        accessibilityTone: 'good', accessibilityState: 'Enabled',
+        accessibilityBody: 'Required · controls the real-time browser gate',
+        usageTone: 'good', usageState: 'Enabled',
+        usageBody: 'Recommended · improves recovery after interruption',
+        action: 'Continue',
+      },
+      usage: {
+        tone: 'warn', icon: '!', title: 'Protected · recovery limited',
+        body: 'The browser gate works now. Usage Access would improve recovery after an interruption.',
+        accessibilityTone: 'good', accessibilityState: 'Enabled',
+        accessibilityBody: 'Required · real-time protection is active',
+        usageTone: 'warn', usageState: 'Not enabled',
+        usageBody: 'Recommended · optional recovery improvement',
+        action: 'Enable Usage Access',
+      },
+      accessibility: {
+        tone: 'bad', icon: '!', title: 'Protection needs access',
+        body: 'The browser cannot be gated until Accessibility access is enabled.',
+        accessibilityTone: 'bad', accessibilityState: 'Required',
+        accessibilityBody: 'Required · protection is currently inactive',
+        usageTone: 'good', usageState: 'Enabled',
+        usageBody: 'Recommended · ready for recovery support',
+        action: 'Open Accessibility',
+      },
+      service: {
+        tone: 'bad', icon: '↻', title: 'Protection service disconnected',
+        body: 'Access is granted, but Android is not running the protection service.',
+        accessibilityTone: 'bad', accessibilityState: 'Repair',
+        accessibilityBody: 'Required · reopen Accessibility to restart service',
+        usageTone: 'good', usageState: 'Enabled',
+        usageBody: 'Recommended · recovery access is still available',
+        action: 'Repair service',
+      },
+    };
+
+    const surfaceCopy = {
+      onboarding: {
+        tag: 'Setup · access', heading: 'Confirm access.',
+        intro: 'Protection and recovery are separate. Each state should be visible before setup is finished.',
+        demoHeading: 'Ready for the browser.', demoCopy: 'A successful grant gets an unmistakable confirmation before Continue.',
+      },
+      dashboard: {
+        tag: 'Dashboard · always visible', heading: 'Today’s boundary.',
+        intro: 'A compact health summary stays near the top, even when everything is working.',
+        demoHeading: 'Today’s shared budget.', demoCopy: 'Permission health remains separate from time and usage information.',
+      },
+      settings: {
+        tag: 'Settings · system access', heading: 'System access.',
+        intro: 'Each permission has its purpose, current state, and repair action in one predictable place.',
+        demoHeading: 'Browser access.', demoCopy: 'Settings remains the detailed source of truth for configuration and repair.',
+      },
+    };
+
+    function switchView(next) {
+      view = next;
+      viewButtons.forEach(button => button.classList.toggle('active', button.dataset.view === view));
+      screens.forEach(screen => screen.classList.toggle('active', screen.dataset.screen === view));
+      controlPanels.forEach(panel => panel.classList.toggle('active', panel.dataset.controls === view));
+    }
+
+    function renderCountdown() {
+      const total = 12;
+      const circumference = 603.19;
+      const progress = Math.max(0, Math.min(1, countdown / total));
+      document.getElementById('timerNumber').textContent = Math.ceil(countdown);
+      document.getElementById('timerProgress').style.strokeDashoffset = String(circumference * (1 - progress));
+      document.getElementById('sessionTitle').textContent = `${sessionMinutes} min`;
+      document.getElementById('playPause').textContent = running ? 'Pause' : 'Resume';
+    }
+
+    function startTimer() {
+      clearInterval(countdownTimer);
+      countdownTimer = setInterval(() => {
+        if (!running || view !== 'countdown') return;
+        countdown = Math.max(0, +(countdown - .1).toFixed(1));
+        if (countdown === 0) running = false;
+        renderCountdown();
+      }, 100);
+    }
+
+    function permissionRow(label, role, tone, state, body, symbol) {
+      return `
+        <div class="permission-row ${tone}">
+          <div class="permission-icon">${symbol}</div>
+          <div class="permission-copy">
+            <span class="role-label">${role}</span>
+            <strong>${label}</strong>
+            <small>${body}</small>
+          </div>
+          <span class="state-pill">${state}</span>
+        </div>`;
+    }
+
+    function permissionActions(data) {
+      if (permissionState === 'ready') {
+        return surface === 'onboarding'
+          ? '<button class="permission-cta">Continue</button>'
+          : '';
+      }
+      const secondary = permissionState === 'usage' && surface === 'onboarding'
+        ? '<button class="permission-cta secondary">Continue without it</button>'
+        : '';
+      return `<button class="permission-cta">${data.action}</button>${secondary}`;
+    }
+
+    function explicitPattern(data) {
+      return `
+        <div class="health-summary ${data.tone}">
+          <div class="summary-title"><span class="summary-icon">${data.icon}</span><strong>${data.title}</strong></div>
+          <p>${data.body}</p>
+        </div>
+        <div class="permission-card">
+          ${permissionRow('Accessibility', 'Required for protection', data.accessibilityTone, data.accessibilityState, data.accessibilityBody, 'A')}
+          ${permissionRow('Usage Access', 'Recommended for recovery', data.usageTone, data.usageState, data.usageBody, 'U')}
+        </div>
+        ${permissionActions(data)}
+        <p class="permission-footnote">Required and recommended access never share one vague “permission granted” state.</p>`;
+    }
+
+    function compactPattern(data) {
+      const accessibilityClass = data.accessibilityTone === 'bad' ? 'off' : '';
+      const usageClass = data.usageTone === 'warn' ? 'needs' : '';
+      return `
+        <div class="compact-banner health-summary ${data.tone}">
+          <span class="summary-icon">${data.icon}</span>
+          <div class="copy"><strong>${data.title}</strong><small>${data.body}</small></div>
+          <span class="chevron">›</span>
+        </div>
+        <div class="status-chips">
+          <span class="status-chip ${accessibilityClass}"><b>●</b> Accessibility · ${data.accessibilityState}</span>
+          <span class="status-chip ${usageClass}"><b>●</b> Usage · ${data.usageState}</span>
+        </div>
+        ${permissionActions(data)}
+        <p class="permission-footnote">Lowest visual weight. Good on the dashboard, weaker when the user must understand why access matters.</p>`;
+    }
+
+    function checklistPattern(data) {
+      const accessMark = data.accessibilityTone === 'good' ? '✓' : '!';
+      const usageMark = data.usageTone === 'good' ? '✓' : '!';
+      const completeCount = Number(data.accessibilityTone === 'good') + Number(data.usageTone === 'good');
+      return `
+        <div class="checklist">
+          <div class="checklist-head"><strong>Access checklist</strong><span>${completeCount} OF 2 READY</span></div>
+          <div class="checklist-row">
+            <span class="checkmark ${data.accessibilityTone}">${accessMark}</span>
+            <span><strong>Enable Accessibility</strong><small>${data.accessibilityBody}</small></span>
+          </div>
+          <div class="checklist-row">
+            <span class="checkmark ${data.usageTone}">${usageMark}</span>
+            <span><strong>Enable Usage Access</strong><small>${data.usageBody}</small></span>
+          </div>
+        </div>
+        ${permissionActions(data)}
+        <p class="permission-footnote">Excellent during setup and repair. Too much ceremony to remain expanded on every healthy dashboard.</p>`;
+    }
+
+    function renderPermissions() {
+      const data = permissionStates[permissionState];
+      const copy = surfaceCopy[surface];
+      document.getElementById('surfaceTag').textContent = copy.tag;
+      document.getElementById('permissionHeading').textContent = copy.heading;
+      document.getElementById('permissionIntro').textContent = copy.intro;
+      document.getElementById('demoHeading').textContent = copy.demoHeading;
+      document.getElementById('demoCopy').textContent = copy.demoCopy;
+      document.getElementById('demoContent').classList.toggle('hidden', surface === 'onboarding');
+
+      const prototype = document.getElementById('permissionPrototype');
+      prototype.innerHTML = pattern === 'explicit'
+        ? explicitPattern(data)
+        : pattern === 'compact'
+          ? compactPattern(data)
+          : checklistPattern(data);
+
+      const rationales = {
+        explicit: '<strong>Recommendation:</strong> use explicit rows as the shared component everywhere. Onboarding can celebrate a successful grant; the dashboard remains scannable; Settings retains repair actions.',
+        compact: '<strong>Tradeoff:</strong> this is calm and space-efficient, but “required” versus “recommended” becomes easier to overlook.',
+        checklist: '<strong>Tradeoff:</strong> this communicates setup progress best, but should collapse after onboarding rather than dominate the everyday dashboard.',
+      };
+      document.getElementById('permissionRationale').innerHTML = rationales[pattern];
+    }
+
+    viewButtons.forEach(button => button.addEventListener('click', () => switchView(button.dataset.view)));
+    sessionButtons.forEach(button => button.addEventListener('click', () => {
+      sessionMinutes = Number(button.dataset.minutes);
+      sessionButtons.forEach(item => item.classList.toggle('active', item === button));
+      renderCountdown();
+    }));
+    document.getElementById('playPause').addEventListener('click', () => {
+      if (countdown === 0) countdown = 12;
+      running = !running;
+      renderCountdown();
+    });
+    document.getElementById('restartCountdown').addEventListener('click', () => {
+      countdown = 12;
+      running = true;
+      renderCountdown();
+    });
+    patternButtons.forEach(button => button.addEventListener('click', () => {
+      pattern = button.dataset.pattern;
+      patternButtons.forEach(item => item.classList.toggle('active', item === button));
+      renderPermissions();
+    }));
+    stateButtons.forEach(button => button.addEventListener('click', () => {
+      permissionState = button.dataset.state;
+      stateButtons.forEach(item => item.classList.toggle('active', item === button));
+      renderPermissions();
+    }));
+    surfaceButtons.forEach(button => button.addEventListener('click', () => {
+      surface = button.dataset.surface;
+      surfaceButtons.forEach(item => item.classList.toggle('active', item === button));
+      renderPermissions();
+    }));
+
+    renderCountdown();
+    renderPermissions();
+    startTimer();
+  </script>
+</body>
+</html>
