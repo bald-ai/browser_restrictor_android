@@ -2,6 +2,7 @@ package com.michalkrsik.internetrestrictor.ui.settings
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -31,21 +32,29 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import com.michalkrsik.internetrestrictor.domain.MAX_SAFE_MINUTES
+import com.michalkrsik.internetrestrictor.domain.MAX_SESSION_MINUTES
+import com.michalkrsik.internetrestrictor.domain.MIN_SESSION_MINUTES
+import com.michalkrsik.internetrestrictor.domain.ProtectionHealth
 import com.michalkrsik.internetrestrictor.domain.RestrictorSettings
 import com.michalkrsik.internetrestrictor.domain.StateSnapshot
 import com.michalkrsik.internetrestrictor.domain.ThemePreference
 import com.michalkrsik.internetrestrictor.ui.components.HealthCard
+import com.michalkrsik.internetrestrictor.ui.components.PermissionStateRows
 import com.michalkrsik.internetrestrictor.ui.theme.EditorialTheme
 import com.michalkrsik.internetrestrictor.ui.theme.PillShape
-import com.michalkrsik.internetrestrictor.ui.theme.SerifNote
 import com.michalkrsik.internetrestrictor.ui.theme.editorialTitle
 
 @Composable
@@ -53,24 +62,25 @@ fun SettingsScreen(
     snapshot: StateSnapshot,
     onBack: () -> Unit,
     onThemeChange: (ThemePreference) -> Unit,
-    onPauseProtection: (Long?) -> Unit,
-    onResumeProtection: () -> Unit,
     onSave: (RestrictorSettings) -> Unit,
-    onResetUsage: () -> Unit,
     onCancelActiveUnlock: () -> Unit,
     onClearReports: () -> Unit,
+    onOpenAccessibility: () -> Unit,
+    onOpenUsageAccess: () -> Unit,
     onHealthAction: () -> Unit,
     onExportDiagnostics: () -> Unit,
 ) {
     BackHandler(onBack = onBack)
-    var delayEnabled by rememberSaveable { mutableStateOf(snapshot.settings.delayEnabled) }
-    var skipsEnabled by rememberSaveable { mutableStateOf(snapshot.settings.emergencySkipsEnabled) }
-    var skipLimit by rememberSaveable { mutableStateOf(snapshot.settings.emergencySkipDailyLimit.toString()) }
-    var showResetDialog by rememberSaveable { mutableStateOf(false) }
+    var firstSession by rememberSaveable { mutableStateOf(snapshot.settings.sessionMinutes[0].toString()) }
+    var secondSession by rememberSaveable { mutableStateOf(snapshot.settings.sessionMinutes[1].toString()) }
+    var thirdSession by rememberSaveable { mutableStateOf(snapshot.settings.sessionMinutes[2].toString()) }
     var showClearReportsDialog by rememberSaveable { mutableStateOf(false) }
+    var systemAccessExpanded by rememberSaveable { mutableStateOf(false) }
+    var developerExpanded by rememberSaveable { mutableStateOf(false) }
 
-    val skips = parseWholeNumber(skipLimit)
-    val valid = skips != null
+    val parsedSessions = listOf(firstSession, secondSession, thirdSession).map(::parseSessionMinutes)
+    val sessionValues = parsedSessions.filterNotNull()
+    val sessionsValid = sessionValues.size == 3
 
     Column(
         modifier = Modifier
@@ -102,26 +112,81 @@ fun SettingsScreen(
             )
         }
 
-        SettingsCard("Reset usage") {
+        SettingsCard("Session presets") {
             Text(
-                "Clears today's usage and earned budget, the current session, waiting progress, and daily skips. Rules and theme stay.",
+                "Choose the three session lengths shown on the browser gate. Each value can be from 1 minute to 2 hours.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            GhostButton(onClick = { showResetDialog = true }) {
-                Text("Reset usage")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                EditorialField(
+                    value = firstSession,
+                    onValueChange = { firstSession = it },
+                    label = { Text("Preset 1") },
+                    isError = parsedSessions[0] == null,
+                    supportingText = null,
+                    modifier = Modifier.weight(1f),
+                )
+                EditorialField(
+                    value = secondSession,
+                    onValueChange = { secondSession = it },
+                    label = { Text("Preset 2") },
+                    isError = parsedSessions[1] == null,
+                    supportingText = null,
+                    modifier = Modifier.weight(1f),
+                )
+                EditorialField(
+                    value = thirdSession,
+                    onValueChange = { thirdSession = it },
+                    label = { Text("Preset 3") },
+                    isError = parsedSessions[2] == null,
+                    supportingText = null,
+                    modifier = Modifier.weight(1f),
+                )
             }
-            Text(
-                "Your 30-day report is kept when restriction counters are reset.",
-                style = SerifNote,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            TextButton(onClick = { showClearReportsDialog = true }) {
-                Text("Clear report history", color = EditorialTheme.colors.accent)
+            if (!sessionsValid) {
+                Text(
+                    "Use whole-minute values between 1 and 120.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
             }
         }
 
-        SettingsCard("Developer controls") {
+        ExpandableSettingsSection(
+            title = "System access",
+            summary = buildString {
+                append(if (snapshot.accessibilityEnabled) "Accessibility on" else "Accessibility needs attention")
+                append(" · ")
+                append(if (snapshot.usageAccessGranted) "Usage Access on" else "Usage Access off")
+            },
+            expanded = systemAccessExpanded,
+            onToggle = { systemAccessExpanded = !systemAccessExpanded },
+        ) {
+            PermissionStateRows(
+                snapshot = snapshot,
+                onOpenAccessibility = onOpenAccessibility,
+                onOpenUsageAccess = onOpenUsageAccess,
+            )
+        }
+
+        if (snapshot.enforcementHealth !in permissionHealthStates) {
+            HealthCard(
+                health = snapshot.enforcementHealth,
+                usageAccessGranted = snapshot.usageAccessGranted,
+                onAction = onHealthAction,
+            )
+        }
+
+        ExpandableSettingsSection(
+            title = "Developer",
+            summary = "Diagnostics and maintenance",
+            expanded = developerExpanded,
+            onToggle = { developerExpanded = !developerExpanded },
+        ) {
             Text(
                 "Cancels only the currently granted browser session. Usage totals, budgets, skips, reports, and settings stay unchanged.",
                 style = MaterialTheme.typography.bodySmall,
@@ -133,128 +198,38 @@ fun SettingsScreen(
             ) {
                 Text(if (snapshot.activeUnlock != null) "Cancel active unlock" else "No active unlock")
             }
-        }
-
-        SettingsCard("Enforcement") {
+            HorizontalDivider(color = EditorialTheme.colors.hairlineSoft)
             Text(
-                if (snapshot.settings.enforcementEnabled) "Browser protection is on." else
-                    "Protection is off. Active browser use is still added to your report.",
+                "Deletes the stored browser-time and push-up history used by reports. Today's active budget counters remain unchanged.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            if (snapshot.settings.enforcementEnabled) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    listOf(1L, 2L, 4L).forEach { hours ->
-                        GhostButton(
-                            onClick = { onPauseProtection(hours) },
-                            modifier = Modifier.weight(1f),
-                        ) { Text("${hours}h") }
-                    }
-                }
-                TextButton(onClick = { onPauseProtection(null) }) {
-                    Text("Keep off until the daily auto-enable", color = EditorialTheme.colors.accent)
-                }
-            } else {
-                Button(
-                    onClick = onResumeProtection,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = PillShape,
-                ) { Text("Resume protection") }
+            TextButton(onClick = { showClearReportsDialog = true }) {
+                Text("Clear report history", color = EditorialTheme.colors.accent)
             }
-            Text(
-                "Protection automatically turns on every day at 12:00 noon in your current timezone.",
-                style = SerifNote,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            OutlinedButton(
+                onClick = onExportDiagnostics,
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                shape = PillShape,
+                border = BorderStroke(1.dp, EditorialTheme.colors.hairline),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+            ) { Text("Export diagnostics") }
         }
-
-        SettingsCard("Budgets") {
-            Text(
-                "Every local day starts with 30 minutes for supported browsers. Each verified five-push-up round adds another 30 minutes to today's shared budget. There are no weekly or monthly pools.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-
-        SettingsCard("Browser access") {
-            ToggleRow(
-                title = "Require wait before browser access",
-                supporting = "When off, supported browsers open directly but budgets and active-use accounting remain active.",
-                checked = delayEnabled,
-                onCheckedChange = { delayEnabled = it },
-            )
-        }
-
-        SettingsCard("Emergency skips") {
-            ToggleRow(
-                title = "Enable skips",
-                supporting = "Skips open supported browsers for 30 minutes, including after the shared budget is exhausted.",
-                checked = skipsEnabled,
-                onCheckedChange = { skipsEnabled = it },
-            )
-            EditorialField(
-                value = skipLimit,
-                onValueChange = { skipLimit = it },
-                label = { Text("Daily wait skips") },
-                isError = skips == null,
-                supportingText = if (skips == null) ({ Text("Enter a whole number, zero or greater.") }) else null,
-            )
-        }
-
-        HealthCard(
-            health = snapshot.enforcementHealth,
-            usageAccessGranted = snapshot.usageAccessGranted,
-            onAction = onHealthAction,
-        )
 
         Button(
             onClick = {
                 onSave(
                     snapshot.settings.copy(
-                        delayEnabled = delayEnabled,
-                        emergencySkipsEnabled = skipsEnabled,
-                        emergencySkipDailyLimit = skips!!,
+                        delayEnabled = true,
+                        sessionMinutes = sessionValues,
                     ),
                 )
             },
-            enabled = valid,
+            enabled = sessionsValid,
             modifier = Modifier.fillMaxWidth().height(54.dp),
             shape = PillShape,
         ) { Text("Save changes") }
-
-        OutlinedButton(
-            onClick = onExportDiagnostics,
-            modifier = Modifier.fillMaxWidth().height(50.dp),
-            shape = PillShape,
-            border = BorderStroke(1.dp, EditorialTheme.colors.hairline),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
-        ) { Text("Export diagnostics") }
         Spacer(Modifier.height(12.dp))
-    }
-
-    if (showResetDialog) {
-        AlertDialog(
-            onDismissRequest = { showResetDialog = false },
-            containerColor = MaterialTheme.colorScheme.surface,
-            title = { Text("Reset all usage?") },
-            text = {
-                Text("This also removes today's earned budget, the current browser session, and any waiting progress. Your delay setting, skip limit, and theme remain.")
-            },
-            confirmButton = {
-                Button(onClick = {
-                    showResetDialog = false
-                    onResetUsage()
-                }) { Text("Reset usage") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showResetDialog = false }) {
-                    Text("Cancel", color = EditorialTheme.colors.accent)
-                }
-            },
-        )
     }
 
     if (showClearReportsDialog) {
@@ -262,7 +237,7 @@ fun SettingsScreen(
             onDismissRequest = { showClearReportsDialog = false },
             containerColor = MaterialTheme.colorScheme.surface,
             title = { Text("Clear report history?") },
-            text = { Text("This removes the protected/off usage history. Today's budget and current restriction counters stay.") },
+            text = { Text("This removes stored browser-time and push-up history. Today's budget and current restriction counters stay.") },
             confirmButton = {
                 Button(onClick = {
                     showClearReportsDialog = false
@@ -303,6 +278,7 @@ private fun EditorialField(
     label: @Composable () -> Unit,
     isError: Boolean,
     supportingText: @Composable (() -> Unit)?,
+    modifier: Modifier = Modifier,
 ) {
     OutlinedTextField(
         value = value,
@@ -319,7 +295,7 @@ private fun EditorialField(
             cursorColor = EditorialTheme.colors.accent,
             focusedLabelColor = EditorialTheme.colors.accentInk,
         ),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
     )
 }
 
@@ -333,6 +309,60 @@ private fun SettingsCard(title: String, content: @Composable ColumnScope.() -> U
         ) {
             Text(title, style = MaterialTheme.typography.headlineSmall)
             content()
+        }
+    }
+}
+
+@Composable
+private fun ExpandableSettingsSection(
+    title: String,
+    summary: String,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    Column(Modifier.fillMaxWidth()) {
+        HorizontalDivider(color = EditorialTheme.colors.hairline)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = null,
+                    onClick = onToggle,
+                )
+                .semantics {
+                    role = Role.Button
+                    stateDescription = if (expanded) "Expanded" else "Collapsed"
+                }
+                .padding(vertical = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    summary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                if (expanded) "Hide" else "Show",
+                modifier = Modifier
+                    .padding(start = 12.dp)
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                style = MaterialTheme.typography.labelMedium,
+                color = EditorialTheme.colors.accent,
+            )
+        }
+        if (expanded) {
+            Column(
+                modifier = Modifier.padding(bottom = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(15.dp),
+                content = content,
+            )
         }
     }
 }
@@ -372,7 +402,15 @@ private fun ToggleRow(
     }
 }
 
-private fun parseWholeNumber(raw: String): Long? {
+private fun parseSessionMinutes(raw: String): Long? {
     if (raw.isBlank() || raw.any { !it.isDigit() }) return null
-    return raw.toLongOrNull()?.takeIf { it in 0..MAX_SAFE_MINUTES }
+    return raw.toLongOrNull()?.takeIf { it in MIN_SESSION_MINUTES..MAX_SESSION_MINUTES }
 }
+
+private val permissionHealthStates = setOf(
+    ProtectionHealth.READY,
+    ProtectionHealth.READY_LIMITED_RECOVERY,
+    ProtectionHealth.ACCESSIBILITY_REQUIRED,
+    ProtectionHealth.USAGE_ACCESS_RECOMMENDED,
+    ProtectionHealth.SERVICE_DISCONNECTED,
+)

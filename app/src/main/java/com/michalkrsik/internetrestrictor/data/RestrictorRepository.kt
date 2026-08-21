@@ -8,7 +8,6 @@ import com.michalkrsik.internetrestrictor.domain.ForegroundClass
 import com.michalkrsik.internetrestrictor.domain.GateMode
 import com.michalkrsik.internetrestrictor.domain.IdGenerator
 import com.michalkrsik.internetrestrictor.domain.PersistedState
-import com.michalkrsik.internetrestrictor.domain.ProtectionSchedule
 import com.michalkrsik.internetrestrictor.domain.RandomIdGenerator
 import com.michalkrsik.internetrestrictor.domain.RestrictionEngine
 import com.michalkrsik.internetrestrictor.domain.RestrictorSettings
@@ -35,7 +34,6 @@ class RestrictorRepository(
     private val engine: RestrictionEngine = RestrictionEngine(),
     private val idGenerator: IdGenerator = RandomIdGenerator,
     private val diagnosticSink: (String) -> Unit = {},
-    private val offUsageNotificationSink: () -> Unit = {},
     dataStoreOverride: DataStore<PersistedState>? = null,
 ) {
     private val dataStore = dataStoreOverride ?: DataStoreFactory.create(
@@ -53,11 +51,15 @@ class RestrictorRepository(
     private var lastTickWallMs: Long? = null
     private var bufferedUsageStartWallMs: Long? = null
     private var bufferedUsageEndWallMs: Long? = null
-    private var bufferedUsageIsOff = false
-    private var bufferedUsageIsCurrentVisit = false
 
     private val _snapshot = MutableStateFlow(
-        engine.snapshot(persistedState, runtime, timeSource.wallTimeMs(), isLoaded = false),
+        engine.snapshot(
+            persistedState,
+            runtime,
+            timeSource.wallTimeMs(),
+            zoneId = timeSource.zoneId(),
+            isLoaded = false,
+        ),
     )
     val snapshot: StateFlow<StateSnapshot> = _snapshot.asStateFlow()
 
@@ -133,19 +135,13 @@ class RestrictorRepository(
                 forceUsageFlush = true,
             )
             val old = runtime
-            val retainedGrace = engine.retainCurrentVisitGrace(
-                currentGrace = persistedState.currentVisitGraceActive,
-                serviceConnected = serviceConnected,
-                browserActive = browserActive,
-            )
-            val graceChanged = retainedGrace != persistedState.currentVisitGraceActive
             val waitWasPending = persistedState.pendingWait != null
             val updatedState = abortPendingWaitAfterServiceUpdate(
-                state = persistedState.copy(currentVisitGraceActive = retainedGrace),
+                state = persistedState,
                 browserActive = browserActive,
             )
             val waitAborted = waitWasPending && updatedState.pendingWait == null
-            if (graceChanged || waitAborted) {
+            if (waitAborted) {
                 persistedState = updatedState
             }
             runtime = runtime.copy(
@@ -173,7 +169,7 @@ class RestrictorRepository(
                 ),
             )
             manageGateTokensLocked()
-            if (old.policyFingerprint() != runtime.policyFingerprint() || graceChanged || waitAborted) {
+            if (old.policyFingerprint() != runtime.policyFingerprint() || waitAborted) {
                 bumpRevisionLocked()
             }
             if (waitAborted) diagnosticSink("Focused wait aborted after leaving the browser")
@@ -240,7 +236,13 @@ class RestrictorRepository(
         awaitLoaded()
         return mutationMutex.withLock {
             advanceLocked(timeSource.elapsedRealtimeMs(), timeSource.wallTimeMs(), forceUsageFlush = true)
-            val current = engine.snapshot(persistedState, runtime, timeSource.wallTimeMs(), isLoaded)
+            val current = engine.snapshot(
+                persistedState,
+                runtime,
+                timeSource.wallTimeMs(),
+                zoneId = timeSource.zoneId(),
+                isLoaded = isLoaded,
+            )
             val valid = current.stateRevision == expectedRevision &&
                 current.canonicalMode in setOf(GateMode.OUT_OF_TIME, GateMode.OUT_OF_TIME_LATCHED) &&
                 runtime.gateSessionId != null && runtime.gateSessionId == expectedGateSessionId &&
@@ -276,68 +278,12 @@ class RestrictorRepository(
         )
     }
 
-    suspend fun setEnforcementEnabled(
-        enabled: Boolean,
-        allowCurrentVisit: Boolean = false,
-    ): Boolean = immediateMutation(clearOutOfTimeLatch = true) {
-        val currentVisitWasOpen = runtime.browserActive ||
-            (!runtime.serviceConnected &&
-                it.runtimeMetadata.lastKnownForegroundClass == ForegroundClass.BROWSER)
-        engine.setEnforcement(
-            it,
-            enabled = enabled,
-            pauseUntilWallMs = null,
-            nowWallMs = timeSource.wallTimeMs(),
-            zoneId = timeSource.zoneId(),
-            allowCurrentVisit = enabled && allowCurrentVisit &&
-                (it.currentVisitGraceActive ||
-                    (!it.settings.enforcementEnabled && currentVisitWasOpen)),
-        )
-    }
-
-    suspend fun pauseProtection(durationMs: Long?): Boolean = immediateMutation(clearOutOfTimeLatch = true) {
-        val now = timeSource.wallTimeMs()
-        engine.setEnforcement(
-            it,
-            enabled = false,
-            pauseUntilWallMs = durationMs?.let { duration -> Math.addExact(now, duration) },
-            nowWallMs = now,
-            zoneId = timeSource.zoneId(),
-            allowCurrentVisit = false,
-        )
-    }
-
-    suspend fun reconcileProtectionSchedule(): Boolean {
-        awaitLoaded()
-        return mutationMutex.withLock {
-            advanceLocked(timeSource.elapsedRealtimeMs(), timeSource.wallTimeMs(), forceUsageFlush = true)
-            publishLocked()
-            persistedState.settings.enforcementEnabled
-        }
-    }
-
     suspend fun setTheme(theme: ThemePreference): Boolean = immediateMutation {
         engine.updateImmediateSettings(it, { settings -> settings.copy(theme = theme) }, timeSource.wallTimeMs(), timeSource.zoneId())
     }
 
     suspend fun completeOnboarding(): Boolean = immediateMutation {
         engine.updateImmediateSettings(it, { settings -> settings.copy(onboardingCompleted = true) }, timeSource.wallTimeMs(), timeSource.zoneId())
-    }
-
-    suspend fun resetUsage(): Boolean {
-        awaitLoaded()
-        return mutationMutex.withLock {
-            advanceLocked(timeSource.elapsedRealtimeMs(), timeSource.wallTimeMs(), forceUsageFlush = true)
-            val next = engine.resetUsage(persistedState, timeSource.wallTimeMs(), timeSource.zoneId())
-            if (!persistLocked(next)) return@withLock false
-            persistedState = next
-            runtime = runtime.copy(outOfTimeLatchToken = null, latchedBlockers = emptySet())
-            diagnosticSink("Usage and session state reset")
-            manageGateTokensLocked()
-            lastError = null
-            publishLocked()
-            true
-        }
     }
 
     suspend fun clearReportHistory(): Boolean = immediateMutation {
@@ -373,24 +319,13 @@ class RestrictorRepository(
             advanceLocked(timeSource.elapsedRealtimeMs(), timeSource.wallTimeMs(), forceUsageFlush = true)
             val nowWallMs = timeSource.wallTimeMs()
             val normalized = engine.normalize(persistedState, nowWallMs, timeSource.zoneId())
-            val rebased = ProtectionSchedule.rebaseAfterBackwardClockChange(
-                state = normalized,
-                nowWallMs = nowWallMs,
-                zoneId = timeSource.zoneId(),
-            )
-            val next = rebased.copy(
-                runtimeMetadata = rebased.runtimeMetadata.copy(
+            val next = normalized.copy(
+                runtimeMetadata = normalized.runtimeMetadata.copy(
                     recoveryEpochId = idGenerator.nextId(),
                     lastCommittedWallMs = nowWallMs,
                 ),
-                offUsageReminder = engine.rebaseOffUsageReminderAfterClockChange(
-                    reminder = rebased.offUsageReminder,
-                    protectionEnabled = rebased.settings.enforcementEnabled,
-                    nowWallMs = nowWallMs,
-                ),
             )
             if (persistLocked(next)) persistedState = next
-            reconcileProtectionDueLocked(nowWallMs)
             diagnosticSink("Clock or timezone boundary normalized")
             resetTickAnchorsLocked()
             manageGateTokensLocked()
@@ -476,7 +411,6 @@ class RestrictorRepository(
         if (previousElapsed == null || previousWall == null) {
             val normalized = engine.normalize(persistedState, wallTimeMs, timeSource.zoneId())
             if (normalized != persistedState && persistLocked(normalized)) persistedState = normalized
-            reconcileProtectionDueLocked(wallTimeMs)
             manageGateTokensLocked()
             return
         }
@@ -486,7 +420,6 @@ class RestrictorRepository(
             if (forceUsageFlush) flushUsageBufferLocked()
             val normalized = engine.normalize(persistedState, wallTimeMs, timeSource.zoneId())
             if (normalized != persistedState && persistLocked(normalized)) persistedState = normalized
-            reconcileProtectionDueLocked(wallTimeMs)
             manageGateTokensLocked()
             return
         }
@@ -525,11 +458,6 @@ class RestrictorRepository(
             GateMode.ACCESS_GRANTED_EMERGENCY,
             GateMode.ACCESS_GRANTED_NO_DELAY,
             -> {
-                if (bufferedUsageStartWallMs != null && (bufferedUsageIsOff || bufferedUsageIsCurrentVisit)) {
-                    flushUsageBufferLocked()
-                }
-                bufferedUsageIsOff = false
-                bufferedUsageIsCurrentVisit = false
                 val cappedEnd = persistedState.activeUnlock?.expiresAtWallMs
                     ?.coerceAtMost(intervalEnd)
                     ?.coerceAtLeast(intervalStart)
@@ -548,84 +476,27 @@ class RestrictorRepository(
                     flushUsageBufferLocked()
                 }
             }
-            GateMode.ENFORCEMENT_DISABLED -> {
-                if (bufferedUsageStartWallMs != null && (!bufferedUsageIsOff || bufferedUsageIsCurrentVisit)) {
-                    flushUsageBufferLocked()
-                }
-                bufferedUsageIsOff = true
-                bufferedUsageIsCurrentVisit = false
-                if (bufferedUsageStartWallMs == null) bufferedUsageStartWallMs = intervalStart
-                bufferedUsageEndWallMs = intervalEnd
-                val bufferedDuration = (bufferedUsageEndWallMs ?: 0) - (bufferedUsageStartWallMs ?: 0)
-                if (forceUsageFlush || bufferedDuration >= USAGE_HEARTBEAT_MS) {
-                    flushUsageBufferLocked()
-                }
-            }
-            GateMode.ACCESS_GRANTED_CURRENT_VISIT -> {
-                if (bufferedUsageStartWallMs != null && !bufferedUsageIsCurrentVisit) {
-                    flushUsageBufferLocked()
-                }
-                bufferedUsageIsOff = false
-                bufferedUsageIsCurrentVisit = true
-                if (bufferedUsageStartWallMs == null) bufferedUsageStartWallMs = intervalStart
-                bufferedUsageEndWallMs = intervalEnd
-                val bufferedDuration = (bufferedUsageEndWallMs ?: 0) - (bufferedUsageStartWallMs ?: 0)
-                if (forceUsageFlush || bufferedDuration >= USAGE_HEARTBEAT_MS) flushUsageBufferLocked()
-            }
             else -> flushUsageBufferLocked()
         }
 
         val normalized = engine.normalize(persistedState, wallTimeMs, timeSource.zoneId())
         if (normalized != persistedState && persistLocked(normalized)) persistedState = normalized
-        reconcileProtectionDueLocked(wallTimeMs)
         manageGateTokensLocked()
-    }
-
-    private suspend fun reconcileProtectionDueLocked(wallTimeMs: Long) {
-        val currentVisitWasOpen = runtime.browserActive ||
-            (!runtime.serviceConnected &&
-                persistedState.runtimeMetadata.lastKnownForegroundClass == ForegroundClass.BROWSER)
-        val next = engine.reconcileProtectionSchedule(
-            input = persistedState,
-            nowWallMs = wallTimeMs,
-            zoneId = timeSource.zoneId(),
-            currentVisitOpen = currentVisitWasOpen,
-        )
-        if (next == persistedState) return
-        if (persistLocked(next)) {
-            persistedState = next
-            runtime = runtime.copy(outOfTimeLatchToken = null, latchedBlockers = emptySet())
-            diagnosticSink("Protection automatically resumed")
-        }
     }
 
     private suspend fun flushUsageBufferLocked() {
         val start = bufferedUsageStartWallMs
         val end = bufferedUsageEndWallMs
-        val wasOff = bufferedUsageIsOff
-        val wasCurrentVisit = bufferedUsageIsCurrentVisit
         bufferedUsageStartWallMs = null
         bufferedUsageEndWallMs = null
-        bufferedUsageIsOff = false
-        bufferedUsageIsCurrentVisit = false
         if (start == null || end == null || end <= start) return
-        val next = if (wasOff) {
-            engine.consumeOffUsage(persistedState, runtime, start, end, timeSource.zoneId())
-        } else if (wasCurrentVisit) {
-            engine.consumeCurrentVisitUsage(persistedState, runtime, start, end, timeSource.zoneId())
-        } else {
-            engine.consumeUsage(persistedState, runtime, start, end, timeSource.zoneId())
-        }
-        val reminderFired = wasOff &&
-            next.offUsageReminder.lastNotificationWallMs !=
-            persistedState.offUsageReminder.lastNotificationWallMs
+        val next = engine.consumeUsage(persistedState, runtime, start, end, timeSource.zoneId())
         if (next != persistedState && persistLocked(next)) {
             val becameExhausted = !engine.budgetSnapshots(persistedState).any { it.exhausted } &&
                 engine.budgetSnapshots(next).any { it.exhausted }
             persistedState = next
-            diagnosticSink("${if (wasOff) "Off-mode report" else "Usage"} interval committed: ${end - start}ms")
+            diagnosticSink("Usage interval committed: ${end - start}ms")
             if (becameExhausted) diagnosticSink("Browser budget exhausted")
-            if (reminderFired) offUsageNotificationSink()
         }
     }
 
@@ -683,6 +554,7 @@ class RestrictorRepository(
             state = persistedState,
             runtime = runtime,
             nowWallMs = wallTimeMs,
+            zoneId = timeSource.zoneId(),
             isLoaded = isLoaded,
             lastErrorMessage = lastError,
         )
@@ -693,8 +565,6 @@ class RestrictorRepository(
         lastTickWallMs = null
         bufferedUsageStartWallMs = null
         bufferedUsageEndWallMs = null
-        bufferedUsageIsOff = false
-        bufferedUsageIsCurrentVisit = false
     }
 
     private fun recordTransition(before: PersistedState, after: PersistedState) {
@@ -705,7 +575,7 @@ class RestrictorRepository(
             before.activeUnlock == null && after.activeUnlock?.source?.name == "EMERGENCY" ->
                 diagnosticSink("Emergency skip granted")
             before.dailyCounter.earnedBudgetRounds < after.dailyCounter.earnedBudgetRounds ->
-                diagnosticSink("Push-up round added 30 minutes to today's budget")
+                diagnosticSink("Push-up round added 10 minutes to today's budget")
             before.settings != after.settings -> diagnosticSink("Settings changed")
         }
     }
@@ -744,9 +614,7 @@ class RestrictorRepository(
             GateMode.ACCESS_GRANTED_NORMAL,
             GateMode.ACCESS_GRANTED_EMERGENCY,
             GateMode.ACCESS_GRANTED_NO_DELAY,
-            GateMode.ACCESS_GRANTED_CURRENT_VISIT,
             GateMode.BROWSER_BACKGROUND,
-            GateMode.ENFORCEMENT_DISABLED,
             GateMode.SERVICE_UNAVAILABLE,
             GateMode.STORAGE_ERROR,
         )

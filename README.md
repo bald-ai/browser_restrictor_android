@@ -2,7 +2,7 @@
 
 A native Android version of Internet Restrictor with an earned-budget push-up flow.
 
-Internet Restrictor adds deliberate friction before Chrome, Firefox, Edge, or Opera opens. The user chooses a 10, 30, or 60 minute session, completes a fixed 12-second focused wait, and then receives a wall-clock unlock. Active, focused use across all supported browsers is charged to one shared daily budget: 30 minutes at local-day start plus 30 minutes for every verified five-push-up round completed that day.
+Internet Restrictor adds deliberate friction before Chrome, Firefox, Edge, or Opera opens. The user chooses one of three customizable session presets (3, 5, or 10 minutes by default), completes a fixed 12-second focused wait, and then receives a wall-clock unlock. Active, focused use across all supported browsers is charged to one shared daily budget: 10 minutes at local-day start plus 10 minutes for every verified five-push-up round completed that day.
 
 This is a personal, user-controlled tool—not parental control, device management, or a tamper-proof blocker.
 
@@ -11,23 +11,21 @@ This is a personal, user-controlled tool—not parental control, device manageme
 - A five-step native onboarding flow with clear privacy and accessibility disclosure.
 - A touch-blocking accessibility overlay over supported browsers.
 - A fixed 12-second focused wait before every normal browser session.
-- Normal 10, 30, and 60 minute wall-clock sessions.
-- A rotatable front/back-camera five-push-up challenge on every gate that adds 30 minutes to today's budget after forgiving AI verification. It returns to the originating supported browser after success, without bypassing the normal wait, and its use is charged normally.
-- Three emergency 30-minute access skips per local day, including when the daily budget is exhausted.
-- A 30-minute base daily budget with unlimited 30-minute earned increments and no weekly or monthly pool.
-- Exact local-midnight usage splitting and daily usage accounting.
-- Out-of-time latching, expiry handling, stale-command protection, and reset semantics.
+- Three customizable 1-to-120-minute wall-clock session presets, defaulting to 3, 5, and 10 minutes.
+- A rotatable front/back-camera five-push-up challenge on every gate that adds 10 minutes to today's budget after forgiving AI verification. The first successful set of each local day also earns one emergency unlock. It returns to the originating supported browser after success, without bypassing the normal wait, and its use is charged normally.
+- One earned emergency 30-minute access unlock per local day. Each day begins with none; the first successful push-up set earns it, and it can be used even when the daily budget is exhausted.
+- Emergency unlocks are always enabled; there is no product switch that can disable them.
+- A 10-minute base daily budget with unlimited 10-minute earned increments and no weekly or monthly pool.
+- Exact local-midnight usage splitting, daily usage accounting, and persisted push-up-session history grouped into Monday-to-Sunday weeks.
+- Out-of-time latching, expiry handling, and stale-command protection.
 - A non-interactive browser status badge during an active unlock.
-- Dashboard, health status, settings, reset confirmation, theme selection, and local diagnostic export.
+- Dashboard, health status, settings, theme selection, and local diagnostic export.
 - A developer control that cancels only the current unlock without resetting usage or settings.
 - Transactional typed persistence with corruption detection and fail-open startup behavior.
 - Boot, user-unlock, date, time, timezone, screen, keyguard, and service-restart handling.
 - Android 16 Advanced Protection status reporting.
 - No account, backend, telemetry, or advertising ID. Network access is used only to submit a user-recorded challenge video to the configured OpenRouter model for verification.
-- One, two, and four hour protection pauses with automatic re-enabling at local noon.
-- Active supported-browser reporting while protection is off, kept separate from restriction budgets.
-- Informational notifications after 30 minutes of off-mode browser use, with bounded hourly follow-ups.
-- Today plus 30 days of local report history split into protection-on and protection-off usage.
+- Today plus 30 days of browser-time and push-up-session report history.
 
 ## Requirements
 
@@ -85,7 +83,7 @@ Run the complete local verification suite with:
 ./gradlew clean testDebugUnitTest :app:compileDebugAndroidTestKotlin lintDebug assembleDebug
 ```
 
-The unit suite covers local-day boundaries, fixed waits, gate priority, unlocks, earned budget, active-use accounting, skips, budget exhaustion, reset behavior, stale commands, latches, corruption detection, and persistence round trips. Compose gate tests are also compiled as part of the command.
+The unit suite covers local-day and Monday-to-Sunday week boundaries, fixed waits, gate priority, unlocks, earned budget, active-use accounting, persisted push-up sessions, budget exhaustion, stale commands, latches, corruption detection, and persistence round trips. Compose gate tests are also compiled as part of the command.
 
 To run the Compose instrumentation tests on a connected emulator or device:
 
@@ -107,10 +105,6 @@ The captures in `validation_artifacts/` predate this redesign and are retained o
 
 The Accessibility service reacts only to window-level changes. It uses the active window package name to distinguish supported browsers, Internet Restrictor, and other apps. It does not traverse the accessibility tree or read URLs, webpage text, form fields, typing, or screenshots.
 
-Protection pauses leave the Accessibility service connected. This lets the app continue measuring active, focused supported-browser use without blocking it. Off-mode use is report-only and never consumes the normal budget. Protection returns after the chosen 1, 2, or 4 hour pause, or at 12:00 noon in the device's current timezone, whichever comes first. If a supported browser is already active at that moment, the current visit may continue and the next browser visit is protected.
-
-The first informational reminder is sent after 30 minutes of active supported-browser use while protection is off. Further reminders are limited to once per hour and require at least another 15 minutes of use. Android 13 and newer requires notification permission; denying it does not affect tracking or enforcement.
-
 ## Important boundaries
 
 - Supported packages are stable Chrome (`com.android.chrome`), Firefox (`org.mozilla.firefox`), Edge (`com.microsoft.emmx`), and Opera (`com.opera.browser`). Their use is combined into one budget and one active session.
@@ -128,8 +122,6 @@ The manifest intentionally contains no VPN or general system-overlay permission.
 - Accessibility service binding, granted manually by the user, for foreground detection and the accessibility overlay.
 - Usage Access, granted manually and optional in this MVP, for the future bounded recovery path.
 - Boot completion, to re-establish local period and time-boundary state.
-- Exact alarms, to restore protection at the selected pause boundary or local noon.
-- Notifications, to deliver informational off-mode usage reminders when permitted.
 - Android 16 Advanced Protection status query, to report device compatibility honestly.
 - Package visibility for stable Chrome, Firefox, Edge, and Opera.
 - Camera and internet access for the explicit push-up recording and OpenRouter verification flow.

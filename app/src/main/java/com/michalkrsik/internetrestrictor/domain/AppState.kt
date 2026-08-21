@@ -18,14 +18,18 @@ val SUPPORTED_BROWSER_PACKAGES = SUPPORTED_BROWSERS.mapTo(linkedSetOf()) { it.pa
 
 fun isSupportedBrowserPackage(packageName: String?): Boolean =
     packageName != null && packageName in SUPPORTED_BROWSER_PACKAGES
-const val RESTRICTOR_SCHEMA_VERSION = 3
+const val RESTRICTOR_SCHEMA_VERSION = 6
 const val MINUTE_MS = 60_000L
 const val HOUR_MS = 60L * MINUTE_MS
 const val DAY_MS = 24L * HOUR_MS
 const val PENDING_WAIT_EXPIRY_MS = DAY_MS
 const val EMERGENCY_UNLOCK_MS = 30L * MINUTE_MS
-const val DAILY_BASE_BUDGET_MINUTES = 30L
-const val PUSHUP_BUDGET_REWARD_MINUTES = 30L
+const val DAILY_BASE_BUDGET_MINUTES = 10L
+const val PUSHUP_BUDGET_REWARD_MINUTES = 10L
+const val EMERGENCY_SKIP_DAILY_LIMIT = 1L
+const val MIN_SESSION_MINUTES = 1L
+const val MAX_SESSION_MINUTES = 120L
+val DEFAULT_SESSION_MINUTES = listOf(3L, 5L, 10L)
 const val FIXED_WAIT_MS = 12_000L
 const val MAX_SAFE_MINUTES = Long.MAX_VALUE / MINUTE_MS
 const val MAX_SAFE_BUDGET_ROUNDS =
@@ -38,6 +42,8 @@ enum class BudgetPeriod { DAILY }
 enum class UnlockSource { NORMAL, EMERGENCY }
 
 enum class ForegroundClass { BROWSER, RESTRICTOR, OTHER }
+
+enum class ActivityEventType { PUSHUP_SET, BROWSER_SESSION }
 
 enum class GateMode {
     SERVICE_UNAVAILABLE,
@@ -72,15 +78,26 @@ data class RestrictorSettings(
     val pauseUntilWallMs: Long? = null,
     val delayEnabled: Boolean = true,
     val emergencySkipsEnabled: Boolean = true,
-    val emergencySkipDailyLimit: Long = 3,
+    val emergencySkipDailyLimit: Long = EMERGENCY_SKIP_DAILY_LIMIT,
     val theme: ThemePreference = ThemePreference.DARK,
     val onboardingCompleted: Boolean = false,
+    val sessionMinutes: List<Long> = DEFAULT_SESSION_MINUTES,
 )
 
 data class DailyUsageReport(
     val localDayKey: String,
     val protectedUsageMs: Long = 0,
     val offUsageMs: Long = 0,
+    val pushupSessions: Long = 0,
+)
+
+data class ActivityEvent(
+    val id: String,
+    val localDayKey: String,
+    val type: ActivityEventType,
+    val startedAtWallMs: Long,
+    val endedAtWallMs: Long,
+    val valueMs: Long,
 )
 
 data class OffUsageReminderState(
@@ -136,6 +153,7 @@ data class PersistedState(
     val dailyCounter: DailyCounter = DailyCounter(),
     val runtimeMetadata: RuntimeMetadata = RuntimeMetadata(),
     val usageReports: List<DailyUsageReport> = emptyList(),
+    val activityEvents: List<ActivityEvent> = emptyList(),
     val offUsageReminder: OffUsageReminderState = OffUsageReminderState(),
     val currentVisitGraceActive: Boolean = false,
 )
@@ -209,6 +227,8 @@ data class StateSnapshot(
     val offSessionStartedAtWallMs: Long,
     val usageReports: List<DailyUsageReport>,
     val todayUsageReport: DailyUsageReport,
+    val currentWeekUsageReports: List<DailyUsageReport>,
+    val todayActivityEvents: List<ActivityEvent>,
     val latchedBlockers: Set<BudgetPeriod>,
     val wallNowMs: Long,
     val isLoaded: Boolean,

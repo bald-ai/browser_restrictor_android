@@ -2,12 +2,17 @@ package com.michalkrsik.internetrestrictor.data
 
 import androidx.datastore.core.CorruptionException
 import androidx.datastore.core.Serializer
+import com.michalkrsik.internetrestrictor.domain.ActivityEvent
+import com.michalkrsik.internetrestrictor.domain.ActivityEventType
 import com.michalkrsik.internetrestrictor.domain.BudgetPeriod
 import com.michalkrsik.internetrestrictor.domain.DailyCounter
 import com.michalkrsik.internetrestrictor.domain.DailyUsageReport
+import com.michalkrsik.internetrestrictor.domain.DEFAULT_SESSION_MINUTES
+import com.michalkrsik.internetrestrictor.domain.EMERGENCY_SKIP_DAILY_LIMIT
 import com.michalkrsik.internetrestrictor.domain.ForegroundClass
+import com.michalkrsik.internetrestrictor.domain.MAX_SESSION_MINUTES
 import com.michalkrsik.internetrestrictor.domain.MAX_SAFE_BUDGET_ROUNDS
-import com.michalkrsik.internetrestrictor.domain.MAX_SAFE_MINUTES
+import com.michalkrsik.internetrestrictor.domain.MIN_SESSION_MINUTES
 import com.michalkrsik.internetrestrictor.domain.PendingWait
 import com.michalkrsik.internetrestrictor.domain.OffUsageReminderState
 import com.michalkrsik.internetrestrictor.domain.PersistedState
@@ -39,9 +44,9 @@ object AppStateSerializer : Serializer<PersistedState> {
                 throw CorruptionException("Unsupported state schema: $schema")
             }
             val revision = source.readLong()
-            val enforcementEnabled = source.readBoolean()
-            val pauseUntilWallMs = if (schema >= 2 && source.readBoolean()) source.readLong() else null
-            val delayEnabled = source.readBoolean()
+            source.readBoolean() // Retired enforcement toggle. Protection is always on.
+            if (schema >= 2 && source.readBoolean()) source.readLong() // Retired pause end.
+            source.readBoolean() // Retired wait toggle. The focused wait is always required.
             if (schema <= 2) {
                 // Legacy builds stored configurable daily, weekly, and monthly limits.
                 repeat(3) {
@@ -49,14 +54,28 @@ object AppStateSerializer : Serializer<PersistedState> {
                     source.readLong()
                 }
             }
+            source.readBoolean() // Retired emergency-skip toggle. Skips are always enabled.
+            source.readLong() // Retired configurable emergency-skip limit.
+            val theme = source.readEnum<ThemePreference>()
+            val onboardingCompleted = source.readBoolean()
+            val sessionMinutes = if (schema >= 4) {
+                val count = source.readInt()
+                if (count != DEFAULT_SESSION_MINUTES.size) {
+                    throw CorruptionException("Invalid session preset count")
+                }
+                List(count) { source.readLong() }
+            } else {
+                DEFAULT_SESSION_MINUTES
+            }
             val settings = RestrictorSettings(
-                enforcementEnabled = enforcementEnabled,
-                pauseUntilWallMs = pauseUntilWallMs,
-                delayEnabled = delayEnabled,
-                emergencySkipsEnabled = source.readBoolean(),
-                emergencySkipDailyLimit = source.readLong(),
-                theme = source.readEnum<ThemePreference>(),
-                onboardingCompleted = source.readBoolean(),
+                enforcementEnabled = true,
+                pauseUntilWallMs = null,
+                delayEnabled = true,
+                emergencySkipsEnabled = true,
+                emergencySkipDailyLimit = EMERGENCY_SKIP_DAILY_LIMIT,
+                theme = theme,
+                onboardingCompleted = onboardingCompleted,
+                sessionMinutes = sessionMinutes,
             )
             val daily = source.readUsage(BudgetPeriod.DAILY)
             if (schema <= 2) {
@@ -122,10 +141,15 @@ object AppStateSerializer : Serializer<PersistedState> {
             )
             val reports = if (schema >= 2) {
                 List(source.readInt()) {
+                    val localDayKey = source.readUTF()
+                    val protectedUsageMs = source.readLong()
+                    source.readLong() // Retired protection-off usage is deliberately discarded.
+                    val pushupSessions = if (schema >= 5) source.readLong() else 0L
                     DailyUsageReport(
-                        localDayKey = source.readUTF(),
-                        protectedUsageMs = source.readLong(),
-                        offUsageMs = source.readLong(),
+                        localDayKey = localDayKey,
+                        protectedUsageMs = protectedUsageMs,
+                        offUsageMs = 0,
+                        pushupSessions = pushupSessions,
                     )
                 }
             } else emptyList()
@@ -148,6 +172,18 @@ object AppStateSerializer : Serializer<PersistedState> {
             } else if (schema >= 3) {
                 source.readBoolean()
             } else false
+            val activityEvents = if (schema >= 6) {
+                List(source.readInt()) {
+                    ActivityEvent(
+                        id = source.readUTF(),
+                        localDayKey = source.readUTF(),
+                        type = source.readEnum<ActivityEventType>(),
+                        startedAtWallMs = source.readLong(),
+                        endedAtWallMs = source.readLong(),
+                        valueMs = source.readLong(),
+                    )
+                }
+            } else emptyList()
             val state = PersistedState(
                 schemaVersion = RESTRICTOR_SCHEMA_VERSION,
                 stateRevision = revision,
@@ -158,6 +194,7 @@ object AppStateSerializer : Serializer<PersistedState> {
                 dailyCounter = counter,
                 runtimeMetadata = metadata,
                 usageReports = reports,
+                activityEvents = activityEvents,
                 offUsageReminder = reminder,
                 currentVisitGraceActive = currentVisitGraceActive,
             )
@@ -180,11 +217,13 @@ object AppStateSerializer : Serializer<PersistedState> {
             target.writeBoolean(enforcementEnabled)
             target.writeBoolean(pauseUntilWallMs != null)
             pauseUntilWallMs?.let(target::writeLong)
-            target.writeBoolean(delayEnabled)
+            target.writeBoolean(true) // Keep the stable slot while the wait toggle is retired.
             target.writeBoolean(emergencySkipsEnabled)
             target.writeLong(emergencySkipDailyLimit)
             target.writeInt(theme.ordinal)
             target.writeBoolean(onboardingCompleted)
+            target.writeInt(sessionMinutes.size)
+            sessionMinutes.forEach(target::writeLong)
         }
         target.writeUsage(t.dailyUsage)
         target.writeBoolean(t.activeUnlock != null)
@@ -218,7 +257,8 @@ object AppStateSerializer : Serializer<PersistedState> {
         t.usageReports.forEach {
             target.writeUTF(it.localDayKey)
             target.writeLong(it.protectedUsageMs)
-            target.writeLong(it.offUsageMs)
+            target.writeLong(0L) // Keep the stable slot while protection-off history is retired.
+            target.writeLong(it.pushupSessions)
         }
         with(t.offUsageReminder) {
             target.writeLong(sessionStartedAtWallMs)
@@ -228,6 +268,15 @@ object AppStateSerializer : Serializer<PersistedState> {
             target.writeLong(usageAtLastNotificationMs)
         }
         target.writeBoolean(t.currentVisitGraceActive)
+        target.writeInt(t.activityEvents.size)
+        t.activityEvents.forEach { event ->
+            target.writeUTF(event.id)
+            target.writeUTF(event.localDayKey)
+            target.writeInt(event.type.ordinal)
+            target.writeLong(event.startedAtWallMs)
+            target.writeLong(event.endedAtWallMs)
+            target.writeLong(event.valueMs)
+        }
         target.flush()
     }
 
@@ -235,10 +284,18 @@ object AppStateSerializer : Serializer<PersistedState> {
         fun invalid(message: String): Nothing = throw CorruptionException(message)
         if (state.schemaVersion != RESTRICTOR_SCHEMA_VERSION) invalid("Wrong schema")
         if (state.stateRevision < 0) invalid("Negative revision")
-        if ((state.settings.pauseUntilWallMs ?: 0) < 0) invalid("Invalid pause end")
-        if (state.settings.emergencySkipDailyLimit !in 0..MAX_SAFE_MINUTES) {
+        if (!state.settings.enforcementEnabled || state.settings.pauseUntilWallMs != null) {
+            invalid("Protection must remain enabled")
+        }
+        if (!state.settings.emergencySkipsEnabled) invalid("Emergency skips must remain enabled")
+        if (!state.settings.delayEnabled) invalid("The focused wait must remain enabled")
+        if (state.settings.emergencySkipDailyLimit != EMERGENCY_SKIP_DAILY_LIMIT) {
             invalid("Invalid setting value")
         }
+        if (
+            state.settings.sessionMinutes.size != DEFAULT_SESSION_MINUTES.size ||
+            state.settings.sessionMinutes.any { it !in MIN_SESSION_MINUTES..MAX_SESSION_MINUTES }
+        ) invalid("Invalid session presets")
         if (state.dailyUsage.usedMs < 0) invalid("Negative usage")
         state.activeUnlock?.let {
             if (it.id.isBlank() || it.grantedAtWallMs < 0 || it.expiresAtWallMs < it.grantedAtWallMs) {
@@ -261,8 +318,22 @@ object AppStateSerializer : Serializer<PersistedState> {
         }
         if (state.usageReports.size > RestrictionEngine.MAX_REPORT_DAYS) invalid("Too many report days")
         state.usageReports.forEach {
-            if (it.localDayKey.isBlank() || it.protectedUsageMs < 0 || it.offUsageMs < 0) {
+            if (
+                it.localDayKey.isBlank() || it.protectedUsageMs < 0 || it.offUsageMs != 0L ||
+                it.pushupSessions < 0
+            ) {
                 invalid("Invalid usage report")
+            }
+        }
+        if (state.activityEvents.size > RestrictionEngine.MAX_ACTIVITY_EVENTS) {
+            invalid("Too many activity events")
+        }
+        state.activityEvents.forEach { event ->
+            if (
+                event.id.isBlank() || event.localDayKey.isBlank() || event.startedAtWallMs < 0 ||
+                event.endedAtWallMs < event.startedAtWallMs || event.valueMs < 0
+            ) {
+                invalid("Invalid activity event")
             }
         }
         with(state.offUsageReminder) {

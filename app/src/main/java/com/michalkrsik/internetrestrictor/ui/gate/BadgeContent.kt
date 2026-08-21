@@ -40,6 +40,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.michalkrsik.internetrestrictor.domain.GateMode
 import com.michalkrsik.internetrestrictor.domain.MINUTE_MS
 import com.michalkrsik.internetrestrictor.domain.StateSnapshot
@@ -165,17 +166,17 @@ private fun CollapsedBadge(snapshot: StateSnapshot) {
     val progress = (remainingMs.toFloat() / totalMs.toFloat()).coerceIn(0f, 1f)
     val minutes = ceil(remainingMs / MINUTE_MS.toDouble()).toLong()
 
-    Box(Modifier.size(28.dp), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
         CircularProgressIndicator(
             progress = { progress },
-            modifier = Modifier.size(28.dp),
+            modifier = Modifier.size(34.dp),
             color = BadgeContentColor,
             trackColor = BadgeContentColor.copy(alpha = 0.22f),
-            strokeWidth = 3.dp,
+            strokeWidth = 3.6.dp,
         )
         Text(
             text = minutes.toString(),
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.6.sp),
             color = BadgeContentColor,
         )
     }

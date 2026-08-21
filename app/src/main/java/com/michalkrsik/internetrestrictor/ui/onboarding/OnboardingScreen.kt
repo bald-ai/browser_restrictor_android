@@ -30,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.michalkrsik.internetrestrictor.domain.StateSnapshot
 import com.michalkrsik.internetrestrictor.ui.components.PauseEmblem
+import com.michalkrsik.internetrestrictor.ui.components.PermissionStateRows
 import com.michalkrsik.internetrestrictor.ui.theme.EditorialTheme
 import com.michalkrsik.internetrestrictor.ui.theme.PillShape
 import com.michalkrsik.internetrestrictor.ui.theme.editorialTitle
@@ -70,7 +71,12 @@ fun OnboardingScreen(
                 granted = snapshot.usageAccessGranted,
                 onOpenUsageAccess = onOpenUsageAccess,
             )
-            else -> ReadyStep(snapshot, onTestBrowser)
+            else -> ReadyStep(
+                snapshot = snapshot,
+                onOpenAccessibility = onOpenAccessibility,
+                onOpenUsageAccess = onOpenUsageAccess,
+                onTestBrowser = onTestBrowser,
+            )
         }
         Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -125,12 +131,12 @@ private fun DefaultsStep() {
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        InfoCard("Daily budget", "30 minutes at the start of every local day")
-        InfoCard("Earn more", "Five verified push-ups add 30 minutes to today's budget")
-        InfoCard("Sessions", "Choose 10, 30, or 60 minutes. Every normal opening has one fixed 12-second focused wait.")
+        InfoCard("Daily budget", "10 minutes at the start of every local day")
+        InfoCard("Earn more", "Five verified push-ups add 10 minutes to today's budget")
+        InfoCard("Sessions", "Choose 3, 5, or 10 minutes by default. You can customize all three presets in Settings. Every normal opening has one fixed 12-second focused wait.")
         InfoCard(
-            "Emergency skips",
-            "Three 30-minute access skips per local day, including after today's budget is used.",
+            "Emergency unlock",
+            "Each day starts with none. Your first successful push-up set earns one 30-minute emergency unlock for that day.",
         )
     }
 }
@@ -225,17 +231,23 @@ private fun UsageStep(granted: Boolean, onOpenUsageAccess: () -> Unit) {
 }
 
 @Composable
-private fun ReadyStep(snapshot: StateSnapshot, onTestBrowser: () -> Unit) {
+private fun ReadyStep(
+    snapshot: StateSnapshot,
+    onOpenAccessibility: () -> Unit,
+    onOpenUsageAccess: () -> Unit,
+    onTestBrowser: () -> Unit,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(editorialTitle("Test the real gate."), style = MaterialTheme.typography.headlineLarge)
+        Text(editorialTitle("Confirm system access."), style = MaterialTheme.typography.headlineLarge)
         Text(
-            if (snapshot.serviceConnected) {
-                "The protection service is connected. Opening a supported browser should show the pause screen over its existing surface."
-            } else {
-                "Accessibility is enabled, but Android has not reported the service connected yet. Open a supported browser to prompt a live check."
-            },
+            "Required protection and recommended recovery access remain visible separately, with a repair action beside anything that needs attention.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        PermissionStateRows(
+            snapshot = snapshot,
+            onOpenAccessibility = onOpenAccessibility,
+            onOpenUsageAccess = onOpenUsageAccess,
         )
         Button(
             onClick = onTestBrowser,

@@ -3,10 +3,8 @@ package com.michalkrsik.internetrestrictor.domain
 import kotlin.math.ceil
 
 object WaitCalculator {
-    val sessionMinutes = listOf(10L, 30L, 60L)
-
     fun requiredFocusMs(requestedMinutes: Long): Long {
-        require(requestedMinutes in sessionMinutes)
+        require(requestedMinutes in MIN_SESSION_MINUTES..MAX_SESSION_MINUTES)
         return FIXED_WAIT_MS
     }
 

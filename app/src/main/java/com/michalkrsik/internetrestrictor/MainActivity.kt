@@ -1,17 +1,11 @@
 package com.michalkrsik.internetrestrictor
 
 import android.content.Intent
-import android.Manifest
-import android.app.AlarmManager
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.ContextCompat
-import com.michalkrsik.internetrestrictor.domain.HOUR_MS
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
@@ -36,6 +30,7 @@ import com.michalkrsik.internetrestrictor.domain.ProtectionHealth
 import com.michalkrsik.internetrestrictor.domain.StateSnapshot
 import com.michalkrsik.internetrestrictor.domain.ThemePreference
 import com.michalkrsik.internetrestrictor.ui.dashboard.DashboardScreen
+import com.michalkrsik.internetrestrictor.ui.challenge.PushupChallengeActivity
 import com.michalkrsik.internetrestrictor.ui.onboarding.OnboardingScreen
 import com.michalkrsik.internetrestrictor.ui.settings.SettingsScreen
 import com.michalkrsik.internetrestrictor.ui.theme.EditorialTheme
@@ -48,13 +43,6 @@ import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     private val requestedDestination = mutableStateOf<String?>(null)
-    private var notificationPermissionRequested = false
-    private var exactAlarmPermissionRequested = false
-
-    private val notificationPermission = registerForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { }
-
     private val diagnosticsExporter = registerForActivityResult(
         ActivityResultContracts.CreateDocument("text/plain"),
     ) { uri ->
@@ -118,7 +106,6 @@ class MainActivity : ComponentActivity() {
                 } else destination
             }
             requestedDestination.value = null
-            requestNotificationPermissionIfNeeded(snapshot.settings.onboardingCompleted)
         }
 
         when (destination) {
@@ -142,22 +129,10 @@ class MainActivity : ComponentActivity() {
                 onThemeChange = { theme ->
                     lifecycleScope.launch { appContainer.repository.setTheme(theme) }
                 },
-                onPauseProtection = { hours ->
-                    requestExactAlarmPermissionIfNeeded()
-                    lifecycleScope.launch {
-                        appContainer.pauseProtection(hours?.let { it * HOUR_MS })
-                    }
-                },
-                onResumeProtection = {
-                    lifecycleScope.launch { appContainer.resumeProtection() }
-                },
                 onSave = { settings ->
                     lifecycleScope.launch {
                         appContainer.repository.saveSettings(snapshot.stateRevision, settings)
                     }
-                },
-                onResetUsage = {
-                    lifecycleScope.launch { appContainer.repository.resetUsage() }
                 },
                 onCancelActiveUnlock = {
                     lifecycleScope.launch { appContainer.repository.cancelActiveUnlock() }
@@ -165,6 +140,8 @@ class MainActivity : ComponentActivity() {
                 onClearReports = {
                     lifecycleScope.launch { appContainer.repository.clearReportHistory() }
                 },
+                onOpenAccessibility = ::openAccessibilitySettings,
+                onOpenUsageAccess = ::openUsageAccessSettings,
                 onHealthAction = { handleHealthAction(snapshot.enforcementHealth) },
                 onExportDiagnostics = {
                     diagnosticsExporter.launch("internet-restrictor-diagnostics.txt")
@@ -174,6 +151,7 @@ class MainActivity : ComponentActivity() {
                 snapshot = snapshot,
                 onOpenSettings = { destination = DESTINATION_SETTINGS },
                 onTestBrowser = ::launchBrowser,
+                onDoPushups = ::launchPushupChallenge,
                 onHealthAction = { handleHealthAction(snapshot.enforcementHealth) },
             )
         }
@@ -188,7 +166,6 @@ class MainActivity : ComponentActivity() {
                 supportedBrowserInstalled = access.supportedBrowserInstalled,
                 advancedProtectionEnabled = access.advancedProtectionEnabled,
             )
-            appContainer.reconcileProtectionSchedule()
         }
     }
 
@@ -198,9 +175,7 @@ class MainActivity : ComponentActivity() {
             ProtectionHealth.READY_LIMITED_RECOVERY,
             ProtectionHealth.USAGE_ACCESS_RECOMMENDED,
             -> openUsageAccessSettings()
-            ProtectionHealth.ENFORCEMENT_OFF -> lifecycleScope.launch {
-                appContainer.resumeProtection()
-            }
+            ProtectionHealth.ENFORCEMENT_OFF -> Unit
             ProtectionHealth.ACCESSIBILITY_REQUIRED,
             ProtectionHealth.SERVICE_DISCONNECTED,
             ProtectionHealth.RESTRICTED_SETTINGS_BLOCKED,
@@ -215,30 +190,6 @@ class MainActivity : ComponentActivity() {
 
     private fun openAccessibilitySettings() {
         startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-    }
-
-    private fun requestNotificationPermissionIfNeeded(onboardingCompleted: Boolean) {
-        if (!onboardingCompleted || notificationPermissionRequested) return
-        if (
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
-            PackageManager.PERMISSION_GRANTED
-        ) {
-            notificationPermissionRequested = true
-            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
-    }
-
-    private fun requestExactAlarmPermissionIfNeeded() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || exactAlarmPermissionRequested) return
-        val alarmManager = getSystemService(AlarmManager::class.java)
-        if (alarmManager.canScheduleExactAlarms()) return
-        exactAlarmPermissionRequested = true
-        startActivity(
-            Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
-                data = "package:$packageName".toUri()
-            },
-        )
     }
 
     private fun openUsageAccessSettings() {
@@ -265,6 +216,10 @@ class MainActivity : ComponentActivity() {
         } else {
             openBrowserListing()
         }
+    }
+
+    private fun launchPushupChallenge() {
+        startActivity(Intent(this, PushupChallengeActivity::class.java))
     }
 
     private fun openBrowserListing() {
