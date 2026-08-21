@@ -17,12 +17,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -60,6 +62,7 @@ import com.michalkrsik.internetrestrictor.domain.StateSnapshot
 import com.michalkrsik.internetrestrictor.domain.WaitCalculator
 import com.michalkrsik.internetrestrictor.ui.components.BudgetBar
 import com.michalkrsik.internetrestrictor.ui.components.PauseEmblem
+import com.michalkrsik.internetrestrictor.ui.components.formatCompactTime
 import com.michalkrsik.internetrestrictor.ui.components.friendlyLabel
 import com.michalkrsik.internetrestrictor.ui.theme.EditorialTheme
 import com.michalkrsik.internetrestrictor.ui.theme.PillShape
@@ -76,7 +79,15 @@ data class GateActions(
 
 @Composable
 fun GateScreen(snapshot: StateSnapshot, actions: GateActions) {
-    var selectedMinutes by rememberSaveable(snapshot.gateSessionId) { mutableLongStateOf(10) }
+    if (snapshot.canonicalMode == GateMode.WAITING) {
+        WaitingGate(snapshot = snapshot, onCancel = actions.onLeaveBrowser)
+        return
+    }
+
+    var selectedMinutes by rememberSaveable(
+        snapshot.gateSessionId,
+        snapshot.settings.sessionMinutes,
+    ) { mutableLongStateOf(snapshot.settings.sessionMinutes.first()) }
     var actionInFlight by remember { mutableStateOf(false) }
     LaunchedEffect(snapshot.stateRevision, snapshot.canonicalMode) { actionInFlight = false }
 
@@ -144,18 +155,6 @@ fun GateScreen(snapshot: StateSnapshot, actions: GateActions) {
                             actions.onPushupChallenge()
                         },
                     )
-                    GateMode.WAITING -> WaitingControls(
-                        snapshot = snapshot,
-                        actionInFlight = actionInFlight,
-                        onSkip = {
-                            actionInFlight = true
-                            actions.onEmergencySkip()
-                        },
-                        onPushupChallenge = {
-                            actionInFlight = true
-                            actions.onPushupChallenge()
-                        },
-                    )
                     GateMode.OUT_OF_TIME, GateMode.OUT_OF_TIME_LATCHED -> OutOfTimeControls(
                         snapshot = snapshot,
                         actionInFlight = actionInFlight,
@@ -204,7 +203,7 @@ private fun PausedControls(
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            WaitCalculator.sessionMinutes.forEach { minutes ->
+            snapshot.settings.sessionMinutes.forEach { minutes ->
                 DurationCard(
                     minutes = minutes,
                     selected = minutes == selectedMinutes,
@@ -235,59 +234,111 @@ private fun PausedControls(
 }
 
 @Composable
-private fun WaitingControls(
-    snapshot: StateSnapshot,
-    actionInFlight: Boolean,
-    onSkip: () -> Unit,
-    onPushupChallenge: () -> Unit,
-) {
+private fun WaitingGate(snapshot: StateSnapshot, onCancel: () -> Unit) {
     val wait = snapshot.waitSnapshot ?: return
     val seconds = WaitCalculator.displaySeconds(wait.remainingFocusMs)
-    val animatedProgress by animateFloatAsState(
+    val elapsedProgress by animateFloatAsState(
         targetValue = wait.progress.coerceIn(0f, 1f),
         animationSpec = tween(durationMillis = 240, easing = LinearEasing),
         label = "focused wait progress",
     )
-    Column(
-        Modifier.padding(vertical = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
-    ) {
-        SectionLabel("Wait remaining")
+    val selectedMinutes = wait.selectedDurationMs / MINUTE_MS
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
-            Modifier.fillMaxWidth().semantics {
-                contentDescription = "$seconds seconds remaining"
-                liveRegion = LiveRegionMode.Polite
-            },
-            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = 22.dp, vertical = 10.dp),
         ) {
-            Text(
-                seconds.toString(),
-                style = MaterialTheme.typography.displayLarge.copy(
-                    fontSize = 92.sp,
-                    letterSpacing = (-3).sp,
-                ),
-            )
-            Text("SECONDS", style = MaterialTheme.typography.labelSmall, color = EditorialTheme.colors.ink3)
+            TextButton(onClick = onCancel) {
+                Text(
+                    "←  Cancel",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = EditorialTheme.colors.accent,
+                )
+            }
+            Column(
+                modifier = Modifier.fillMaxSize().padding(bottom = 72.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                SectionLabel("Unlocking browser")
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = buildAnnotatedString {
+                        withStyle(
+                            SpanStyle(
+                                color = EditorialTheme.colors.accent,
+                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                            ),
+                        ) { append("$selectedMinutes min") }
+                        append(" session")
+                    },
+                    style = MaterialTheme.typography.headlineLarge,
+                )
+                Spacer(Modifier.height(42.dp))
+                Box(
+                    modifier = Modifier
+                        .size(214.dp)
+                        .semantics {
+                            contentDescription = "$seconds seconds remaining"
+                            liveRegion = LiveRegionMode.Polite
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator(
+                        progress = { elapsedProgress },
+                        modifier = Modifier.fillMaxSize(),
+                        color = EditorialTheme.colors.accent,
+                        trackColor = EditorialTheme.colors.hairlineSoft,
+                        strokeWidth = 5.dp,
+                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            seconds.toString(),
+                            style = MaterialTheme.typography.displayLarge.copy(
+                                fontSize = 92.sp,
+                                letterSpacing = (-3).sp,
+                            ),
+                        )
+                        Text(
+                            "SECONDS",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = EditorialTheme.colors.ink3,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(28.dp))
+                CountdownBudget(snapshot)
+            }
+        }
+    }
+}
+
+@Composable
+private fun CountdownBudget(snapshot: StateSnapshot) {
+    val budget = snapshot.budgetSnapshots.firstOrNull { it.enabled } ?: return
+    val remaining = budget.remainingMs ?: 0
+    val remainingFraction = (1f - budget.percentage / 100f).coerceIn(0f, 1f)
+    Column(Modifier.fillMaxWidth(.64f), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Daily budget", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("${formatCompactTime(remaining)} left", style = MaterialTheme.typography.labelMedium)
         }
         Box(
-            Modifier.fillMaxWidth().height(4.dp)
+            Modifier.fillMaxWidth().height(6.dp)
                 .background(EditorialTheme.colors.hairlineSoft, RoundedCornerShape(100)),
         ) {
             Box(
-                Modifier.fillMaxWidth(animatedProgress).height(4.dp)
+                Modifier.fillMaxWidth(remainingFraction).height(6.dp)
                     .background(EditorialTheme.colors.accent, RoundedCornerShape(100)),
             )
         }
-        Text(
-            "Keep this pause screen focused to continue.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        PushupButton(actionInFlight, onPushupChallenge)
-        SkipButton(snapshot, actionInFlight, onSkip)
-        Budgets(snapshot)
     }
 }
 
@@ -328,7 +379,7 @@ private fun PushupButton(actionInFlight: Boolean, onClick: () -> Unit) {
         colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Earn +30 minutes today", fontWeight = FontWeight.Bold)
+            Text("Earn +10 minutes today", fontWeight = FontWeight.Bold)
             Text(
                 "Complete 5 push-ups · adds to the daily budget",
                 style = MaterialTheme.typography.bodySmall,

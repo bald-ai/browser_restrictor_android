@@ -1,13 +1,15 @@
 package com.michalkrsik.internetrestrictor.data
 
 import androidx.datastore.core.CorruptionException
+import com.michalkrsik.internetrestrictor.domain.ActivityEvent
+import com.michalkrsik.internetrestrictor.domain.ActivityEventType
 import com.michalkrsik.internetrestrictor.domain.BudgetPeriod
 import com.michalkrsik.internetrestrictor.domain.DailyCounter
 import com.michalkrsik.internetrestrictor.domain.DailyUsageReport
-import com.michalkrsik.internetrestrictor.domain.OffUsageReminderState
 import com.michalkrsik.internetrestrictor.domain.PendingWait
 import com.michalkrsik.internetrestrictor.domain.PersistedState
 import com.michalkrsik.internetrestrictor.domain.RestrictorSettings
+import com.michalkrsik.internetrestrictor.domain.RestrictionEngine
 import com.michalkrsik.internetrestrictor.domain.ThemePreference
 import com.michalkrsik.internetrestrictor.domain.UnlockSession
 import com.michalkrsik.internetrestrictor.domain.UnlockSource
@@ -15,6 +17,8 @@ import com.michalkrsik.internetrestrictor.domain.UsagePeriodState
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.DataOutputStream
+import java.time.ZoneId
+import java.time.ZonedDateTime
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -26,17 +30,23 @@ class AppStateSerializerTest {
             stateRevision = 42,
             settings = RestrictorSettings(
                 theme = ThemePreference.LIGHT,
-                delayEnabled = false,
-                enforcementEnabled = false,
-                pauseUntilWallMs = 999_999,
+                sessionMinutes = listOf(2L, 7L, 90L),
             ),
             dailyUsage = UsagePeriodState(BudgetPeriod.DAILY, "2026-07-10", 12_345),
             activeUnlock = UnlockSession("unlock", UnlockSource.NORMAL, 100, 200),
             dailyCounter = DailyCounter("2026-07-10", 2, 1),
-            usageReports = listOf(DailyUsageReport("2026-07-10", 5_000, 6_000)),
-            offUsageReminder = OffUsageReminderState(
-                sessionStartedAtWallMs = 100,
-                qualifyingUsageMs = 6_000,
+            usageReports = listOf(
+                DailyUsageReport("2026-07-10", protectedUsageMs = 5_000, pushupSessions = 2),
+            ),
+            activityEvents = listOf(
+                ActivityEvent(
+                    id = "browser-1",
+                    localDayKey = "2026-07-10",
+                    type = ActivityEventType.BROWSER_SESSION,
+                    startedAtWallMs = 1_000,
+                    endedAtWallMs = 6_000,
+                    valueMs = 5_000,
+                ),
             ),
         )
         val output = ByteArrayOutputStream()
@@ -90,25 +100,20 @@ class AppStateSerializerTest {
 
         val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
 
-        assertEquals(3, migrated.schemaVersion)
+        assertEquals(6, migrated.schemaVersion)
         assertEquals(77, migrated.stateRevision)
-        assertEquals(false, migrated.settings.enforcementEnabled)
-        assertEquals(false, migrated.settings.delayEnabled)
+        assertEquals(true, migrated.settings.enforcementEnabled)
+        assertEquals(null, migrated.settings.pauseUntilWallMs)
+        assertEquals(true, migrated.settings.delayEnabled)
+        assertEquals(true, migrated.settings.emergencySkipsEnabled)
+        assertEquals(1, migrated.settings.emergencySkipDailyLimit)
+        assertEquals(listOf(3L, 5L, 10L), migrated.settings.sessionMinutes)
         assertEquals(12_345, migrated.dailyUsage.usedMs)
         assertEquals(0, migrated.dailyCounter.earnedBudgetRounds)
         assertEquals(null, migrated.pendingWait)
         assertEquals("legacy-epoch", migrated.runtimeMetadata.recoveryEpochId)
         assertEquals(emptyList<DailyUsageReport>(), migrated.usageReports)
         assertEquals(false, migrated.currentVisitGraceActive)
-    }
-
-    @Test
-    fun currentVisitGraceSurvivesV3PersistenceRoundTrip() = runTest {
-        val state = PersistedState(currentVisitGraceActive = true)
-        val output = ByteArrayOutputStream()
-        AppStateSerializer.writeTo(state, output)
-        val restored = AppStateSerializer.readFrom(ByteArrayInputStream(output.toByteArray()))
-        assertEquals(true, restored.currentVisitGraceActive)
     }
 
     @Test
@@ -166,16 +171,116 @@ class AppStateSerializerTest {
 
         assertEquals(1_494_393, restored.dailyUsage.usedMs)
         assertEquals(2, restored.usageReports.size)
+        assertEquals(listOf(0L, 0L), restored.usageReports.map { it.offUsageMs })
+        assertEquals(listOf(0L, 0L), restored.usageReports.map { it.pushupSessions })
         assertEquals(null, restored.activeUnlock)
         assertEquals(false, restored.currentVisitGraceActive)
     }
 
     @Test(expected = CorruptionException::class)
-    fun truncatedSchemaV3StateIsCorruption() = runTest {
+    fun truncatedSchemaV5StateIsCorruption() = runTest {
         val output = ByteArrayOutputStream()
-        AppStateSerializer.writeTo(PersistedState(currentVisitGraceActive = true), output)
+        AppStateSerializer.writeTo(PersistedState(), output)
         val truncated = output.toByteArray().copyOf(output.size() - 1)
         AppStateSerializer.readFrom(ByteArrayInputStream(truncated))
+    }
+
+    @Test
+    fun schemaV3BytesMigrateToNewPresetAndEmergencyDefaults() = runTest {
+        val bytes = ByteArrayOutputStream().also { output ->
+            DataOutputStream(output).use { target ->
+                target.writeInt(0x49525354)
+                target.writeInt(3)
+                target.writeLong(91)
+                target.writeBoolean(true)
+                target.writeBoolean(false)
+                target.writeBoolean(true)
+                target.writeBoolean(true)
+                target.writeLong(3)
+                target.writeInt(ThemePreference.DARK.ordinal)
+                target.writeBoolean(true)
+                target.writeUTF("2026-08-18")
+                target.writeLong(123_000)
+                target.writeBoolean(false)
+                target.writeBoolean(false)
+                target.writeUTF("2026-08-18")
+                target.writeLong(2)
+                target.writeLong(1)
+                target.writeLong(120_000)
+                target.writeUTF("epoch")
+                target.writeLong(100_000)
+                target.writeInt(0)
+                target.writeInt(0)
+                repeat(2) { target.writeLong(0) }
+                target.writeBoolean(false)
+                repeat(2) { target.writeLong(0) }
+                target.writeBoolean(false)
+            }
+        }.toByteArray()
+
+        val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
+
+        assertEquals(6, migrated.schemaVersion)
+        assertEquals(123_000, migrated.dailyUsage.usedMs)
+        assertEquals(2, migrated.dailyCounter.earnedBudgetRounds)
+        assertEquals(1, migrated.dailyCounter.emergencySkipsUsed)
+        assertEquals(1, migrated.settings.emergencySkipDailyLimit)
+        assertEquals(listOf(3L, 5L, 10L), migrated.settings.sessionMinutes)
+    }
+
+    @Test
+    fun schemaV4PhoneStateForcesProtectionAndSkipsOnAndDiscardsOffHistory() = runTest {
+        val bytes = ByteArrayOutputStream().also { output ->
+            DataOutputStream(output).use { target ->
+                target.writeInt(0x49525354)
+                target.writeInt(4)
+                target.writeLong(92)
+                target.writeBoolean(false)
+                target.writeBoolean(true)
+                target.writeLong(999_999)
+                target.writeBoolean(true)
+                target.writeBoolean(false)
+                target.writeLong(1)
+                target.writeInt(ThemePreference.DARK.ordinal)
+                target.writeBoolean(true)
+                target.writeInt(3)
+                listOf(3L, 5L, 10L).forEach(target::writeLong)
+                target.writeUTF("2026-08-18")
+                target.writeLong(120_000)
+                target.writeBoolean(false)
+                target.writeBoolean(false)
+                target.writeUTF("2026-08-18")
+                target.writeLong(2)
+                target.writeLong(0)
+                target.writeLong(120_000)
+                target.writeUTF("epoch")
+                target.writeLong(100_000)
+                target.writeInt(0)
+                target.writeInt(1)
+                target.writeUTF("2026-08-18")
+                target.writeLong(120_000)
+                target.writeLong(90_000)
+                target.writeLong(100_000)
+                target.writeLong(90_000)
+                target.writeBoolean(true)
+                target.writeLong(95_000)
+                target.writeLong(90_000)
+                target.writeBoolean(true)
+            }
+        }.toByteArray()
+
+        val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
+        val zone = ZoneId.of("Europe/Prague")
+        val now = ZonedDateTime.of(2026, 8, 18, 12, 0, 0, 0, zone).toInstant().toEpochMilli()
+        val normalized = RestrictionEngine().normalize(migrated, now, zone)
+
+        assertEquals(6, normalized.schemaVersion)
+        assertEquals(true, normalized.settings.enforcementEnabled)
+        assertEquals(null, normalized.settings.pauseUntilWallMs)
+        assertEquals(true, normalized.settings.emergencySkipsEnabled)
+        assertEquals(0, normalized.usageReports.single().offUsageMs)
+        assertEquals(2, normalized.usageReports.single().pushupSessions)
+        assertEquals(false, normalized.currentVisitGraceActive)
     }
 
     @Test(expected = CorruptionException::class)

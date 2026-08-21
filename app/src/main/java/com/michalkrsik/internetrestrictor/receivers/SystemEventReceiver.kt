@@ -21,7 +21,6 @@ class SystemEventReceiver : BroadcastReceiver() {
                     access.supportedBrowserInstalled,
                     access.advancedProtectionEnabled,
                 )
-                container.reconcileProtectionSchedule()
             } finally {
                 pending.finish()
             }

@@ -107,6 +107,7 @@ fun HealthCard(
     usageAccessGranted: Boolean,
     onAction: () -> Unit,
     modifier: Modifier = Modifier,
+    compact: Boolean = false,
 ) {
     val copy = healthCopy(health, usageAccessGranted)
     val accent = if (copy.positive) EditorialTheme.colors.go else EditorialTheme.colors.low
@@ -116,7 +117,19 @@ fun HealthCard(
         color = accent.copy(alpha = 0.10f),
         border = BorderStroke(1.dp, accent.copy(alpha = 0.28f)),
     ) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+        if (compact) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 13.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(if (copy.positive) "●" else "!", color = accent)
+                Text(copy.title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                copy.action?.let { label ->
+                    Button(onClick = onAction, shape = PillShape) { Text(label) }
+                }
+            }
+        } else Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
                 Text(if (copy.positive) "●" else "!", color = accent)
                 Text(copy.title, style = MaterialTheme.typography.titleMedium)

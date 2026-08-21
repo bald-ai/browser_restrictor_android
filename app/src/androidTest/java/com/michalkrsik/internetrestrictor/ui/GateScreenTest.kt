@@ -45,14 +45,14 @@ class GateScreenTest {
         }
 
         composeRule.onNodeWithText("Pause before browsing.").assertIsDisplayed()
+        composeRule.onNodeWithText("3 min").assertIsDisplayed()
+        composeRule.onNodeWithText("5 min").assertIsDisplayed()
         composeRule.onNodeWithText("10 min").assertIsDisplayed()
-        composeRule.onNodeWithText("30 min").assertIsDisplayed()
-        composeRule.onNodeWithText("60 min").assertIsDisplayed()
-        composeRule.onNodeWithText("Begin 10 minute session").assertIsDisplayed()
+        composeRule.onNodeWithText("Begin 3 minute session").assertIsDisplayed()
         composeRule.onNodeWithText(
             "Every normal browser session starts with the same 12 sec focused wait.",
         ).assertIsDisplayed()
-        composeRule.onNodeWithText("Earn +30 minutes today").assertIsDisplayed()
+        composeRule.onNodeWithText("Earn +10 minutes today").assertIsDisplayed()
         composeRule.onNodeWithText("Complete 5 push-ups · adds to the daily budget").assertIsDisplayed()
         composeRule.onNodeWithText("←  Leave browser").assertIsDisplayed()
         composeRule.onAllNodesWithText("Settings", substring = true).assertCountEquals(0)
@@ -78,9 +78,32 @@ class GateScreenTest {
         }
 
         composeRule.onNodeWithText("Browser time is used up.").assertIsDisplayed()
-        composeRule.onNodeWithText("Earn +30 minutes today").assertIsDisplayed()
+        composeRule.onNodeWithText("Earn +10 minutes today").assertIsDisplayed()
         composeRule.onNodeWithText("Try again").assertIsDisplayed()
         composeRule.onAllNodesWithText("minute session", substring = true).assertCountEquals(0)
         composeRule.onAllNodesWithText("emergency skip", substring = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun waitingGateShowsMinimalCountdownAndBudgetOnly() {
+        val base = engine.normalize(PersistedState(), now, ZoneId.of("UTC"))
+        val waiting = when (
+            val result = engine.startWait(base, runtime, base.stateRevision, 5, now, ZoneId.of("UTC"))
+        ) {
+            is com.michalkrsik.internetrestrictor.domain.CommandResult.Applied -> result.state
+            else -> error("Expected wait to start")
+        }
+        val snapshot = engine.snapshot(waiting, runtime, now)
+        composeRule.setContent {
+            RestrictorTheme(snapshot.settings.theme) { GateScreen(snapshot, actions) }
+        }
+
+        composeRule.onNodeWithText("Unlocking browser").assertIsDisplayed()
+        composeRule.onNodeWithText("5 min session").assertIsDisplayed()
+        composeRule.onNodeWithText("12").assertIsDisplayed()
+        composeRule.onNodeWithText("Daily budget").assertIsDisplayed()
+        composeRule.onNodeWithText("Cancel", substring = true).assertIsDisplayed()
+        composeRule.onAllNodesWithText("push-up", substring = true).assertCountEquals(0)
+        composeRule.onAllNodesWithText("emergency", substring = true).assertCountEquals(0)
     }
 }

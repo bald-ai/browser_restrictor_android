@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Browser Restrictor — Unlock and permission prototype</title>
+  <title>Browser Restrictor — dashboard, unlock, and permission prototype</title>
   <style>
     @font-face {
       font-family: "Manrope";
@@ -108,7 +108,7 @@
 
     .segmented {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: repeat(3, 1fr);
       gap: 4px;
       padding: 4px;
       border: 1px solid var(--hairline-soft);
@@ -298,6 +298,159 @@
     .screen::-webkit-scrollbar { display: none; }
     .screen.active { display: block; }
 
+    /* Dashboard concepts */
+    .dashboard-screen {
+      padding: 58px 20px 36px;
+      background:
+        radial-gradient(circle at 78% 4%, rgba(255,90,38,.065), transparent 34%),
+        var(--paper);
+    }
+    .dashboard-concept { display: none; min-height: 100%; }
+    .dashboard-concept.active { display: flex; flex-direction: column; }
+    .dashboard-screen.settings-open .dashboard-concept { display: none; }
+    .dashboard-appbar { display: flex; align-items: center; justify-content: space-between; }
+    .dashboard-brand { font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+    .icon-button {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--hairline-soft);
+      border-radius: 50%;
+      color: var(--ink-2);
+      background: var(--paper-raised);
+      cursor: pointer;
+      font-size: 17px;
+    }
+    .protection-line {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--good);
+      font-size: 9px;
+      font-weight: 750;
+    }
+    .protection-line::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--good);
+      box-shadow: 0 0 0 4px rgba(77,178,132,.09);
+    }
+    .dash-action {
+      width: 100%;
+      min-height: 50px;
+      border: 1px solid #78422f;
+      border-radius: 999px;
+      color: #f5e8df;
+      background: linear-gradient(135deg, #63301f, #48261c);
+      box-shadow: 0 8px 22px rgba(42,18,10,.28);
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 850;
+    }
+    .dash-secondary {
+      width: 100%;
+      min-height: 44px;
+      border: 1px solid var(--hairline);
+      border-radius: 999px;
+      color: var(--ink);
+      background: transparent;
+      cursor: pointer;
+      font-size: 10px;
+      font-weight: 750;
+    }
+    .advanced-inner { padding: 3px 0 4px; }
+    .advanced-inner p { margin: 0 0 10px; color: var(--ink-3); font-size: 8px; line-height: 1.45; }
+
+    /* A — balance first */
+    .balance-head { margin: 31px 0 0; }
+    .balance-head h2 { margin: 15px 0 7px; font: 400 43px/.96 var(--font-editorial); }
+    .balance-head p { margin: 0; color: var(--ink-2); font-size: 10px; }
+    .balance-number { margin: 38px 0 6px; font: 400 88px/.8 var(--font-editorial); letter-spacing: -.055em; }
+    .balance-number em { color: #c4775d; font-style: italic; }
+    .balance-caption { color: var(--ink-3); font-size: 9px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
+    .dashboard-budget-track { height: 7px; margin-top: 20px; overflow: hidden; border-radius: 999px; background: rgba(240,235,223,.09); }
+    .dashboard-budget-track i { display: block; width: 60%; height: 100%; border-radius: inherit; background: #78695e; }
+    .dashboard-budget-labels { display: flex; justify-content: space-between; margin-top: 8px; color: var(--ink-3); font-size: 8px; }
+    .dashboard-budget-labels strong { color: var(--ink-2); font-weight: 700; }
+    .today-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin: 30px 0 25px; background: var(--hairline-soft); }
+    .today-metric { padding: 2px 16px 2px 0; background: var(--paper); }
+    .today-metric + .today-metric { padding-left: 18px; }
+    .today-metric strong { display: block; font: 400 31px/1 var(--font-editorial); }
+    .today-metric span { display: block; margin-top: 6px; color: var(--ink-3); font-size: 8px; line-height: 1.4; }
+    .active-session-strip { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 11px; padding: 12px 14px; border: 1px solid var(--hairline-soft); border-radius: 14px; background: var(--paper-raised); }
+    .active-session-strip span { color: var(--ink-2); font-size: 9px; }
+    .active-session-strip strong { color: var(--ink-2); font-size: 10px; }
+
+    /* B — two facts first */
+    .facts-title { margin: 30px 0 0; }
+    .facts-title h2 { margin: 13px 0 4px; font: 400 45px/.95 var(--font-editorial); }
+    .facts-title p { margin: 0; color: var(--ink-3); font-size: 9px; }
+    .fact-stack { display: grid; gap: 10px; margin: 31px 0 22px; }
+    .fact-card { min-height: 132px; display: flex; align-items: end; justify-content: space-between; padding: 18px; border: 1px solid var(--hairline-soft); border-radius: 22px; background: var(--card); }
+    .fact-card.accent { border-color: var(--hairline); background: linear-gradient(135deg, rgba(240,235,223,.055), rgba(240,235,223,.015)); }
+    .fact-copy span { display: block; color: var(--ink-3); font-size: 8px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+    .fact-copy strong { display: block; margin-top: 9px; font: 400 47px/.85 var(--font-editorial); }
+    .fact-copy strong em { color: #c4775d; font-style: italic; }
+    .fact-context { max-width: 86px; color: var(--ink-3); font-size: 8px; line-height: 1.45; text-align: right; }
+    .facts-balance { display: flex; align-items: center; justify-content: space-between; margin: 2px 0 20px; padding: 0 3px; color: var(--ink-3); font-size: 9px; }
+    .facts-balance strong { color: var(--ink); font-size: 10px; }
+
+    /* C — daily log */
+    .journal-title { margin: 26px 0 0; }
+    .journal-title h2 { margin: 12px 0 5px; font: 400 42px/.95 var(--font-editorial); }
+    .journal-title-row { display: flex; align-items: end; justify-content: space-between; gap: 16px; }
+    .period-switch { display: flex; gap: 3px; padding: 3px; border: 1px solid var(--hairline-soft); border-radius: 999px; background: #090704; }
+    .period-switch button { min-width: 47px; min-height: 30px; padding: 0 11px; border: 0; border-radius: 999px; color: var(--ink-3); background: transparent; cursor: pointer; font-size: 8px; font-weight: 800; }
+    .period-switch button.active { color: var(--paper); background: var(--ink); }
+    .journal-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 27px 0 24px; }
+    .journal-total { padding: 2px 0 14px; border-bottom: 1px solid var(--hairline); }
+    .journal-total strong { display: block; font: 400 36px/.9 var(--font-editorial); }
+    .journal-total:first-child strong { color: #e3a28a; }
+    .journal-total span { display: block; margin-top: 7px; color: var(--ink-3); font-size: 8px; }
+    .journal-label { margin: 0 0 11px; color: var(--ink-3); font-size: 8px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+    .day-log { position: relative; display: grid; gap: 0; }
+    .day-log::before { content: ""; position: absolute; top: 14px; bottom: 14px; left: 5px; width: 1px; background: var(--hairline); }
+    .log-row { position: relative; display: grid; grid-template-columns: 18px 1fr auto; gap: 9px; align-items: center; min-height: 55px; }
+    .log-dot { z-index: 1; width: 11px; height: 11px; border: 3px solid var(--paper); border-radius: 50%; background: var(--ink-3); }
+    .log-row.earned .log-dot { background: var(--good); }
+    .log-row.used .log-dot { background: var(--accent); }
+    .log-copy strong { display: block; font-size: 9px; }
+    .log-copy small { display: block; margin-top: 3px; color: var(--ink-3); font-size: 8px; }
+    .log-value { color: var(--ink-2); font-size: 9px; font-weight: 750; }
+    .journal-footer { display: flex; align-items: center; justify-content: space-between; margin: 15px 0 21px; padding-top: 15px; border-top: 1px solid var(--hairline-soft); color: var(--ink-3); font-size: 9px; }
+    .journal-footer strong { color: var(--ink); }
+    .journal-period-content { display: none; }
+    .journal-period-content.active { display: block; }
+    .week-days { display: grid; gap: 8px; }
+    .week-day { display: grid; grid-template-columns: 27px 1fr 44px 40px; gap: 8px; align-items: center; min-height: 28px; }
+    .week-day-name { color: var(--ink-3); font-size: 8px; font-weight: 800; }
+    .week-day.today .week-day-name { color: var(--ink); }
+    .week-bar { height: 5px; overflow: hidden; border-radius: 999px; background: rgba(240,235,223,.08); }
+    .week-bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+    .week-minutes { color: var(--ink-2); font-size: 8px; text-align: right; }
+    .week-day.today .week-minutes { color: var(--ink); }
+    .week-sets { color: var(--ink-3); font-size: 8px; text-align: right; }
+    .week-sets.has-sets { color: var(--good); }
+
+    /* Dashboard settings */
+    .dashboard-settings { display: none; min-height: 100%; }
+    .dashboard-settings.active { display: flex; flex-direction: column; }
+    .settings-back { display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 0; border: 0; color: var(--ink-2); background: transparent; cursor: pointer; font-size: 10px; font-weight: 750; }
+    .settings-heading { margin: 25px 0 27px; }
+    .settings-heading h2 { margin: 9px 0 0; font: 400 43px/.95 var(--font-editorial); }
+    .settings-section { padding: 18px 0; border-top: 1px solid var(--hairline-soft); }
+    .settings-section-title { display: block; margin-bottom: 11px; color: var(--ink-3); font-size: 8px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+    .settings-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 45px; color: var(--ink); font-size: 10px; }
+    .settings-row span:last-child { color: var(--ink-3); }
+    .settings-presets { display: flex; gap: 7px; }
+    .settings-presets span { min-width: 45px; padding: 9px 10px; border: 1px solid var(--hairline-soft); border-radius: 10px; color: var(--ink-2); background: var(--paper-raised); text-align: center; font-size: 9px; }
+    .developer-settings { margin-top: auto; border-top: 1px solid var(--hairline-soft); }
+    .developer-settings summary { padding: 17px 0; color: var(--ink-2); cursor: pointer; font-size: 10px; font-weight: 800; list-style-position: inside; }
+    .developer-settings[open] summary { color: var(--ink); }
+
     /* Countdown */
     .countdown-screen { position: relative; }
     .leave {
@@ -380,7 +533,7 @@
     }
     .countdown-budget-track i {
       display: block;
-      width: 63%;
+      width: 70%;
       height: 100%;
       border-radius: inherit;
       background: linear-gradient(90deg, var(--accent), #ff825e);
@@ -553,22 +706,44 @@
   <main class="workbench">
     <aside class="controls">
       <p class="kicker">Browser Restrictor · interaction study</p>
-      <h1>Make the state impossible to miss.</h1>
-      <p class="lede">A working prototype for the focused unlock countdown and for clearer permission feedback throughout setup, dashboard, and settings.</p>
+      <h1>Make today readable at a glance.</h1>
+      <p class="lede">Three dashboard directions centered on the two useful facts: browser time today and completed push-up sets.</p>
       <p class="prototype-note">Prototype only — no Android behavior is changed.</p>
 
       <nav class="segmented" aria-label="Prototype view">
-        <button class="active" data-view="countdown">Unlock countdown</button>
+        <button class="active" data-view="dashboard">Dashboard</button>
+        <button data-view="countdown">Countdown</button>
         <button data-view="permissions">Permission states</button>
       </nav>
 
-      <section class="control-panel active" data-controls="countdown">
+      <section class="control-panel active" data-controls="dashboard">
+        <div class="control-section">
+          <span class="control-label">Dashboard direction</span>
+          <div class="pattern-list">
+            <button class="pattern" data-dashboard-concept="balance">
+              <strong>A · Remaining balance</strong>
+              <small>Leads with what can still be used, then reports today’s two totals.</small>
+            </button>
+            <button class="pattern" data-dashboard-concept="facts">
+              <strong>B · Two big facts</strong>
+              <small>Makes browser time and push-up sets the entire visual hierarchy.</small>
+            </button>
+            <button class="pattern active" data-dashboard-concept="journal">
+              <strong>C · Weekly activity</strong>
+              <small>Starts with the week, with a daily activity view available when needed.</small>
+            </button>
+          </div>
+        </div>
+        <p class="rationale" id="dashboardRationale"><strong>C · Weekly activity:</strong> makes progress over time visible without losing the two totals. Week is the default; Day is one tap away.</p>
+      </section>
+
+      <section class="control-panel" data-controls="countdown">
         <div class="control-section">
           <span class="control-label">Session being unlocked</span>
           <div class="choice-row" id="sessionChoices">
-            <button class="active" data-minutes="10">10 min</button>
-            <button data-minutes="30">30 min</button>
-            <button data-minutes="60">60 min</button>
+            <button class="active" data-minutes="3">3 min</button>
+            <button data-minutes="5">5 min</button>
+            <button data-minutes="10">10 min</button>
           </div>
         </div>
         <div class="control-section">
@@ -628,11 +803,132 @@
             <div class="status-bar"><span>9:41</span><span class="status-icons">◒  VoLTE  ▮▮  92</span></div>
             <div class="gesture-bar"></div>
 
-            <section class="screen countdown-screen active" data-screen="countdown">
+            <section class="screen dashboard-screen active" data-screen="dashboard">
+              <article class="dashboard-concept" data-dashboard="balance">
+                <header class="dashboard-appbar">
+                  <span class="dashboard-brand">Browser Restrictor</span>
+                  <button class="icon-button" data-open-dashboard-settings aria-label="Open settings">⚙</button>
+                </header>
+                <div class="balance-head">
+                  <span class="protection-line">Protection is on</span>
+                  <h2>Today’s balance.</h2>
+                  <p>Your browser closes when this reaches zero.</p>
+                </div>
+                <div class="balance-number"><em>18</em> min</div>
+                <div class="balance-caption">available today</div>
+                <div class="dashboard-budget-track" role="progressbar" aria-label="18 of 30 minutes remaining" aria-valuemin="0" aria-valuemax="30" aria-valuenow="18"><i></i></div>
+                <div class="dashboard-budget-labels"><strong>18 min left</strong><span>30 min earned</span></div>
+                <div class="today-metrics">
+                  <div class="today-metric"><strong>12 min</strong><span>browser time today</span></div>
+                  <div class="today-metric"><strong>2 sets</strong><span>push-ups today</span></div>
+                </div>
+                <button class="dash-action">Do push-ups</button>
+                <div class="active-session-strip"><span>3 min browser session</span><strong>2:14 left</strong></div>
+              </article>
+
+              <article class="dashboard-concept" data-dashboard="facts">
+                <header class="dashboard-appbar">
+                  <span class="protection-line">Protection is on</span>
+                  <button class="icon-button" data-open-dashboard-settings aria-label="Open settings">⚙</button>
+                </header>
+                <div class="facts-title">
+                  <div class="eyebrow">Tuesday · 18 August</div>
+                  <h2>Today, so far.</h2>
+                  <p>One screen. Two facts.</p>
+                </div>
+                <div class="fact-stack">
+                  <div class="fact-card accent">
+                    <div class="fact-copy"><span>Browser time</span><strong><em>12</em> min</strong></div>
+                    <div class="fact-context">18 minutes are still available</div>
+                  </div>
+                  <div class="fact-card">
+                    <div class="fact-copy"><span>Push-up sessions</span><strong>2 sets</strong></div>
+                    <div class="fact-context">20 minutes earned today</div>
+                  </div>
+                </div>
+                <div class="facts-balance"><span>Current browser session</span><strong>2:14 left</strong></div>
+                <button class="dash-action">Do another set</button>
+              </article>
+
+              <article class="dashboard-concept active" data-dashboard="journal">
+                <header class="dashboard-appbar">
+                  <span class="dashboard-brand">Browser Restrictor</span>
+                  <button class="icon-button" data-open-dashboard-settings aria-label="Open settings">⚙</button>
+                </header>
+                <div class="journal-title">
+                  <span class="protection-line">Protection is on</span>
+                  <div class="journal-title-row">
+                    <h2 id="journalHeading">Your week.</h2>
+                    <div class="period-switch" aria-label="Activity period">
+                      <button data-journal-period="day">Day</button>
+                      <button class="active" data-journal-period="week">Week</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="journal-period-content active" data-journal-content="week">
+                  <div class="journal-summary">
+                    <div class="journal-total"><strong>74 min</strong><span>browser time this week</span></div>
+                    <div class="journal-total"><strong>8 sets</strong><span>push-up sessions this week</span></div>
+                  </div>
+                  <p class="journal-label">Monday – Sunday</p>
+                  <div class="week-days" aria-label="Browser time and push-up sets by day">
+                    <div class="week-day"><span class="week-day-name">MON</span><span class="week-bar"><i style="width: 82%"></i></span><span class="week-minutes">14 min</span><span class="week-sets has-sets">1 set</span></div>
+                    <div class="week-day today"><span class="week-day-name">TUE</span><span class="week-bar"><i style="width: 71%"></i></span><span class="week-minutes">12 min</span><span class="week-sets has-sets">2 sets</span></div>
+                    <div class="week-day"><span class="week-day-name">WED</span><span class="week-bar"><i style="width: 47%"></i></span><span class="week-minutes">8 min</span><span class="week-sets has-sets">1 set</span></div>
+                    <div class="week-day"><span class="week-day-name">THU</span><span class="week-bar"><i style="width: 100%"></i></span><span class="week-minutes">17 min</span><span class="week-sets has-sets">2 sets</span></div>
+                    <div class="week-day"><span class="week-day-name">FRI</span><span class="week-bar"><i style="width: 65%"></i></span><span class="week-minutes">11 min</span><span class="week-sets has-sets">1 set</span></div>
+                    <div class="week-day"><span class="week-day-name">SAT</span><span class="week-bar"><i style="width: 41%"></i></span><span class="week-minutes">7 min</span><span class="week-sets has-sets">1 set</span></div>
+                    <div class="week-day"><span class="week-day-name">SUN</span><span class="week-bar"><i style="width: 29%"></i></span><span class="week-minutes">5 min</span><span class="week-sets">0 sets</span></div>
+                  </div>
+                  <div class="journal-footer"><span>Available today</span><strong>18 minutes</strong></div>
+                </div>
+                <div class="journal-period-content" data-journal-content="day">
+                  <div class="journal-summary">
+                    <div class="journal-total"><strong>12 min</strong><span>browser time today</span></div>
+                    <div class="journal-total"><strong>2 sets</strong><span>push-up sessions today</span></div>
+                  </div>
+                  <p class="journal-label">Today’s activity</p>
+                  <div class="day-log" aria-label="Today’s activity log">
+                    <div class="log-row earned"><span class="log-dot"></span><span class="log-copy"><strong>Push-up set</strong><small>08:40</small></span><span class="log-value">+10 min</span></div>
+                    <div class="log-row used"><span class="log-dot"></span><span class="log-copy"><strong>Browser session</strong><small>12:15</small></span><span class="log-value">5 min</span></div>
+                    <div class="log-row earned"><span class="log-dot"></span><span class="log-copy"><strong>Push-up set</strong><small>15:20</small></span><span class="log-value">+10 min</span></div>
+                    <div class="log-row used"><span class="log-dot"></span><span class="log-copy"><strong>Browser sessions</strong><small>Since 17:35</small></span><span class="log-value">7 min</span></div>
+                  </div>
+                  <div class="journal-footer"><span>Available now</span><strong>18 minutes</strong></div>
+                </div>
+                <button class="dash-action">Do push-ups</button>
+              </article>
+
+              <article class="dashboard-settings" id="dashboardSettings">
+                <button class="settings-back" id="closeDashboardSettings">← Dashboard</button>
+                <div class="settings-heading">
+                  <div class="eyebrow">Browser Restrictor</div>
+                  <h2>Settings.</h2>
+                </div>
+                <section class="settings-section">
+                  <span class="settings-section-title">Session durations</span>
+                  <div class="settings-presets"><span>3 min</span><span>5 min</span><span>10 min</span></div>
+                </section>
+                <section class="settings-section">
+                  <span class="settings-section-title">System access</span>
+                  <div class="settings-row"><span>Accessibility</span><span>Enabled ›</span></div>
+                  <div class="settings-row"><span>Usage access</span><span>Enabled ›</span></div>
+                </section>
+                <details class="developer-settings">
+                  <summary>Developer</summary>
+                  <div class="advanced-inner">
+                    <p>Diagnostic controls that are not part of normal app use.</p>
+                    <button class="dash-secondary">Cancel active session</button>
+                  </div>
+                </details>
+              </article>
+            </section>
+
+            <section class="screen countdown-screen" data-screen="countdown">
               <button class="leave">← <span>Cancel</span></button>
               <div class="unlock-heading">
                 <div class="eyebrow">Unlocking browser</div>
-                <h2><em id="sessionTitle">10 min</em> session</h2>
+                <h2><em id="sessionTitle">3 min</em> session</h2>
               </div>
 
               <div class="timer-stage" aria-live="polite">
@@ -647,8 +943,8 @@
               </div>
 
               <div class="countdown-budget">
-                <div class="countdown-budget-copy"><span>Daily budget</span><strong>19 min left</strong></div>
-                <div class="countdown-budget-track" role="progressbar" aria-label="Daily budget remaining" aria-valuemin="0" aria-valuemax="30" aria-valuenow="19"><i></i></div>
+                <div class="countdown-budget-copy"><span>Daily budget</span><strong>7 min left</strong></div>
+                <div class="countdown-budget-track" role="progressbar" aria-label="Daily budget remaining" aria-valuemin="0" aria-valuemax="10" aria-valuenow="7"><i></i></div>
               </div>
             </section>
 
@@ -683,9 +979,16 @@
     const patternButtons = [...document.querySelectorAll('[data-pattern]')];
     const stateButtons = [...document.querySelectorAll('[data-state]')];
     const surfaceButtons = [...document.querySelectorAll('[data-surface]')];
+    const dashboardConceptButtons = [...document.querySelectorAll('[data-dashboard-concept]')];
+    const dashboardConcepts = [...document.querySelectorAll('[data-dashboard]')];
+    const journalPeriodButtons = [...document.querySelectorAll('[data-journal-period]')];
+    const journalPeriodContents = [...document.querySelectorAll('[data-journal-content]')];
+    const openDashboardSettingsButtons = [...document.querySelectorAll('[data-open-dashboard-settings]')];
 
-    let view = 'countdown';
-    let sessionMinutes = 10;
+    let view = 'dashboard';
+    let dashboardConcept = 'journal';
+    let journalPeriod = 'week';
+    let sessionMinutes = 3;
     let countdown = 8;
     let running = true;
     let pattern = 'explicit';
@@ -755,6 +1058,18 @@
       viewButtons.forEach(button => button.classList.toggle('active', button.dataset.view === view));
       screens.forEach(screen => screen.classList.toggle('active', screen.dataset.screen === view));
       controlPanels.forEach(panel => panel.classList.toggle('active', panel.dataset.controls === view));
+    }
+
+    function switchDashboardConcept(next) {
+      dashboardConcept = next;
+      dashboardConceptButtons.forEach(button => button.classList.toggle('active', button.dataset.dashboardConcept === dashboardConcept));
+      dashboardConcepts.forEach(concept => concept.classList.toggle('active', concept.dataset.dashboard === dashboardConcept));
+      const rationales = {
+        balance: '<strong>A · Remaining balance:</strong> closest to the current product model. The available time stays dominant while usage and push-ups become clearly readable.',
+        facts: '<strong>B · Two big facts:</strong> the cleanest reporting dashboard. Remaining time is context instead of the headline.',
+        journal: '<strong>C · Weekly activity:</strong> makes progress over time visible without losing the two totals. Week is the default; Day is one tap away.',
+      };
+      document.getElementById('dashboardRationale').innerHTML = rationales[dashboardConcept];
     }
 
     function renderCountdown() {
@@ -879,6 +1194,21 @@
     }
 
     viewButtons.forEach(button => button.addEventListener('click', () => switchView(button.dataset.view)));
+    dashboardConceptButtons.forEach(button => button.addEventListener('click', () => switchDashboardConcept(button.dataset.dashboardConcept)));
+    journalPeriodButtons.forEach(button => button.addEventListener('click', () => {
+      journalPeriod = button.dataset.journalPeriod;
+      journalPeriodButtons.forEach(item => item.classList.toggle('active', item.dataset.journalPeriod === journalPeriod));
+      journalPeriodContents.forEach(content => content.classList.toggle('active', content.dataset.journalContent === journalPeriod));
+      document.getElementById('journalHeading').textContent = journalPeriod === 'week' ? 'Your week.' : 'Your day.';
+    }));
+    openDashboardSettingsButtons.forEach(button => button.addEventListener('click', () => {
+      document.querySelector('.dashboard-screen').classList.add('settings-open');
+      document.getElementById('dashboardSettings').classList.add('active');
+    }));
+    document.getElementById('closeDashboardSettings').addEventListener('click', () => {
+      document.querySelector('.dashboard-screen').classList.remove('settings-open');
+      document.getElementById('dashboardSettings').classList.remove('active');
+    });
     sessionButtons.forEach(button => button.addEventListener('click', () => {
       sessionMinutes = Number(button.dataset.minutes);
       sessionButtons.forEach(item => item.classList.toggle('active', item === button));

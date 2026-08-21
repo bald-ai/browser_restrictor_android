@@ -38,7 +38,6 @@ class DeviceAccessMonitor(
                 supportedBrowserInstalled = access.supportedBrowserInstalled,
                 advancedProtectionEnabled = access.advancedProtectionEnabled,
             )
-            container.reconcileProtectionSchedule()
         }
     }
 

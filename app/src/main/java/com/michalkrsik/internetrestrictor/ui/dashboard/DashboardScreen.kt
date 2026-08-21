@@ -2,6 +2,8 @@ package com.michalkrsik.internetrestrictor.ui.dashboard
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,286 +12,468 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.michalkrsik.internetrestrictor.domain.BudgetPeriod
-import com.michalkrsik.internetrestrictor.domain.BudgetSnapshot
-import com.michalkrsik.internetrestrictor.domain.MINUTE_MS
+import androidx.compose.ui.unit.sp
+import com.michalkrsik.internetrestrictor.domain.DailyUsageReport
+import com.michalkrsik.internetrestrictor.domain.ActivityEventType
 import com.michalkrsik.internetrestrictor.domain.ProtectionHealth
 import com.michalkrsik.internetrestrictor.domain.StateSnapshot
-import com.michalkrsik.internetrestrictor.ui.components.BudgetBar
 import com.michalkrsik.internetrestrictor.ui.components.HealthCard
-import com.michalkrsik.internetrestrictor.ui.components.formatCompactTime
 import com.michalkrsik.internetrestrictor.ui.components.formatReportTime
-import com.michalkrsik.internetrestrictor.ui.components.formatLongTime
-import com.michalkrsik.internetrestrictor.ui.components.friendlyLabel
 import com.michalkrsik.internetrestrictor.ui.components.healthCopy
 import com.michalkrsik.internetrestrictor.ui.theme.EditorialTheme
+import com.michalkrsik.internetrestrictor.ui.theme.InstrumentSerif
 import com.michalkrsik.internetrestrictor.ui.theme.PillShape
-import com.michalkrsik.internetrestrictor.ui.theme.SerifNote
-import com.michalkrsik.internetrestrictor.ui.theme.editorialTitle
+import java.time.LocalDate
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+
+private enum class ActivityPeriod { DAY, WEEK }
 
 @Composable
 fun DashboardScreen(
     snapshot: StateSnapshot,
     onOpenSettings: () -> Unit,
     onTestBrowser: () -> Unit,
+    onDoPushups: () -> Unit,
     onHealthAction: () -> Unit,
 ) {
+    var period by rememberSaveable { mutableStateOf(ActivityPeriod.WEEK) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
             .navigationBarsPadding()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 22.dp, vertical = 24.dp),
+            .padding(horizontal = 20.dp, vertical = 22.dp),
     ) {
-        Text(
-            "INTERNET RESTRICTOR",
-            style = MaterialTheme.typography.labelSmall,
-            color = EditorialTheme.colors.ink3,
-        )
-        Spacer(Modifier.height(10.dp))
-        Text(editorialTitle("Today's boundary."), style = MaterialTheme.typography.headlineLarge)
-        Spacer(Modifier.height(20.dp))
+        DashboardHeader(onOpenSettings)
+        Spacer(Modifier.height(26.dp))
+        ProtectionLine(snapshot)
+        Spacer(Modifier.height(12.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            Text(
+                if (period == ActivityPeriod.WEEK) "Your week." else "Today.",
+                style = MaterialTheme.typography.headlineLarge,
+            )
+            PeriodSwitch(period, onChange = { period = it })
+        }
 
-        StatusLine(snapshot)
-
-        val copy = healthCopy(snapshot.enforcementHealth, snapshot.usageAccessGranted)
-        if (!copy.positive || copy.action != null) {
+        val health = healthCopy(snapshot.enforcementHealth, snapshot.usageAccessGranted)
+        if (!health.positive || health.action != null) {
             Spacer(Modifier.height(18.dp))
             HealthCard(
                 health = snapshot.enforcementHealth,
                 usageAccessGranted = snapshot.usageAccessGranted,
                 onAction = onHealthAction,
+                compact = true,
             )
         }
 
-        Spacer(Modifier.height(18.dp))
-        HeroBudgetCard(snapshot)
+        Spacer(Modifier.height(27.dp))
+        if (period == ActivityPeriod.WEEK) {
+            WeekContent(snapshot)
+        } else {
+            DayContent(snapshot)
+        }
 
-        Spacer(Modifier.height(18.dp))
-        UsageReportCard(snapshot)
-
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(22.dp))
         Button(
-            onClick = onOpenSettings,
+            onClick = onDoPushups,
             modifier = Modifier.fillMaxWidth().height(52.dp),
             shape = PillShape,
         ) {
-            Text("Open settings")
+            Text("Do push-ups")
         }
         Spacer(Modifier.height(10.dp))
-        OutlinedButton(
-            onClick = onTestBrowser,
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-            shape = PillShape,
-            border = BorderStroke(1.dp, EditorialTheme.colors.hairline),
-            enabled = snapshot.supportedBrowserInstalled,
-        ) {
-            Text("Test browser gate", color = MaterialTheme.colorScheme.onSurface)
-        }
+        Text(
+            "Test browser gate",
+            modifier = Modifier
+                .align(Alignment.CenterHorizontally)
+                .clip(PillShape)
+                .clickable(enabled = snapshot.supportedBrowserInstalled, onClick = onTestBrowser)
+                .padding(horizontal = 20.dp, vertical = 11.dp),
+            style = MaterialTheme.typography.labelMedium,
+            color = if (snapshot.supportedBrowserInstalled) {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+                EditorialTheme.colors.ink3
+            },
+        )
     }
 }
 
 @Composable
-private fun UsageReportCard(snapshot: StateSnapshot) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, EditorialTheme.colors.hairlineSoft),
-    ) {
-        Column(
-            Modifier.padding(horizontal = 22.dp, vertical = 22.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                "USAGE REPORT",
-                style = MaterialTheme.typography.labelSmall,
-                color = EditorialTheme.colors.ink3,
-            )
-            Text("Today", style = MaterialTheme.typography.titleMedium)
-            ReportRow(
-                "Protection on",
-                snapshot.todayUsageReport.protectedUsageMs,
-                EditorialTheme.colors.go,
-            )
-            ReportRow(
-                "Protection off",
-                snapshot.todayUsageReport.offUsageMs,
-                EditorialTheme.colors.low,
-            )
-            val history = snapshot.usageReports.asReversed().dropWhile {
-                it.localDayKey == snapshot.todayUsageReport.localDayKey
-            }
-            if (history.isNotEmpty()) {
-                HorizontalDivider(color = EditorialTheme.colors.hairlineSoft)
-                Text("Last 30 days", style = MaterialTheme.typography.titleSmall)
-                history.forEach { report ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Text(
-                            report.localDayKey,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Text(
-                            "On ${formatReportTime(report.protectedUsageMs)} · Off ${formatReportTime(report.offUsageMs)}",
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ReportRow(label: String, durationMs: Long, color: androidx.compose.ui.graphics.Color) {
+private fun DashboardHeader(onOpenSettings: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Box(Modifier.size(7.dp).background(color, CircleShape))
-            Text(label, style = MaterialTheme.typography.bodyMedium)
-        }
-        Text(formatReportTime(durationMs), style = MaterialTheme.typography.titleMedium)
-    }
-}
-
-@Composable
-private fun StatusLine(snapshot: StateSnapshot) {
-    val hairline = EditorialTheme.colors.hairline
-    val (statusText, statusColor) = when {
-        snapshot.enforcementHealth == ProtectionHealth.ENFORCEMENT_OFF ->
-            "Enforcement off" to EditorialTheme.colors.ink3
-        snapshot.enforcementHealth in setOf(
-            ProtectionHealth.READY,
-            ProtectionHealth.READY_LIMITED_RECOVERY,
-        ) -> "Browsers protected" to EditorialTheme.colors.go
-        else -> "Needs attention" to EditorialTheme.colors.low
-    }
-    val detail = buildString {
-        append(if (snapshot.settings.delayEnabled) "Wait on" else "No wait")
-        if (snapshot.settings.emergencySkipsEnabled) {
-            append(" · ${snapshot.skipSnapshot.remaining} skips left")
-        }
-    }
-    Column {
-        HorizontalDivider(color = hairline)
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 13.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+        Text(
+            "BROWSER RESTRICTOR",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Box(
+            modifier = Modifier
+                .size(56.dp)
+                .clickable(onClick = onOpenSettings)
+                .semantics { contentDescription = "Open settings" },
+            contentAlignment = Alignment.Center,
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Box(Modifier.size(7.dp).background(statusColor, CircleShape))
-                Text(statusText, style = MaterialTheme.typography.titleMedium)
-            }
-            Text(
-                detail,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        snapshot.activeUnlock?.let {
-            Text(
-                "Session: ${formatLongTime(it.expiresAtWallMs - snapshot.wallNowMs)} left",
-                modifier = Modifier.padding(bottom = 13.dp),
-                style = SerifNote,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        HorizontalDivider(color = hairline)
-    }
-}
-
-@Composable
-private fun HeroBudgetCard(snapshot: StateSnapshot) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, EditorialTheme.colors.hairlineSoft),
-    ) {
-        Column(Modifier.padding(horizontal = 22.dp, vertical = 24.dp)) {
-            val enabled = snapshot.budgetSnapshots.filter { it.enabled }
-            if (enabled.isEmpty()) {
-                Text(
-                    "No budget currently blocks supported browsers. Today's usage is still counted.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .border(BorderStroke(1.dp, EditorialTheme.colors.hairlineSoft), CircleShape)
+                    .clip(CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Settings,
+                    contentDescription = null,
+                    modifier = Modifier.size(28.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                return@Column
-            }
-            val hero = enabled.first()
-            val remaining = hero.remainingMs ?: 0
-            Text(
-                heroEyebrow(hero.period),
-                style = MaterialTheme.typography.labelSmall,
-                color = EditorialTheme.colors.ink3,
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                if (hero.exhausted) "0m" else formatCompactTime(remaining),
-                style = MaterialTheme.typography.displayLarge,
-                color = if (hero.exhausted) EditorialTheme.colors.low else MaterialTheme.colorScheme.onSurface,
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                "of ${formatCompactTime(hero.limitMinutes * MINUTE_MS)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(16.dp))
-            HeroTrack(hero)
-            enabled.drop(1).forEach { budget ->
-                Spacer(Modifier.height(18.dp))
-                BudgetBar(budget, label = budget.period.friendlyLabel())
             }
         }
     }
 }
 
 @Composable
-private fun HeroTrack(budget: BudgetSnapshot) {
-    val color = if (budget.exhausted) EditorialTheme.colors.low else EditorialTheme.colors.go
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .height(4.dp)
-            .background(EditorialTheme.colors.hairlineSoft, RoundedCornerShape(100)),
+private fun ProtectionLine(snapshot: StateSnapshot) {
+    val ready = snapshot.enforcementHealth in setOf(
+        ProtectionHealth.READY,
+        ProtectionHealth.READY_LIMITED_RECOVERY,
+    )
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Box(
             Modifier
-                .fillMaxWidth((budget.percentage / 100f).coerceIn(0f, 1f))
-                .height(4.dp)
-                .background(color, RoundedCornerShape(100)),
+                .size(7.dp)
+                .background(
+                    if (ready) EditorialTheme.colors.go else EditorialTheme.colors.low,
+                    CircleShape,
+                ),
+        )
+        Text(
+            if (ready) "Protection is on" else "Protection needs attention",
+            style = MaterialTheme.typography.labelMedium,
+            color = if (ready) EditorialTheme.colors.go else EditorialTheme.colors.low,
         )
     }
 }
 
-private fun heroEyebrow(period: BudgetPeriod): String = when (period) {
-    BudgetPeriod.DAILY -> "TIME REMAINING TODAY"
+@Composable
+private fun PeriodSwitch(period: ActivityPeriod, onChange: (ActivityPeriod) -> Unit) {
+    Row(
+        modifier = Modifier
+            .border(BorderStroke(1.dp, EditorialTheme.colors.hairlineSoft), PillShape)
+            .padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        PeriodChoice("Day", ActivityPeriod.DAY, period, onChange)
+        PeriodChoice("Week", ActivityPeriod.WEEK, period, onChange)
+    }
 }
+
+@Composable
+private fun PeriodChoice(
+    label: String,
+    choice: ActivityPeriod,
+    selected: ActivityPeriod,
+    onChange: (ActivityPeriod) -> Unit,
+) {
+    val active = choice == selected
+    Box(
+        modifier = Modifier
+            .clip(PillShape)
+            .background(if (active) MaterialTheme.colorScheme.onSurface else androidx.compose.ui.graphics.Color.Transparent)
+            .clickable { onChange(choice) }
+            .padding(horizontal = 13.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.sp),
+            color = if (active) MaterialTheme.colorScheme.background else EditorialTheme.colors.ink3,
+        )
+    }
+}
+
+@Composable
+private fun WeekContent(snapshot: StateSnapshot) {
+    val reports = snapshot.currentWeekUsageReports
+    val totalUsage = reports.sumOf { it.protectedUsageMs }
+    val totalSets = reports.sumOf { it.pushupSessions }
+    SummaryTotals(totalUsage, totalSets, "browser time this week", "push-up sessions this week")
+    Spacer(Modifier.height(24.dp))
+    SectionLabel("MONDAY – SUNDAY")
+    Spacer(Modifier.height(8.dp))
+    val maxUsage = reports.maxOfOrNull { it.protectedUsageMs }?.coerceAtLeast(1L) ?: 1L
+    val todayKey = snapshot.todayUsageReport.localDayKey
+    reports.forEachIndexed { index, report ->
+        WeekDayRow(
+            name = WEEKDAY_NAMES.getOrElse(index) { dayName(report.localDayKey) },
+            report = report,
+            maximumUsageMs = maxUsage,
+            isToday = report.localDayKey == todayKey,
+        )
+    }
+    DashboardFooter("Available today", availableToday(snapshot))
+}
+
+@Composable
+private fun DayContent(snapshot: StateSnapshot) {
+    val report = snapshot.todayUsageReport
+    SummaryTotals(
+        report.protectedUsageMs,
+        report.pushupSessions,
+        "browser time today",
+        "push-up sessions today",
+    )
+    Spacer(Modifier.height(24.dp))
+    SectionLabel("TODAY'S ACTIVITY")
+    Spacer(Modifier.height(8.dp))
+    val events = snapshot.todayActivityEvents.sortedBy { it.startedAtWallMs }.map { event ->
+        when (event.type) {
+            ActivityEventType.PUSHUP_SET -> TimelineItem(
+                title = "Push-up set",
+                detail = formatEventTime(event.startedAtWallMs),
+                value = "+${formatMinutes(event.valueMs)}",
+                earned = true,
+            )
+            ActivityEventType.BROWSER_SESSION -> TimelineItem(
+                title = "Browser session",
+                detail = formatEventTime(event.startedAtWallMs),
+                value = formatMinutes(event.valueMs),
+                earned = false,
+            )
+        }
+    }.ifEmpty {
+        listOf(
+            TimelineItem(
+                title = "Push-up sets",
+                detail = if (report.pushupSessions > 0) "Earlier today" else "None yet today",
+                value = formatSets(report.pushupSessions),
+                earned = true,
+            ),
+            TimelineItem(
+                title = "Browser sessions",
+                detail = if (report.protectedUsageMs > 0) "Earlier today" else "None yet today",
+                value = formatReportTime(report.protectedUsageMs),
+                earned = false,
+            ),
+        )
+    }
+    events.forEach { item ->
+        ActivityTimelineRow(item)
+    }
+    DashboardFooter("Available now", availableToday(snapshot))
+}
+
+@Composable
+private fun SummaryTotals(
+    usageMs: Long,
+    sets: Long,
+    usageLabel: String,
+    setsLabel: String,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        SummaryTotal(
+            value = formatReportTime(usageMs),
+            label = usageLabel,
+            accent = true,
+            modifier = Modifier.weight(1f),
+        )
+        SummaryTotal(
+            value = formatSets(sets),
+            label = setsLabel,
+            accent = false,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
+private fun SummaryTotal(value: String, label: String, accent: Boolean, modifier: Modifier) {
+    Column(
+        modifier = modifier.padding(bottom = 14.dp),
+    ) {
+        Text(
+            value,
+            style = MaterialTheme.typography.headlineMedium.copy(fontFamily = InstrumentSerif),
+            color = if (accent) EditorialTheme.colors.accentInk else MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.height(7.dp))
+        Text(label, style = MaterialTheme.typography.bodySmall, color = EditorialTheme.colors.ink3)
+        Spacer(Modifier.height(14.dp))
+        HorizontalDivider(color = EditorialTheme.colors.hairline)
+    }
+}
+
+@Composable
+private fun SectionLabel(text: String) {
+    Text(text, style = MaterialTheme.typography.labelSmall, color = EditorialTheme.colors.ink3)
+}
+
+@Composable
+private fun WeekDayRow(
+    name: String,
+    report: DailyUsageReport,
+    maximumUsageMs: Long,
+    isToday: Boolean,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().height(34.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            name,
+            modifier = Modifier.width(34.dp),
+            style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.sp),
+            color = if (isToday) MaterialTheme.colorScheme.onSurface else EditorialTheme.colors.ink3,
+        )
+        Box(
+            Modifier
+                .weight(1f)
+                .height(5.dp)
+                .background(EditorialTheme.colors.hairlineSoft, PillShape),
+        ) {
+            Box(
+                Modifier
+                    .fillMaxWidth((report.protectedUsageMs.toFloat() / maximumUsageMs).coerceIn(0f, 1f))
+                    .height(5.dp)
+                    .background(EditorialTheme.colors.accent, PillShape),
+            )
+        }
+        Text(
+            formatReportTime(report.protectedUsageMs),
+            modifier = Modifier.width(58.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = if (isToday) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = androidx.compose.ui.text.style.TextAlign.End,
+        )
+        Text(
+            formatSets(report.pushupSessions),
+            modifier = Modifier.width(54.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = if (report.pushupSessions > 0) EditorialTheme.colors.go else EditorialTheme.colors.ink3,
+            textAlign = androidx.compose.ui.text.style.TextAlign.End,
+        )
+    }
+}
+
+@Composable
+private fun ActivityTimelineRow(item: TimelineItem) {
+    val lineColor = EditorialTheme.colors.hairline
+    val dotColor = if (item.earned) EditorialTheme.colors.go else EditorialTheme.colors.accent
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 74.dp)
+            .drawBehind {
+                val x = 6.dp.toPx()
+                val dotY = 27.dp.toPx()
+                drawLine(lineColor, Offset(x, 0f), Offset(x, size.height), strokeWidth = 1.dp.toPx())
+                drawCircle(dotColor, radius = 5.dp.toPx(), center = Offset(x, dotY))
+            },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Spacer(Modifier.width(30.dp))
+        Column(Modifier.weight(1f)) {
+            Text(item.title, style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(3.dp))
+            Text(item.detail, style = MaterialTheme.typography.bodySmall, color = EditorialTheme.colors.ink3)
+        }
+        Text(
+            item.value,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun DashboardFooter(label: String, available: String) {
+    HorizontalDivider(
+        modifier = Modifier.padding(top = 14.dp, bottom = 14.dp),
+        color = EditorialTheme.colors.hairlineSoft,
+    )
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = EditorialTheme.colors.ink3)
+        Text(available, style = MaterialTheme.typography.labelMedium)
+    }
+}
+
+private fun availableToday(snapshot: StateSnapshot): String = snapshot.budgetSnapshots
+    .firstOrNull { it.enabled }
+    ?.remainingMs
+    ?.let(::formatReportTime)
+    ?: "0m"
+
+private fun formatSets(count: Long): String = "$count ${if (count == 1L) "set" else "sets"}"
+
+private fun formatMinutes(ms: Long): String = if (ms < 60_000L) "<1 min" else {
+    val minutes = (ms + 59_999L) / 60_000L
+    "$minutes min"
+}
+
+private fun formatEventTime(wallMs: Long): String = Instant.ofEpochMilli(wallMs)
+    .atZone(ZoneId.systemDefault())
+    .format(DateTimeFormatter.ofPattern("HH:mm"))
+
+private data class TimelineItem(
+    val title: String,
+    val detail: String,
+    val value: String,
+    val earned: Boolean,
+)
+
+private fun dayName(key: String): String = runCatching {
+    LocalDate.parse(key).dayOfWeek.name.take(3)
+}.getOrDefault("—")
+
+private val WEEKDAY_NAMES = listOf("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")

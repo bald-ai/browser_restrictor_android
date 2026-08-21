@@ -200,7 +200,7 @@ class PushupChallengeActivity : ComponentActivity() {
         ) {
             ChallengeTopRow()
             Text(
-                text = "5 push-ups · +30 minutes today",
+                text = "5 push-ups · +10 minutes today",
                 style = MaterialTheme.typography.headlineMedium,
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center,
@@ -232,7 +232,7 @@ class PushupChallengeActivity : ComponentActivity() {
             ) {
                 ChallengeTopRow()
                 Text(
-                    text = "5 push-ups · +30 minutes today",
+                    text = "5 push-ups · +10 minutes today",
                     style = MaterialTheme.typography.headlineSmall,
                     modifier = Modifier.fillMaxWidth(),
                     textAlign = TextAlign.Center,
@@ -502,7 +502,7 @@ class PushupChallengeActivity : ComponentActivity() {
                         if (earned) {
                             appContainer.eventLog.record(
                                 "Push-up challenge passed with ${verdict.repetitionCount} reps; " +
-                                    "30 daily budget minutes earned",
+                                    "10 daily budget minutes earned",
                             )
                             returnToBrowser()
                         } else {
