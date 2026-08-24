@@ -13,9 +13,11 @@ import com.michalkrsik.internetrestrictor.domain.ForegroundClass
 import com.michalkrsik.internetrestrictor.domain.MAX_SESSION_MINUTES
 import com.michalkrsik.internetrestrictor.domain.MAX_SAFE_BUDGET_ROUNDS
 import com.michalkrsik.internetrestrictor.domain.MIN_SESSION_MINUTES
+import com.michalkrsik.internetrestrictor.domain.MonthlyPushupCycle
 import com.michalkrsik.internetrestrictor.domain.PendingWait
 import com.michalkrsik.internetrestrictor.domain.OffUsageReminderState
 import com.michalkrsik.internetrestrictor.domain.PersistedState
+import com.michalkrsik.internetrestrictor.domain.PUSHUPS_PER_BUDGET_ROUND
 import com.michalkrsik.internetrestrictor.domain.RESTRICTOR_SCHEMA_VERSION
 import com.michalkrsik.internetrestrictor.domain.RestrictionEngine
 import com.michalkrsik.internetrestrictor.domain.RestrictorSettings
@@ -128,10 +130,17 @@ object AppStateSerializer : Serializer<PersistedState> {
                 source.readLong() // Retired completed-normal-unlock count.
                 0L
             }
+            val emergencySkipsUsed = source.readLong()
+            val pushupRepetitionRemainder = if (schema >= 7) source.readLong() else 0L
+            val spendableBudgetRounds = if (schema >= 8) source.readLong() else earnedBudgetRounds
+            val eveningResetApplied = if (schema >= 8) source.readBoolean() else false
             val counter = DailyCounter(
                 localDayKey = localDayKey,
                 earnedBudgetRounds = earnedBudgetRounds,
-                emergencySkipsUsed = source.readLong(),
+                emergencySkipsUsed = emergencySkipsUsed,
+                pushupRepetitionRemainder = pushupRepetitionRemainder,
+                spendableBudgetRounds = spendableBudgetRounds,
+                eveningResetApplied = eveningResetApplied,
             )
             val metadata = RuntimeMetadata(
                 lastCommittedWallMs = source.readLong(),
@@ -184,6 +193,14 @@ object AppStateSerializer : Serializer<PersistedState> {
                     )
                 }
             } else emptyList()
+            val monthlyPushupCycles = if (schema >= 9) {
+                List(source.readInt()) {
+                    MonthlyPushupCycle(
+                        cycleStartDate = source.readUTF(),
+                        totalPushups = source.readLong(),
+                    )
+                }
+            } else emptyList()
             val state = PersistedState(
                 schemaVersion = RESTRICTOR_SCHEMA_VERSION,
                 stateRevision = revision,
@@ -195,6 +212,7 @@ object AppStateSerializer : Serializer<PersistedState> {
                 runtimeMetadata = metadata,
                 usageReports = reports,
                 activityEvents = activityEvents,
+                monthlyPushupCycles = monthlyPushupCycles,
                 offUsageReminder = reminder,
                 currentVisitGraceActive = currentVisitGraceActive,
             )
@@ -246,6 +264,9 @@ object AppStateSerializer : Serializer<PersistedState> {
             target.writeUTF(localDayKey)
             target.writeLong(earnedBudgetRounds)
             target.writeLong(emergencySkipsUsed)
+            target.writeLong(pushupRepetitionRemainder)
+            target.writeLong(spendableBudgetRounds)
+            target.writeBoolean(eveningResetApplied)
         }
         with(t.runtimeMetadata) {
             target.writeLong(lastCommittedWallMs)
@@ -276,6 +297,11 @@ object AppStateSerializer : Serializer<PersistedState> {
             target.writeLong(event.startedAtWallMs)
             target.writeLong(event.endedAtWallMs)
             target.writeLong(event.valueMs)
+        }
+        target.writeInt(t.monthlyPushupCycles.size)
+        t.monthlyPushupCycles.forEach { cycle ->
+            target.writeUTF(cycle.cycleStartDate)
+            target.writeLong(cycle.totalPushups)
         }
         target.flush()
     }
@@ -312,7 +338,9 @@ object AppStateSerializer : Serializer<PersistedState> {
         if (state.activeUnlock != null && state.pendingWait != null) invalid("Unlock and wait overlap")
         if (
             state.dailyCounter.earnedBudgetRounds !in 0..MAX_SAFE_BUDGET_ROUNDS ||
-            state.dailyCounter.emergencySkipsUsed < 0
+            state.dailyCounter.spendableBudgetRounds !in 0..state.dailyCounter.earnedBudgetRounds ||
+            state.dailyCounter.emergencySkipsUsed < 0 ||
+            state.dailyCounter.pushupRepetitionRemainder !in 0 until PUSHUPS_PER_BUDGET_ROUND
         ) {
             invalid("Invalid daily counter")
         }
@@ -335,6 +363,18 @@ object AppStateSerializer : Serializer<PersistedState> {
             ) {
                 invalid("Invalid activity event")
             }
+        }
+        var previousCycleStart: String? = null
+        state.monthlyPushupCycles.forEach { cycle ->
+            val parsedStart = runCatching { java.time.LocalDate.parse(cycle.cycleStartDate) }.getOrNull()
+                ?: invalid("Invalid monthly push-up cycle date")
+            if (
+                parsedStart.dayOfMonth != 9 || cycle.totalPushups < 0 ||
+                previousCycleStart?.let { it >= cycle.cycleStartDate } == true
+            ) {
+                invalid("Invalid monthly push-up cycle")
+            }
+            previousCycleStart = cycle.cycleStartDate
         }
         with(state.offUsageReminder) {
             if (

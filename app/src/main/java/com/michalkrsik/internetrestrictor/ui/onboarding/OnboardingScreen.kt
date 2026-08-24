@@ -113,7 +113,7 @@ private fun WelcomeStep() {
         )
         InfoCard(
             "Local by design",
-            "Settings and usage stay on this device. There is no account, backend, advertising ID, or analytics service.",
+            "Settings and usage stay on this device. Challenge videos are temporarily sent through the owner's verifier and OpenRouter, then deleted. There is no account, advertising ID, or analytics service.",
         )
         InfoCard(
             "A gentle boundary",
@@ -131,12 +131,13 @@ private fun DefaultsStep() {
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        InfoCard("Daily budget", "10 minutes at the start of every local day")
-        InfoCard("Earn more", "Five verified push-ups add 10 minutes to today's budget")
+        InfoCard("Daily budget", "Every local day starts at zero minutes. Spendable budget resets again at 20:00.")
+        InfoCard("Earn more", "Every five verified push-ups add 3 minutes. Partial groups carry across videos until 04:00.")
+        InfoCard("Monthly history", "Every verified push-up is counted in permanent 9th-to-9th monthly history.")
         InfoCard("Sessions", "Choose 3, 5, or 10 minutes by default. You can customize all three presets in Settings. Every normal opening has one fixed 12-second focused wait.")
         InfoCard(
             "Emergency unlock",
-            "Each day starts with none. Your first successful push-up set earns one 30-minute emergency unlock for that day.",
+            "Each day starts with none. Your first completed five-push-up group earns one 15-minute emergency unlock for that day.",
         )
     }
 }

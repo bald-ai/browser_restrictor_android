@@ -6,6 +6,7 @@ import com.michalkrsik.internetrestrictor.domain.ActivityEventType
 import com.michalkrsik.internetrestrictor.domain.BudgetPeriod
 import com.michalkrsik.internetrestrictor.domain.DailyCounter
 import com.michalkrsik.internetrestrictor.domain.DailyUsageReport
+import com.michalkrsik.internetrestrictor.domain.MonthlyPushupCycle
 import com.michalkrsik.internetrestrictor.domain.PendingWait
 import com.michalkrsik.internetrestrictor.domain.PersistedState
 import com.michalkrsik.internetrestrictor.domain.RestrictorSettings
@@ -34,7 +35,14 @@ class AppStateSerializerTest {
             ),
             dailyUsage = UsagePeriodState(BudgetPeriod.DAILY, "2026-07-10", 12_345),
             activeUnlock = UnlockSession("unlock", UnlockSource.NORMAL, 100, 200),
-            dailyCounter = DailyCounter("2026-07-10", 2, 1),
+            dailyCounter = DailyCounter(
+                localDayKey = "2026-07-10",
+                earnedBudgetRounds = 2,
+                emergencySkipsUsed = 1,
+                pushupRepetitionRemainder = 4,
+                spendableBudgetRounds = 1,
+                eveningResetApplied = true,
+            ),
             usageReports = listOf(
                 DailyUsageReport("2026-07-10", protectedUsageMs = 5_000, pushupSessions = 2),
             ),
@@ -47,6 +55,10 @@ class AppStateSerializerTest {
                     endedAtWallMs = 6_000,
                     valueMs = 5_000,
                 ),
+            ),
+            monthlyPushupCycles = listOf(
+                MonthlyPushupCycle("2026-06-09", 81),
+                MonthlyPushupCycle("2026-07-09", 24),
             ),
         )
         val output = ByteArrayOutputStream()
@@ -100,7 +112,7 @@ class AppStateSerializerTest {
 
         val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
 
-        assertEquals(6, migrated.schemaVersion)
+        assertEquals(9, migrated.schemaVersion)
         assertEquals(77, migrated.stateRevision)
         assertEquals(true, migrated.settings.enforcementEnabled)
         assertEquals(null, migrated.settings.pauseUntilWallMs)
@@ -178,7 +190,7 @@ class AppStateSerializerTest {
     }
 
     @Test(expected = CorruptionException::class)
-    fun truncatedSchemaV5StateIsCorruption() = runTest {
+    fun truncatedCurrentSchemaStateIsCorruption() = runTest {
         val output = ByteArrayOutputStream()
         AppStateSerializer.writeTo(PersistedState(), output)
         val truncated = output.toByteArray().copyOf(output.size() - 1)
@@ -220,7 +232,7 @@ class AppStateSerializerTest {
 
         val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
 
-        assertEquals(6, migrated.schemaVersion)
+        assertEquals(9, migrated.schemaVersion)
         assertEquals(123_000, migrated.dailyUsage.usedMs)
         assertEquals(2, migrated.dailyCounter.earnedBudgetRounds)
         assertEquals(1, migrated.dailyCounter.emergencySkipsUsed)
@@ -274,13 +286,166 @@ class AppStateSerializerTest {
         val now = ZonedDateTime.of(2026, 8, 18, 12, 0, 0, 0, zone).toInstant().toEpochMilli()
         val normalized = RestrictionEngine().normalize(migrated, now, zone)
 
-        assertEquals(6, normalized.schemaVersion)
+        assertEquals(9, normalized.schemaVersion)
         assertEquals(true, normalized.settings.enforcementEnabled)
         assertEquals(null, normalized.settings.pauseUntilWallMs)
         assertEquals(true, normalized.settings.emergencySkipsEnabled)
         assertEquals(0, normalized.usageReports.single().offUsageMs)
         assertEquals(2, normalized.usageReports.single().pushupSessions)
         assertEquals(false, normalized.currentVisitGraceActive)
+    }
+
+    @Test
+    fun schemaV6PhoneStateMigratesWithNoPartialPushupRemainder() = runTest {
+        val bytes = ByteArrayOutputStream().also { output ->
+            DataOutputStream(output).use { target ->
+                target.writeInt(0x49525354)
+                target.writeInt(6)
+                target.writeLong(93)
+                target.writeBoolean(true)
+                target.writeBoolean(false)
+                target.writeBoolean(true)
+                target.writeBoolean(true)
+                target.writeLong(1)
+                target.writeInt(ThemePreference.DARK.ordinal)
+                target.writeBoolean(true)
+                target.writeInt(3)
+                listOf(3L, 5L, 10L).forEach(target::writeLong)
+                target.writeUTF("2026-08-21")
+                target.writeLong(60_000)
+                target.writeBoolean(false)
+                target.writeBoolean(false)
+                target.writeUTF("2026-08-21")
+                target.writeLong(2)
+                target.writeLong(0)
+                target.writeLong(120_000)
+                target.writeUTF("epoch-v6")
+                target.writeLong(100_000)
+                target.writeInt(0)
+                target.writeInt(1)
+                target.writeUTF("2026-08-21")
+                target.writeLong(60_000)
+                target.writeLong(0)
+                target.writeLong(2)
+                repeat(2) { target.writeLong(0) }
+                target.writeBoolean(false)
+                repeat(2) { target.writeLong(0) }
+                target.writeBoolean(false)
+                target.writeInt(0)
+            }
+        }.toByteArray()
+
+        val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
+
+        assertEquals(9, migrated.schemaVersion)
+        assertEquals(2, migrated.dailyCounter.earnedBudgetRounds)
+        assertEquals(0, migrated.dailyCounter.pushupRepetitionRemainder)
+        assertEquals(2, migrated.usageReports.single().pushupSessions)
+    }
+
+    @Test
+    fun schemaV7PhoneStateMigratesEarnedRoundsIntoSpendableBudget() = runTest {
+        val bytes = ByteArrayOutputStream().also { output ->
+            DataOutputStream(output).use { target ->
+                target.writeInt(0x49525354)
+                target.writeInt(7)
+                target.writeLong(94)
+                target.writeBoolean(true)
+                target.writeBoolean(false)
+                target.writeBoolean(true)
+                target.writeBoolean(true)
+                target.writeLong(1)
+                target.writeInt(ThemePreference.DARK.ordinal)
+                target.writeBoolean(true)
+                target.writeInt(3)
+                listOf(3L, 5L, 10L).forEach(target::writeLong)
+                target.writeUTF("2026-08-22")
+                target.writeLong(30_000)
+                target.writeBoolean(false)
+                target.writeBoolean(false)
+                target.writeUTF("2026-08-22")
+                target.writeLong(3)
+                target.writeLong(0)
+                target.writeLong(4)
+                target.writeLong(120_000)
+                target.writeUTF("epoch-v7")
+                target.writeLong(100_000)
+                target.writeInt(0)
+                target.writeInt(1)
+                target.writeUTF("2026-08-22")
+                target.writeLong(30_000)
+                target.writeLong(0)
+                target.writeLong(3)
+                repeat(2) { target.writeLong(0) }
+                target.writeBoolean(false)
+                repeat(2) { target.writeLong(0) }
+                target.writeBoolean(false)
+                target.writeInt(0)
+            }
+        }.toByteArray()
+
+        val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
+
+        assertEquals(9, migrated.schemaVersion)
+        assertEquals(3, migrated.dailyCounter.earnedBudgetRounds)
+        assertEquals(3, migrated.dailyCounter.spendableBudgetRounds)
+        assertEquals(4, migrated.dailyCounter.pushupRepetitionRemainder)
+        assertEquals(false, migrated.dailyCounter.eveningResetApplied)
+    }
+
+    @Test
+    fun schemaV8PhoneStateAddsMonthlyLedgerWithoutChangingExistingData() = runTest {
+        val bytes = ByteArrayOutputStream().also { output ->
+            DataOutputStream(output).use { target ->
+                target.writeInt(0x49525354)
+                target.writeInt(8)
+                target.writeLong(95)
+                target.writeBoolean(true)
+                target.writeBoolean(false)
+                target.writeBoolean(true)
+                target.writeBoolean(true)
+                target.writeLong(1)
+                target.writeInt(ThemePreference.DARK.ordinal)
+                target.writeBoolean(true)
+                target.writeInt(3)
+                listOf(3L, 5L, 10L).forEach(target::writeLong)
+                target.writeUTF("2026-08-21")
+                target.writeLong(30_000)
+                target.writeBoolean(false)
+                target.writeBoolean(false)
+                target.writeUTF("2026-08-21")
+                target.writeLong(3)
+                target.writeLong(0)
+                target.writeLong(4)
+                target.writeLong(1)
+                target.writeBoolean(true)
+                target.writeLong(120_000)
+                target.writeUTF("epoch-v8")
+                target.writeLong(100_000)
+                target.writeInt(0)
+                target.writeInt(1)
+                target.writeUTF("2026-08-21")
+                target.writeLong(30_000)
+                target.writeLong(0)
+                target.writeLong(3)
+                repeat(2) { target.writeLong(0) }
+                target.writeBoolean(false)
+                repeat(2) { target.writeLong(0) }
+                target.writeBoolean(false)
+                target.writeInt(0)
+            }
+        }.toByteArray()
+
+        val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
+
+        assertEquals(9, migrated.schemaVersion)
+        assertEquals(30_000, migrated.dailyUsage.usedMs)
+        assertEquals(3, migrated.dailyCounter.earnedBudgetRounds)
+        assertEquals(1, migrated.dailyCounter.spendableBudgetRounds)
+        assertEquals(4, migrated.dailyCounter.pushupRepetitionRemainder)
+        assertEquals(true, migrated.dailyCounter.eveningResetApplied)
+        assertEquals(3, migrated.usageReports.single().pushupSessions)
+        assertEquals(emptyList<MonthlyPushupCycle>(), migrated.monthlyPushupCycles)
     }
 
     @Test(expected = CorruptionException::class)

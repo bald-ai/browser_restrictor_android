@@ -18,15 +18,18 @@ val SUPPORTED_BROWSER_PACKAGES = SUPPORTED_BROWSERS.mapTo(linkedSetOf()) { it.pa
 
 fun isSupportedBrowserPackage(packageName: String?): Boolean =
     packageName != null && packageName in SUPPORTED_BROWSER_PACKAGES
-const val RESTRICTOR_SCHEMA_VERSION = 6
+const val RESTRICTOR_SCHEMA_VERSION = 9
 const val MINUTE_MS = 60_000L
 const val HOUR_MS = 60L * MINUTE_MS
 const val DAY_MS = 24L * HOUR_MS
 const val PENDING_WAIT_EXPIRY_MS = DAY_MS
-const val EMERGENCY_UNLOCK_MS = 30L * MINUTE_MS
-const val DAILY_BASE_BUDGET_MINUTES = 10L
-const val PUSHUP_BUDGET_REWARD_MINUTES = 10L
+const val EMERGENCY_UNLOCK_MS = 15L * MINUTE_MS
+const val DAILY_BASE_BUDGET_MINUTES = 0L
+const val PUSHUP_BUDGET_REWARD_MINUTES = 3L
+const val PUSHUPS_PER_BUDGET_ROUND = 5L
 const val EMERGENCY_SKIP_DAILY_LIMIT = 1L
+const val EVENING_BUDGET_RESET_HOUR = 20
+const val DAILY_RESET_HOUR = 4
 const val MIN_SESSION_MINUTES = 1L
 const val MAX_SESSION_MINUTES = 120L
 val DEFAULT_SESSION_MINUTES = listOf(3L, 5L, 10L)
@@ -134,6 +137,14 @@ data class DailyCounter(
     val localDayKey: String = "",
     val earnedBudgetRounds: Long = 0,
     val emergencySkipsUsed: Long = 0,
+    val pushupRepetitionRemainder: Long = 0,
+    val spendableBudgetRounds: Long = 0,
+    val eveningResetApplied: Boolean = false,
+)
+
+data class MonthlyPushupCycle(
+    val cycleStartDate: String,
+    val totalPushups: Long = 0,
 )
 
 data class RuntimeMetadata(
@@ -154,6 +165,7 @@ data class PersistedState(
     val runtimeMetadata: RuntimeMetadata = RuntimeMetadata(),
     val usageReports: List<DailyUsageReport> = emptyList(),
     val activityEvents: List<ActivityEvent> = emptyList(),
+    val monthlyPushupCycles: List<MonthlyPushupCycle> = emptyList(),
     val offUsageReminder: OffUsageReminderState = OffUsageReminderState(),
     val currentVisitGraceActive: Boolean = false,
 )
@@ -224,10 +236,13 @@ data class StateSnapshot(
     val supportedBrowserInstalled: Boolean,
     val activeUnlock: UnlockSession?,
     val earnedBudgetRoundsToday: Long,
+    val pushupRepetitionRemainderToday: Long,
     val offSessionStartedAtWallMs: Long,
     val usageReports: List<DailyUsageReport>,
     val todayUsageReport: DailyUsageReport,
     val currentWeekUsageReports: List<DailyUsageReport>,
+    val currentMonthlyPushupCycle: MonthlyPushupCycle,
+    val completedMonthlyPushupCycles: List<MonthlyPushupCycle>,
     val todayActivityEvents: List<ActivityEvent>,
     val latchedBlockers: Set<BudgetPeriod>,
     val wallNowMs: Long,

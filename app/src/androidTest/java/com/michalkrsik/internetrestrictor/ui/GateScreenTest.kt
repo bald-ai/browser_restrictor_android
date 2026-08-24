@@ -38,7 +38,11 @@ class GateScreenTest {
 
     @Test
     fun pausedGateShowsOnlyLockedSessionChoices() {
-        val state = engine.normalize(PersistedState(), now, ZoneId.of("UTC"))
+        val normalized = engine.normalize(PersistedState(), now, ZoneId.of("UTC"))
+        val state = when (val result = engine.earnPushupBudget(normalized, now, ZoneId.of("UTC"))) {
+            is com.michalkrsik.internetrestrictor.domain.CommandResult.Applied -> result.state
+            else -> error("Expected budget to be earned")
+        }
         val snapshot = engine.snapshot(state, runtime, now)
         composeRule.setContent {
             RestrictorTheme(snapshot.settings.theme) { GateScreen(snapshot, actions) }
@@ -52,15 +56,18 @@ class GateScreenTest {
         composeRule.onNodeWithText(
             "Every normal browser session starts with the same 12 sec focused wait.",
         ).assertIsDisplayed()
-        composeRule.onNodeWithText("Earn +10 minutes today").assertIsDisplayed()
-        composeRule.onNodeWithText("Complete 5 push-ups · adds to the daily budget").assertIsDisplayed()
+        composeRule.onNodeWithText("Earn +3 minutes today").assertIsDisplayed()
+        composeRule.onNodeWithText("0/5 push-ups carried over · resets at 04:00").assertIsDisplayed()
         composeRule.onNodeWithText("←  Leave browser").assertIsDisplayed()
         composeRule.onAllNodesWithText("Settings", substring = true).assertCountEquals(0)
     }
 
     @Test
     fun outOfTimeGateHidesSkipAndSessionControls() {
-        val base = engine.normalize(PersistedState(), now, ZoneId.of("UTC"))
+        val normalized = engine.normalize(PersistedState(), now, ZoneId.of("UTC"))
+        val base = normalized.copy(
+            dailyCounter = normalized.dailyCounter.copy(pushupRepetitionRemainder = 4),
+        )
         val exhausted = base.copy(
             dailyUsage = UsagePeriodState(
                 BudgetPeriod.DAILY,
@@ -78,7 +85,8 @@ class GateScreenTest {
         }
 
         composeRule.onNodeWithText("Browser time is used up.").assertIsDisplayed()
-        composeRule.onNodeWithText("Earn +10 minutes today").assertIsDisplayed()
+        composeRule.onNodeWithText("Earn +3 minutes today").assertIsDisplayed()
+        composeRule.onNodeWithText("4/5 push-ups carried over · resets at 04:00").assertIsDisplayed()
         composeRule.onNodeWithText("Try again").assertIsDisplayed()
         composeRule.onAllNodesWithText("minute session", substring = true).assertCountEquals(0)
         composeRule.onAllNodesWithText("emergency skip", substring = true).assertCountEquals(0)
@@ -86,7 +94,11 @@ class GateScreenTest {
 
     @Test
     fun waitingGateShowsMinimalCountdownAndBudgetOnly() {
-        val base = engine.normalize(PersistedState(), now, ZoneId.of("UTC"))
+        val normalized = engine.normalize(PersistedState(), now, ZoneId.of("UTC"))
+        val base = when (val result = engine.earnPushupBudget(normalized, now, ZoneId.of("UTC"))) {
+            is com.michalkrsik.internetrestrictor.domain.CommandResult.Applied -> result.state
+            else -> error("Expected budget to be earned")
+        }
         val waiting = when (
             val result = engine.startWait(base, runtime, base.stateRevision, 5, now, ZoneId.of("UTC"))
         ) {

@@ -227,7 +227,7 @@ private fun PausedControls(
         ) {
             Text("Begin $selectedMinutes minute session", style = MaterialTheme.typography.labelLarge)
         }
-        PushupButton(actionInFlight, onPushupChallenge)
+        PushupButton(snapshot, actionInFlight, onPushupChallenge)
         SkipButton(snapshot, actionInFlight, onSkip)
         Budgets(snapshot)
     }
@@ -355,7 +355,7 @@ private fun OutOfTimeControls(
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         Budgets(snapshot)
-        PushupButton(actionInFlight, onPushupChallenge)
+        PushupButton(snapshot, actionInFlight, onPushupChallenge)
         SkipButton(snapshot, actionInFlight, onSkip)
         Button(
             onClick = onTryAgain,
@@ -369,7 +369,7 @@ private fun OutOfTimeControls(
 }
 
 @Composable
-private fun PushupButton(actionInFlight: Boolean, onClick: () -> Unit) {
+private fun PushupButton(snapshot: StateSnapshot, actionInFlight: Boolean, onClick: () -> Unit) {
     OutlinedButton(
         onClick = onClick,
         enabled = !actionInFlight,
@@ -379,9 +379,9 @@ private fun PushupButton(actionInFlight: Boolean, onClick: () -> Unit) {
         colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Earn +10 minutes today", fontWeight = FontWeight.Bold)
+            Text("Earn +3 minutes today", fontWeight = FontWeight.Bold)
             Text(
-                "Complete 5 push-ups · adds to the daily budget",
+                "${snapshot.pushupRepetitionRemainderToday}/5 push-ups carried over · resets at 04:00",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

@@ -16,18 +16,38 @@ class PeriodCalculatorTest {
     }
 
     @Test
-    fun intervalSplitsExactlyAtMidnight() {
+    fun timeBeforeFourBelongsToPreviousLogicalDay() {
+        val zone = ZoneId.of("Europe/Prague")
+        val instant = ZonedDateTime.of(2026, 8, 22, 0, 24, 0, 0, zone).toInstant().toEpochMilli()
+
+        assertEquals("2026-08-21", PeriodCalculator.keysAt(instant, zone).daily)
+    }
+
+    @Test
+    fun intervalSplitsExactlyAtFourAm() {
         val zone = ZoneId.of("UTC")
-        val start = ZonedDateTime.of(2026, 7, 10, 23, 59, 59, 500_000_000, zone).toInstant().toEpochMilli()
-        val intervals = PeriodCalculator.splitAtLocalMidnights(start, start + 1_000, zone)
+        val start = ZonedDateTime.of(2026, 7, 11, 3, 59, 59, 500_000_000, zone).toInstant().toEpochMilli()
+        val intervals = PeriodCalculator.splitAtDailyResets(start, start + 1_000, zone)
         assertEquals(listOf(500L, 500L), intervals.map { it.durationMs })
     }
 
     @Test
     fun dstDayUsesLocalMidnightRatherThanTwentyFourHours() {
         val zone = ZoneId.of("Europe/Prague")
-        val start = LocalDateTime.of(2026, 3, 29, 0, 0).atZone(zone).toInstant().toEpochMilli()
-        val next = PeriodCalculator.nextLocalMidnight(start, zone)
+        val start = LocalDateTime.of(2026, 3, 28, 4, 0).atZone(zone).toInstant().toEpochMilli()
+        val next = PeriodCalculator.nextDailyReset(start, zone)
         assertEquals(23 * HOUR_MS, next - start)
+    }
+
+    @Test
+    fun budgetIntervalSplitsExactlyAtTwentyHundred() {
+        val zone = ZoneId.of("Europe/Prague")
+        val start = ZonedDateTime.of(2026, 7, 10, 19, 59, 59, 500_000_000, zone)
+            .toInstant()
+            .toEpochMilli()
+
+        val intervals = PeriodCalculator.splitAtBudgetBoundaries(start, start + 1_000, zone)
+
+        assertEquals(listOf(500L, 500L), intervals.map { it.durationMs })
     }
 }

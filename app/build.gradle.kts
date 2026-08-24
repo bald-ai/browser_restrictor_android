@@ -29,8 +29,13 @@ android {
         vectorDrawables.useSupportLibrary = true
         buildConfigField(
             "String",
-            "OPENROUTER_API_KEY",
-            "\"${localProperties.getProperty("openrouterApiKey", "")}\"",
+            "VERIFY_URL",
+            "\"${localProperties.getProperty("verifyUrl", "")}\"",
+        )
+        buildConfigField(
+            "String",
+            "VERIFY_SHARED_SECRET",
+            "\"${localProperties.getProperty("verifySharedSecret", "")}\"",
         )
     }
 

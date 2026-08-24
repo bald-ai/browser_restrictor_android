@@ -8,7 +8,6 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.util.Base64
 import android.util.Log
 import android.view.Surface
 import androidx.activity.ComponentActivity
@@ -64,6 +63,7 @@ import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
 import com.michalkrsik.internetrestrictor.BuildConfig
 import com.michalkrsik.internetrestrictor.appContainer
+import com.michalkrsik.internetrestrictor.domain.PUSHUP_BUDGET_REWARD_MINUTES
 import com.michalkrsik.internetrestrictor.domain.SUPPORTED_BROWSERS
 import com.michalkrsik.internetrestrictor.domain.isSupportedBrowserPackage
 import com.michalkrsik.internetrestrictor.ui.theme.EditorialTheme
@@ -72,14 +72,12 @@ import com.michalkrsik.internetrestrictor.ui.theme.RestrictorTheme
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
-import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
 import org.json.JSONObject
 
 class PushupChallengeActivity : ComponentActivity() {
@@ -93,7 +91,7 @@ class PushupChallengeActivity : ComponentActivity() {
     private var recordingStartedElapsedMs = 0L
     private var phase by mutableStateOf(ChallengePhase.PREPARING)
     private var status by mutableStateOf("Preparing camera…")
-    private var elapsedSeconds by mutableIntStateOf(0)
+    private var recordingSecondsRemaining by mutableIntStateOf(RECORDING_LIMIT_SECONDS)
     private var lensFacing by mutableIntStateOf(CameraSelector.LENS_FACING_FRONT)
     private var hasFrontCamera by mutableStateOf(false)
     private var hasBackCamera by mutableStateOf(false)
@@ -112,9 +110,10 @@ class PushupChallengeActivity : ComponentActivity() {
     private val recordingTicker = object : Runnable {
         override fun run() {
             if (phase != ChallengePhase.RECORDING) return
-            elapsedSeconds = (
-                (SystemClock.elapsedRealtime() - recordingStartedElapsedMs) / 1_000L
-            ).toInt()
+            val elapsedMs = SystemClock.elapsedRealtime() - recordingStartedElapsedMs
+            recordingSecondsRemaining = (
+                (MAX_RECORDING_MS - elapsedMs).coerceAtLeast(0) + 999L
+            ).div(1_000L).toInt()
             handler.postDelayed(this, 500L)
         }
     }
@@ -123,6 +122,10 @@ class PushupChallengeActivity : ComponentActivity() {
         if (phase == ChallengePhase.RECORDING) {
             stopRecording("Maximum recording time reached. Checking video…")
         }
+    }
+
+    private val resultReturn = Runnable {
+        if (phase == ChallengePhase.RESULT) returnToBrowser()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -154,6 +157,7 @@ class PushupChallengeActivity : ComponentActivity() {
     override fun onDestroy() {
         handler.removeCallbacks(recordingTicker)
         handler.removeCallbacks(recordingTimeout)
+        handler.removeCallbacks(resultReturn)
         discardFinalize = true
         activeRecording?.stop()
         activeRecording = null
@@ -200,7 +204,7 @@ class PushupChallengeActivity : ComponentActivity() {
         ) {
             ChallengeTopRow()
             Text(
-                text = "5 push-ups · +10 minutes today",
+                text = "Every 5 push-ups · +3 minutes today",
                 style = MaterialTheme.typography.headlineMedium,
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center,
@@ -232,7 +236,7 @@ class PushupChallengeActivity : ComponentActivity() {
             ) {
                 ChallengeTopRow()
                 Text(
-                    text = "5 push-ups · +10 minutes today",
+                    text = "Every 5 push-ups · +3 minutes today",
                     style = MaterialTheme.typography.headlineSmall,
                     modifier = Modifier.fillMaxWidth(),
                     textAlign = TextAlign.Center,
@@ -262,7 +266,11 @@ class PushupChallengeActivity : ComponentActivity() {
             OutlinedButton(
                 onClick = ::flipCamera,
                 enabled = hasFrontCamera && hasBackCamera &&
-                    phase !in setOf(ChallengePhase.RECORDING, ChallengePhase.CHECKING),
+                    phase !in setOf(
+                        ChallengePhase.RECORDING,
+                        ChallengePhase.CHECKING,
+                        ChallengePhase.RESULT,
+                    ),
                 shape = PillShape,
                 border = BorderStroke(1.dp, EditorialTheme.colors.hairline),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
@@ -282,7 +290,7 @@ class PushupChallengeActivity : ComponentActivity() {
     private fun InstructionText() {
         Text(
             text = "Frame as much of your body as you can. Imperfect framing and form are okay. " +
-                "Tap Start, do 5 push-ups, then tap Finish.",
+                "Tap Start and do as many push-ups as you want before the 30-second countdown ends.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.fillMaxWidth(),
@@ -308,7 +316,7 @@ class PushupChallengeActivity : ComponentActivity() {
     private fun ChallengeStatus() {
         Text(
             text = if (phase == ChallengePhase.RECORDING) {
-                "Recording ${elapsedSeconds}s · finish when you are done"
+                "Recording · ${recordingSecondsRemaining}s remaining"
             } else {
                 status
             },
@@ -341,6 +349,7 @@ class PushupChallengeActivity : ComponentActivity() {
                     ChallengePhase.RECORDING -> "Finish recording"
                     ChallengePhase.CHECKING -> "Checking video…"
                     ChallengePhase.RETRY -> "Record again"
+                    ChallengePhase.RESULT -> "Returning to browser…"
                     ChallengePhase.PREPARING -> "Preparing camera…"
                     ChallengePhase.ERROR -> "Camera unavailable"
                 },
@@ -444,14 +453,14 @@ class PushupChallengeActivity : ComponentActivity() {
 
     private fun startRecording() {
         val capture = videoCapture ?: return
-        if (BuildConfig.OPENROUTER_API_KEY.isBlank()) {
+        if (BuildConfig.VERIFY_URL.isBlank() || BuildConfig.VERIFY_SHARED_SECRET.isBlank()) {
             phase = ChallengePhase.ERROR
-            status = "OpenRouter is not configured."
+            status = "Push-up verification is not configured."
             return
         }
 
         discardFinalize = false
-        elapsedSeconds = 0
+        recordingSecondsRemaining = RECORDING_LIMIT_SECONDS
         recordingStartedElapsedMs = SystemClock.elapsedRealtime()
         phase = ChallengePhase.RECORDING
         status = "Recording…"
@@ -492,29 +501,60 @@ class PushupChallengeActivity : ComponentActivity() {
         status = "Checking your push-ups…"
         lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
-                runCatching { callOpenRouter(videoFile, BuildConfig.OPENROUTER_API_KEY) }
+                try {
+                    runCatching {
+                        callVerificationServer(
+                            videoFile = videoFile,
+                            verifyUrl = BuildConfig.VERIFY_URL,
+                            sharedSecret = BuildConfig.VERIFY_SHARED_SECRET,
+                        )
+                    }
+                } finally {
+                    videoFile.delete()
+                }
             }
-            videoFile.delete()
             result.fold(
                 onSuccess = { verdict ->
-                    if (verdict.repetitionCount >= REQUIRED_PUSHUPS) {
-                        val earned = appContainer.repository.earnPushupBudget()
-                        if (earned) {
+                    if (verdict.repetitionCount > 0) {
+                        val previous = appContainer.repository.snapshot.value
+                        val saved = appContainer.repository.recordPushupRepetitions(verdict.repetitionCount)
+                        if (saved) {
+                            val updated = appContainer.repository.snapshot.value
+                            val priorRemainder = if (
+                                previous.todayUsageReport.localDayKey == updated.todayUsageReport.localDayKey
+                            ) {
+                                previous.pushupRepetitionRemainderToday
+                            } else {
+                                0L
+                            }
+                            val newlyEarnedRounds = (
+                                priorRemainder + verdict.repetitionCount
+                            ) / REQUIRED_PUSHUPS
+                            val earnedMinutes = newlyEarnedRounds * PUSHUP_BUDGET_REWARD_MINUTES
                             appContainer.eventLog.record(
-                                "Push-up challenge passed with ${verdict.repetitionCount} reps; " +
-                                    "10 daily budget minutes earned",
+                                "Push-up video counted ${verdict.repetitionCount} reps; " +
+                                    "$earnedMinutes daily budget minutes earned; " +
+                                    "${updated.pushupRepetitionRemainderToday} reps carried",
                             )
-                            returnToBrowser()
+                            val resultMessage = formatPushupResult(
+                                repetitionCount = verdict.repetitionCount,
+                                earnedMinutes = earnedMinutes,
+                                carriedRepetitions = updated.pushupRepetitionRemainderToday,
+                            )
+                            if (newlyEarnedRounds > 0) {
+                                showResultAndReturn(resultMessage)
+                            } else {
+                                showRetry(resultMessage)
+                            }
                         } else {
-                            showRetry("Push-ups passed, but the budget reward could not be saved.")
+                            showRetry("Push-ups were counted, but the progress could not be saved.")
                         }
                     } else {
                         appContainer.eventLog.record(
-                            "Push-up challenge rejected with ${verdict.repetitionCount} reps",
+                            "Push-up video had no countable repetitions",
                         )
                         showRetry(
-                            "Not accepted: ${verdict.reason} " +
-                                "(${verdict.repetitionCount}/$REQUIRED_PUSHUPS counted)",
+                            "No push-ups counted: ${verdict.reason}",
                         )
                     }
                 },
@@ -530,90 +570,64 @@ class PushupChallengeActivity : ComponentActivity() {
     }
 
     private fun showRetry(message: String) {
+        handler.removeCallbacks(resultReturn)
         phase = ChallengePhase.RETRY
         status = message
     }
 
-    private fun callOpenRouter(videoFile: File, apiKey: String): PushupVerdict {
-        val dataUrl = "data:video/mp4;base64," +
-            Base64.encodeToString(videoFile.readBytes(), Base64.NO_WRAP)
-        val content = JSONArray()
-            .put(JSONObject().put("type", "text").put("text", userPrompt()))
-            .put(
-                JSONObject()
-                    .put("type", "video_url")
-                    .put("video_url", JSONObject().put("url", dataUrl)),
-            )
-        val messages = JSONArray()
-            .put(JSONObject().put("role", "system").put("content", systemPrompt()))
-            .put(JSONObject().put("role", "user").put("content", content))
-        val payload = JSONObject()
-            .put("model", MODEL)
-            .put("messages", messages)
-            .put("max_tokens", 300)
+    private fun showResultAndReturn(message: String) {
+        handler.removeCallbacks(resultReturn)
+        phase = ChallengePhase.RESULT
+        status = message
+        handler.postDelayed(resultReturn, RESULT_DISPLAY_MS)
+    }
 
-        val connection = (URL(OPENROUTER_URL).openConnection() as HttpURLConnection).apply {
+    private fun callVerificationServer(
+        videoFile: File,
+        verifyUrl: String,
+        sharedSecret: String,
+    ): PushupVerdict {
+        val boundary = "browser-restrictor-${System.currentTimeMillis()}"
+        val prefix = (
+            "--$boundary\r\n" +
+                "Content-Disposition: form-data; name=\"video\"; filename=\"challenge.mp4\"\r\n" +
+                "Content-Type: video/mp4\r\n\r\n"
+        ).toByteArray(Charsets.UTF_8)
+        val suffix = "\r\n--$boundary--\r\n".toByteArray(Charsets.UTF_8)
+        val contentLength = prefix.size.toLong() + videoFile.length() + suffix.size
+        val connection = (URL(verifyUrl).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 30_000
-            readTimeout = 180_000
+            readTimeout = 200_000
             doOutput = true
-            setRequestProperty("Authorization", "Bearer $apiKey")
-            setRequestProperty("Content-Type", "application/json")
-            setRequestProperty("HTTP-Referer", "https://github.com/bald-ai/browser_restrictor_android")
-            setRequestProperty("X-Title", "browser-restrictor-pushup-challenge")
+            setFixedLengthStreamingMode(contentLength)
+            setRequestProperty("Authorization", "Bearer $sharedSecret")
+            setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
         }
         try {
-            OutputStreamWriter(connection.outputStream).use { it.write(payload.toString()) }
+            connection.outputStream.buffered().use { output ->
+                output.write(prefix)
+                videoFile.inputStream().buffered().use { input -> input.copyTo(output) }
+                output.write(suffix)
+            }
             val code = connection.responseCode
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-            val body = BufferedReader(InputStreamReader(stream)).use { it.readText() }
-            if (code !in 200..299) throw IllegalStateException("OpenRouter HTTP $code: $body")
-            val rawContent = JSONObject(body)
-                .getJSONArray("choices")
-                .getJSONObject(0)
-                .getJSONObject("message")
-                .getString("content")
-            val verdict = extractJson(rawContent)
+            val body = stream?.let { BufferedReader(InputStreamReader(it)).use(BufferedReader::readText) }.orEmpty()
+            if (code !in 200..299) throw IllegalStateException("Verification HTTP $code")
+            val verdict = JSONObject(body)
+            verdict.getBoolean("is_success")
             return PushupVerdict(
-                isSuccess = verdict.optBoolean("is_success", false),
-                confidence = verdict.optDouble("confidence", 0.0),
-                repetitionCount = verdict.optInt("repetition_count", 0).coerceAtLeast(0),
-                reason = verdict.optString("reason", "No reason returned"),
+                confidence = verdict.getDouble("confidence").also {
+                    require(it in 0.0..1.0) { "Invalid verification confidence" }
+                },
+                repetitionCount = verdict.getInt("repetition_count").also {
+                    require(it >= 0) { "Invalid verification count" }
+                },
+                reason = verdict.getString("reason"),
             )
         } finally {
             connection.disconnect()
         }
-    }
-
-    private fun systemPrompt(): String =
-        "You verify a casual push-up video for a personal app budget reward. Count generously. " +
-            "The person's whole body does not need to be visible: repeated lowering and rising of the " +
-            "visible head, shoulders, torso, or arms is enough to count push-up repetitions. " +
-            "Accept imperfect camera angles, partial framing, ordinary form, incomplete depth, brief " +
-            "occlusion, and motion that is recognizable as push-ups from its continuity. " +
-            "When choosing between two plausible repetition counts, use the higher count. " +
-            "Return zero only when no push-up-like repetitions are visible. " +
-            "Do not count unrelated exercises, obvious cuts or loops, or a recording of a screen. " +
-            "Set is_success to true whenever repetition_count is at least $REQUIRED_PUSHUPS."
-
-    private fun userPrompt(): String =
-        "Review this direct camera recording and count the valid push-ups. " +
-            "Reply only with one JSON object and no markdown. " +
-            "Schema: {\"is_success\": boolean, \"confidence\": number, " +
-            "\"repetition_count\": integer, \"reason\": string}"
-
-    private fun extractJson(text: String): JSONObject {
-        val trimmed = text.trim()
-            .removePrefix("```json")
-            .removePrefix("```")
-            .removeSuffix("```")
-            .trim()
-        val start = trimmed.indexOf('{')
-        val end = trimmed.lastIndexOf('}')
-        if (start == -1 || end <= start) {
-            throw IllegalStateException("No JSON verdict in model response")
-        }
-        return JSONObject(trimmed.substring(start, end + 1))
     }
 
     private fun returnToBrowser() {
@@ -640,12 +654,12 @@ class PushupChallengeActivity : ComponentActivity() {
         READY,
         RECORDING,
         CHECKING,
+        RESULT,
         RETRY,
         ERROR,
     }
 
     private data class PushupVerdict(
-        val isSuccess: Boolean,
         val confidence: Double,
         val repetitionCount: Int,
         val reason: String,
@@ -654,12 +668,20 @@ class PushupChallengeActivity : ComponentActivity() {
     companion object {
         const val EXTRA_BROWSER_PACKAGE = "browser_package"
         private const val TAG = "PushupChallenge"
-        private const val OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-        private const val MODEL = "google/gemini-3.5-flash-lite"
+        const val MODEL = "google/gemini-3.7-flash"
         private const val REQUIRED_PUSHUPS = 5
-        private const val MAX_RECORDING_MS = 60_000L
+        private const val RECORDING_LIMIT_SECONDS = 30
+        private const val MAX_RECORDING_MS = RECORDING_LIMIT_SECONDS * 1_000L
+        private const val RESULT_DISPLAY_MS = 2_000L
     }
 }
+
+internal fun formatPushupResult(
+    repetitionCount: Int,
+    earnedMinutes: Long,
+    carriedRepetitions: Long,
+): String = "$repetitionCount push-ups counted · $earnedMinutes minutes granted · " +
+    "$carriedRepetitions/5 carried over"
 
 internal object PushupChallengeVisibility {
     val active = MutableStateFlow(false)

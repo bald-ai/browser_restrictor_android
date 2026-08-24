@@ -29,8 +29,9 @@ class DashboardScreenTest {
     fun weeklyActivityIsTheDefaultAndDayViewIsAvailable() {
         val normalized = engine.normalize(PersistedState(), now, zone)
         val earned = (engine.earnPushupBudget(normalized, now, zone) as CommandResult.Applied).state
+        val carried = (engine.recordPushupRepetitions(earned, 4, now + 1, zone) as CommandResult.Applied).state
         val snapshot = engine.snapshot(
-            earned,
+            carried,
             RuntimeSignals(
                 serviceConnected = true,
                 accessibilityEnabled = true,
@@ -47,6 +48,8 @@ class DashboardScreenTest {
         }
 
         composeRule.onNodeWithText("Your week.").assertIsDisplayed()
+        composeRule.onNodeWithText("4/5 push-ups").assertIsDisplayed()
+        composeRule.onNodeWithText("EXPIRES IN").assertIsDisplayed()
         composeRule.onNodeWithText("MONDAY – SUNDAY").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Open settings").assertIsDisplayed()
 
