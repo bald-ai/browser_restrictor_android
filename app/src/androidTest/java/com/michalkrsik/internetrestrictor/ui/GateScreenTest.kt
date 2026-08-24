@@ -9,6 +9,7 @@ import com.michalkrsik.internetrestrictor.domain.BudgetPeriod
 import com.michalkrsik.internetrestrictor.domain.DAILY_BASE_BUDGET_MINUTES
 import com.michalkrsik.internetrestrictor.domain.ForegroundClass
 import com.michalkrsik.internetrestrictor.domain.PersistedState
+import com.michalkrsik.internetrestrictor.domain.ProtectedTarget
 import com.michalkrsik.internetrestrictor.domain.RestrictionEngine
 import com.michalkrsik.internetrestrictor.domain.RuntimeSignals
 import com.michalkrsik.internetrestrictor.domain.UsagePeriodState
@@ -27,7 +28,7 @@ class GateScreenTest {
     private val now = 1_783_683_200_000L
     private val runtime = RuntimeSignals(
         foregroundClass = ForegroundClass.BROWSER,
-        browserActive = true,
+        activeTarget = ProtectedTarget.BROWSER_POOL,
         gateFocused = true,
         serviceConnected = true,
         accessibilityEnabled = true,
@@ -88,6 +89,36 @@ class GateScreenTest {
         composeRule.onNodeWithText("Earn +3 minutes today").assertIsDisplayed()
         composeRule.onNodeWithText("4/5 push-ups carried over · resets at 04:00").assertIsDisplayed()
         composeRule.onNodeWithText("Try again").assertIsDisplayed()
+        composeRule.onAllNodesWithText("minute session", substring = true).assertCountEquals(0)
+        composeRule.onAllNodesWithText("emergency skip", substring = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun youtubeGateOffersOnlyTheFirstPushupRoundAndLeaveActions() {
+        val normalized = engine.normalize(PersistedState(), now, ZoneId.of("UTC")).copy(
+            dailyCounter = engine.normalize(PersistedState(), now, ZoneId.of("UTC"))
+                .dailyCounter.copy(
+                    earnedBudgetRounds = 3,
+                    spendableBudgetRounds = 3,
+                    pushupRepetitionRemainder = 4,
+                ),
+        )
+        val snapshot = engine.snapshot(
+            normalized,
+            runtime.copy(
+                foregroundClass = ForegroundClass.OTHER,
+                activeTarget = ProtectedTarget.YOUTUBE,
+            ),
+            now,
+        )
+        composeRule.setContent {
+            RestrictorTheme(snapshot.settings.theme) { GateScreen(snapshot, actions) }
+        }
+
+        composeRule.onNodeWithText("Push-ups before YouTube.").assertIsDisplayed()
+        composeRule.onNodeWithText("Do push-ups now").assertIsDisplayed()
+        composeRule.onNodeWithText("19/20 complete today · unlocks YouTube until 04:00").assertIsDisplayed()
+        composeRule.onNodeWithText("←  Leave YouTube").assertIsDisplayed()
         composeRule.onAllNodesWithText("minute session", substring = true).assertCountEquals(0)
         composeRule.onAllNodesWithText("emergency skip", substring = true).assertCountEquals(0)
     }

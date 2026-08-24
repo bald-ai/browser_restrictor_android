@@ -4,12 +4,15 @@ A native Android version of Internet Restrictor with an earned-budget push-up fl
 
 Internet Restrictor adds deliberate friction before Chrome, Firefox, Edge, or Opera opens. The user chooses one of three customizable session presets (3, 5, or 10 minutes by default), completes a fixed 12-second focused wait, and then receives a wall-clock unlock. Active, focused use across all supported browsers is charged to one shared budget: zero minutes at local-day start plus 3 minutes for every five verified push-ups. Spendable time resets at 20:00 local time and can be earned again afterward.
 
+The official YouTube app is a separate protected target. It stays locked until 20 accumulated verified push-ups in the logical day, then remains open without consuming browser budget until the 04:00 daily reset.
+
 This is a personal, user-controlled tool—not parental control, device management, or a tamper-proof blocker.
 
 ## What is implemented
 
 - A five-step native onboarding flow with clear privacy and accessibility disclosure.
 - A touch-blocking accessibility overlay over supported browsers.
+- A separate morning gate over the official YouTube app (`com.google.android.youtube`) until 20 verified push-ups have accumulated in the logical day.
 - A fixed 12-second focused wait before every normal browser session.
 - Three customizable 1-to-120-minute wall-clock session presets, defaulting to 3, 5, and 10 minutes.
 - A rotatable front/back-camera push-up challenge on every gate. Every five verified repetitions add 3 minutes to today's budget; incomplete groups carry across videos until the 04:00 local daily reset. A 30-second on-screen countdown bounds each recording. The first completed group of each local day also earns one emergency unlock. It returns to the originating supported browser after earning budget, without bypassing the normal wait, and its use is charged normally.
@@ -106,14 +109,14 @@ The captures in `validation_artifacts/` predate this redesign and are retained o
 
 - `domain/`: pure restriction engine, local-day math, fixed wait rules, and immutable state models.
 - `data/`: serialized repository mutations and a typed binary DataStore serializer.
-- `monitoring/`: supported-browser foreground classification, Accessibility service, permissions, and device health.
+- `monitoring/`: protected-target foreground classification, Accessibility service, permissions, and device health.
 - `overlay/`: full-screen gate and compact session badge window controllers.
 - `ui/`: onboarding, dashboard, settings, gate, badge, reusable components, and theme.
 - `diagnostics/`: bounded, local-only operational events that can be copied from the app.
 - `receivers/`: boot and wall-clock boundary recovery signals.
 - `server/`: the ffmpeg-backed push-up verifier. It accepts one authenticated MP4 upload up to 30 seconds, stretches four source frames per second from the complete clip into Gemini's one-frame-per-playback-second sampling path, and computes the single-video pass threshold from the returned repetition count.
 
-The Accessibility service reacts only to window-level changes. It uses the active window package name to distinguish supported browsers, Internet Restrictor, and other apps. It does not traverse the accessibility tree or read URLs, webpage text, form fields, typing, or screenshots.
+The Accessibility service reacts only to window-level changes. It uses the active window package name to distinguish supported browsers, YouTube, Internet Restrictor, and other apps. It does not traverse the accessibility tree or read URLs, webpage text, form fields, typing, or screenshots.
 
 ## Important boundaries
 

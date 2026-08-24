@@ -8,6 +8,7 @@ import com.michalkrsik.internetrestrictor.domain.ForegroundClass
 import com.michalkrsik.internetrestrictor.domain.GateMode
 import com.michalkrsik.internetrestrictor.domain.IdGenerator
 import com.michalkrsik.internetrestrictor.domain.PersistedState
+import com.michalkrsik.internetrestrictor.domain.ProtectedTarget
 import com.michalkrsik.internetrestrictor.domain.RandomIdGenerator
 import com.michalkrsik.internetrestrictor.domain.RestrictionEngine
 import com.michalkrsik.internetrestrictor.domain.RestrictorSettings
@@ -121,7 +122,7 @@ class RestrictorRepository(
 
     suspend fun updateServiceRuntime(
         foregroundClass: ForegroundClass = runtime.foregroundClass,
-        browserActive: Boolean = runtime.browserActive,
+        activeTarget: ProtectedTarget? = runtime.activeTarget,
         gateFocused: Boolean = runtime.gateFocused,
         screenInteractive: Boolean = runtime.screenInteractive,
         keyguardUnlocked: Boolean = runtime.keyguardUnlocked,
@@ -138,7 +139,7 @@ class RestrictorRepository(
             val waitWasPending = persistedState.pendingWait != null
             val updatedState = abortPendingWaitAfterServiceUpdate(
                 state = persistedState,
-                browserActive = browserActive,
+                browserActive = activeTarget == ProtectedTarget.BROWSER_POOL,
             )
             val waitAborted = waitWasPending && updatedState.pendingWait == null
             if (waitAborted) {
@@ -146,7 +147,7 @@ class RestrictorRepository(
             }
             runtime = runtime.copy(
                 foregroundClass = foregroundClass,
-                browserActive = browserActive,
+                activeTarget = activeTarget,
                 gateFocused = gateFocused,
                 screenInteractive = screenInteractive,
                 keyguardUnlocked = keyguardUnlocked,
@@ -173,8 +174,10 @@ class RestrictorRepository(
                 bumpRevisionLocked()
             }
             if (waitAborted) diagnosticSink("Focused wait aborted after leaving the browser")
-            if (old.foregroundClass != runtime.foregroundClass || old.browserActive != runtime.browserActive) {
-                diagnosticSink("Foreground transition: ${runtime.foregroundClass.name}")
+            if (old.foregroundClass != runtime.foregroundClass || old.activeTarget != runtime.activeTarget) {
+                diagnosticSink(
+                    "Foreground transition: ${runtime.activeTarget?.name ?: runtime.foregroundClass.name}",
+                )
             }
             publishLocked()
         }
@@ -523,13 +526,25 @@ class RestrictorRepository(
 
     private fun manageGateTokensLocked() {
         val underlying = engine.underlyingMode(persistedState, runtime, timeSource.wallTimeMs())
-        if (!runtime.browserActive) {
+        if (runtime.activeTarget == null) {
             runtime = runtime.copy(
                 gateSessionId = null,
                 outOfTimeLatchToken = null,
                 latchedBlockers = emptySet(),
                 gateFocused = false,
             )
+            return
+        }
+        if (runtime.activeTarget != ProtectedTarget.BROWSER_POOL) {
+            runtime = runtime.copy(
+                outOfTimeLatchToken = null,
+                latchedBlockers = emptySet(),
+            )
+            if (underlying in nonGateModes) {
+                runtime = runtime.copy(gateSessionId = null, gateFocused = false)
+            } else if (runtime.gateSessionId == null) {
+                runtime = runtime.copy(gateSessionId = idGenerator.nextId())
+            }
             return
         }
         if (runtime.outOfTimeLatchToken != null) {
@@ -586,7 +601,7 @@ class RestrictorRepository(
 
     private fun RuntimeSignals.policyFingerprint() = listOf(
         foregroundClass,
-        browserActive,
+        activeTarget,
         gateFocused,
         screenInteractive,
         keyguardUnlocked,
@@ -618,6 +633,7 @@ class RestrictorRepository(
             GateMode.ACCESS_GRANTED_NORMAL,
             GateMode.ACCESS_GRANTED_EMERGENCY,
             GateMode.ACCESS_GRANTED_NO_DELAY,
+            GateMode.YOUTUBE_ACCESS_GRANTED,
             GateMode.BROWSER_BACKGROUND,
             GateMode.SERVICE_UNAVAILABLE,
             GateMode.STORAGE_ERROR,

@@ -16,8 +16,21 @@ val SUPPORTED_BROWSERS = listOf(
 
 val SUPPORTED_BROWSER_PACKAGES = SUPPORTED_BROWSERS.mapTo(linkedSetOf()) { it.packageName }
 
+const val YOUTUBE_PACKAGE_NAME = "com.google.android.youtube"
+
+enum class ProtectedTarget { BROWSER_POOL, YOUTUBE }
+
 fun isSupportedBrowserPackage(packageName: String?): Boolean =
     packageName != null && packageName in SUPPORTED_BROWSER_PACKAGES
+
+fun protectedTargetForPackage(packageName: String?): ProtectedTarget? = when {
+    isSupportedBrowserPackage(packageName) -> ProtectedTarget.BROWSER_POOL
+    packageName == YOUTUBE_PACKAGE_NAME -> ProtectedTarget.YOUTUBE
+    else -> null
+}
+
+fun isProtectedTargetPackage(packageName: String?): Boolean =
+    protectedTargetForPackage(packageName) != null
 const val RESTRICTOR_SCHEMA_VERSION = 9
 const val MINUTE_MS = 60_000L
 const val HOUR_MS = 60L * MINUTE_MS
@@ -27,6 +40,7 @@ const val EMERGENCY_UNLOCK_MS = 15L * MINUTE_MS
 const val DAILY_BASE_BUDGET_MINUTES = 0L
 const val PUSHUP_BUDGET_REWARD_MINUTES = 3L
 const val PUSHUPS_PER_BUDGET_ROUND = 5L
+const val YOUTUBE_UNLOCK_PUSHUPS = 20L
 const val EMERGENCY_SKIP_DAILY_LIMIT = 1L
 const val EVENING_BUDGET_RESET_HOUR = 20
 const val DAILY_RESET_HOUR = 4
@@ -60,6 +74,8 @@ enum class GateMode {
     ACCESS_GRANTED_CURRENT_VISIT,
     OUT_OF_TIME,
     OUT_OF_TIME_LATCHED,
+    YOUTUBE_LOCKED,
+    YOUTUBE_ACCESS_GRANTED,
     STORAGE_ERROR,
 }
 
@@ -142,6 +158,9 @@ data class DailyCounter(
     val eveningResetApplied: Boolean = false,
 )
 
+val DailyCounter.verifiedPushups: Long
+    get() = earnedBudgetRounds * PUSHUPS_PER_BUDGET_ROUND + pushupRepetitionRemainder
+
 data class MonthlyPushupCycle(
     val cycleStartDate: String,
     val totalPushups: Long = 0,
@@ -172,7 +191,7 @@ data class PersistedState(
 
 data class RuntimeSignals(
     val foregroundClass: ForegroundClass = ForegroundClass.OTHER,
-    val browserActive: Boolean = false,
+    val activeTarget: ProtectedTarget? = null,
     val gateFocused: Boolean = false,
     val screenInteractive: Boolean = true,
     val keyguardUnlocked: Boolean = true,
@@ -225,6 +244,7 @@ data class StateSnapshot(
     val outOfTimeLatchToken: String?,
     val pendingWaitId: String?,
     val activeUnlockId: String?,
+    val activeTarget: ProtectedTarget?,
     val settings: RestrictorSettings,
     val budgetSnapshots: List<BudgetSnapshot>,
     val skipSnapshot: SkipSnapshot,
@@ -237,6 +257,7 @@ data class StateSnapshot(
     val activeUnlock: UnlockSession?,
     val earnedBudgetRoundsToday: Long,
     val pushupRepetitionRemainderToday: Long,
+    val verifiedPushupsToday: Long,
     val offSessionStartedAtWallMs: Long,
     val usageReports: List<DailyUsageReport>,
     val todayUsageReport: DailyUsageReport,
@@ -255,6 +276,7 @@ data class StateSnapshot(
             GateMode.WAITING,
             GateMode.OUT_OF_TIME,
             GateMode.OUT_OF_TIME_LATCHED,
+            GateMode.YOUTUBE_LOCKED,
         )
 
     val usesBadge: Boolean

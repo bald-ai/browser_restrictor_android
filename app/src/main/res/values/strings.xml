@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">Internet Restrictor</string>
-    <string name="accessibility_service_label">Protect browsers</string>
-    <string name="accessibility_service_description">Creates a deliberate pause before supported browsers and measures active browser time. It does not read URLs, webpages, text, typing, or screenshots.</string>
+    <string name="accessibility_service_label">Protect browsers and YouTube</string>
+    <string name="accessibility_service_description">Creates deliberate gates before supported browsers and YouTube, and measures active browser time. It does not read URLs, webpages, text, typing, or screenshots.</string>
 </resources>

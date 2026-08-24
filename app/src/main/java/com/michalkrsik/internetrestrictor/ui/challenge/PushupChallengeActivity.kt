@@ -65,7 +65,9 @@ import com.michalkrsik.internetrestrictor.BuildConfig
 import com.michalkrsik.internetrestrictor.appContainer
 import com.michalkrsik.internetrestrictor.domain.PUSHUP_BUDGET_REWARD_MINUTES
 import com.michalkrsik.internetrestrictor.domain.SUPPORTED_BROWSERS
-import com.michalkrsik.internetrestrictor.domain.isSupportedBrowserPackage
+import com.michalkrsik.internetrestrictor.domain.YOUTUBE_PACKAGE_NAME
+import com.michalkrsik.internetrestrictor.domain.YOUTUBE_UNLOCK_PUSHUPS
+import com.michalkrsik.internetrestrictor.domain.isProtectedTargetPackage
 import com.michalkrsik.internetrestrictor.ui.theme.EditorialTheme
 import com.michalkrsik.internetrestrictor.ui.theme.PillShape
 import com.michalkrsik.internetrestrictor.ui.theme.RestrictorTheme
@@ -125,7 +127,7 @@ class PushupChallengeActivity : ComponentActivity() {
     }
 
     private val resultReturn = Runnable {
-        if (phase == ChallengePhase.RESULT) returnToBrowser()
+        if (phase == ChallengePhase.RESULT) returnToOrigin()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -536,12 +538,28 @@ class PushupChallengeActivity : ComponentActivity() {
                                     "$earnedMinutes daily budget minutes earned; " +
                                     "${updated.pushupRepetitionRemainderToday} reps carried",
                             )
-                            val resultMessage = formatPushupResult(
+                            val baseResultMessage = formatPushupResult(
                                 repetitionCount = verdict.repetitionCount,
                                 earnedMinutes = earnedMinutes,
                                 carriedRepetitions = updated.pushupRepetitionRemainderToday,
                             )
-                            if (newlyEarnedRounds > 0) {
+                            val returningToYoutube =
+                                intent.getStringExtra(EXTRA_RETURN_PACKAGE) == YOUTUBE_PACKAGE_NAME
+                            val youtubeUnlocked =
+                                updated.verifiedPushupsToday >= YOUTUBE_UNLOCK_PUSHUPS
+                            val resultMessage = when {
+                                returningToYoutube && youtubeUnlocked ->
+                                    "$baseResultMessage · YouTube unlocked until 04:00"
+                                returningToYoutube ->
+                                    "$baseResultMessage · ${updated.verifiedPushupsToday}/" +
+                                        "$YOUTUBE_UNLOCK_PUSHUPS toward YouTube"
+                                else -> baseResultMessage
+                            }
+                            if (shouldReturnAfterPushupResult(
+                                returningToYoutube = returningToYoutube,
+                                youtubeUnlocked = youtubeUnlocked,
+                                newlyEarnedRounds = newlyEarnedRounds,
+                            )) {
                                 showResultAndReturn(resultMessage)
                             } else {
                                 showRetry(resultMessage)
@@ -630,9 +648,9 @@ class PushupChallengeActivity : ComponentActivity() {
         }
     }
 
-    private fun returnToBrowser() {
-        val preferredPackage = intent.getStringExtra(EXTRA_BROWSER_PACKAGE)
-            ?.takeIf(::isSupportedBrowserPackage)
+    private fun returnToOrigin() {
+        val preferredPackage = intent.getStringExtra(EXTRA_RETURN_PACKAGE)
+            ?.takeIf(::isProtectedTargetPackage)
         val candidatePackages = buildList {
             preferredPackage?.let(::add)
             SUPPORTED_BROWSERS.mapTo(this) { it.packageName }
@@ -641,7 +659,7 @@ class PushupChallengeActivity : ComponentActivity() {
             packageManager.getLaunchIntentForPackage(packageName)
         }
         if (launchIntent == null) {
-            showRetry("A supported browser could not be opened.")
+            showRetry("The originating app could not be opened.")
             return
         }
         launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
@@ -666,7 +684,7 @@ class PushupChallengeActivity : ComponentActivity() {
     )
 
     companion object {
-        const val EXTRA_BROWSER_PACKAGE = "browser_package"
+        const val EXTRA_RETURN_PACKAGE = "return_package"
         private const val TAG = "PushupChallenge"
         const val MODEL = "google/gemini-3.7-flash"
         private const val REQUIRED_PUSHUPS = 5
@@ -682,6 +700,12 @@ internal fun formatPushupResult(
     carriedRepetitions: Long,
 ): String = "$repetitionCount push-ups counted · $earnedMinutes minutes granted · " +
     "$carriedRepetitions/5 carried over"
+
+internal fun shouldReturnAfterPushupResult(
+    returningToYoutube: Boolean,
+    youtubeUnlocked: Boolean,
+    newlyEarnedRounds: Long,
+): Boolean = newlyEarnedRounds > 0 && (!returningToYoutube || youtubeUnlocked)
 
 internal object PushupChallengeVisibility {
     val active = MutableStateFlow(false)

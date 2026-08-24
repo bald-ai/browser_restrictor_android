@@ -40,4 +40,23 @@ class PushupChallengeVisibilityTest {
         assertFalse(PushupChallengeVisibility.active.value)
         assertFalse(PushupChallengeVisibility.activityStarted.value)
     }
+
+    @Test
+    fun youtubeChallengeStaysOpenAtIntermediateBrowserRewardRounds() {
+        assertFalse(shouldReturnAfterPushupResult(
+            returningToYoutube = true,
+            youtubeUnlocked = false,
+            newlyEarnedRounds = 1,
+        ))
+        assertTrue(shouldReturnAfterPushupResult(
+            returningToYoutube = true,
+            youtubeUnlocked = true,
+            newlyEarnedRounds = 1,
+        ))
+        assertTrue(shouldReturnAfterPushupResult(
+            returningToYoutube = false,
+            youtubeUnlocked = false,
+            newlyEarnedRounds = 1,
+        ))
+    }
 }

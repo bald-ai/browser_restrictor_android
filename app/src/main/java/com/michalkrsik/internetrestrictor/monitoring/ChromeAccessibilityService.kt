@@ -14,6 +14,8 @@ import android.view.accessibility.AccessibilityEvent
 import androidx.core.content.ContextCompat
 import com.michalkrsik.internetrestrictor.appContainer
 import com.michalkrsik.internetrestrictor.domain.ForegroundClass
+import com.michalkrsik.internetrestrictor.domain.GateMode
+import com.michalkrsik.internetrestrictor.domain.PeriodCalculator
 import com.michalkrsik.internetrestrictor.domain.StateSnapshot
 import com.michalkrsik.internetrestrictor.overlay.BadgeOverlayController
 import com.michalkrsik.internetrestrictor.overlay.GateOverlayController
@@ -47,6 +49,7 @@ class ChromeAccessibilityService : AccessibilityService() {
     private lateinit var overlayCoordinator: OverlayCoordinator
     private var renderJob: Job? = null
     private var tickerJob: Job? = null
+    private var policyBoundaryJob: Job? = null
     private var gateExitConfirmationJob: Job? = null
     private var leaveTimeoutJob: Job? = null
     private var challengeLaunchWatchdogJob: Job? = null
@@ -93,6 +96,7 @@ class ChromeAccessibilityService : AccessibilityService() {
         registerScreenReceiver()
         startRendering()
         startConditionalTicker()
+        startPolicyBoundaryWatcher()
 
         val access = appContainer.accessChecker.read()
         val decision = foregroundMonitor.evaluate()
@@ -105,7 +109,7 @@ class ChromeAccessibilityService : AccessibilityService() {
             )
             repository.updateServiceRuntime(
                 foregroundClass = decision.foregroundClass,
-                browserActive = decision.browserActive,
+                activeTarget = decision.activeTarget,
                 gateFocused = decision.gateFocused,
                 screenInteractive = powerManager.isInteractive,
                 keyguardUnlocked = !keyguardManager.isKeyguardLocked,
@@ -120,7 +124,7 @@ class ChromeAccessibilityService : AccessibilityService() {
         val decision = foregroundMonitor.evaluate(event)
         if (::overlayCoordinator.isInitialized &&
             overlayCoordinator.isLeaving &&
-            !decision.browserActive
+            !decision.targetActive
         ) {
             completeLeave("Home transition confirmed")
         } else {
@@ -153,6 +157,7 @@ class ChromeAccessibilityService : AccessibilityService() {
         unregisterScreenReceiver()
         renderJob?.cancel()
         tickerJob?.cancel()
+        policyBoundaryJob?.cancel()
         gateExitConfirmationJob?.cancel()
         leaveTimeoutJob?.cancel()
         challengeLaunchWatchdogJob?.cancel()
@@ -189,6 +194,26 @@ class ChromeAccessibilityService : AccessibilityService() {
         }
     }
 
+    private fun startPolicyBoundaryWatcher() {
+        policyBoundaryJob?.cancel()
+        policyBoundaryJob = serviceScope.launch {
+            repository.snapshot
+                .map { snapshot ->
+                    if (snapshot.canonicalMode == GateMode.YOUTUBE_ACCESS_GRANTED) {
+                        PeriodCalculator.nextDailyReset(snapshot.wallNowMs, timeSource.zoneId())
+                    } else {
+                        null
+                    }
+                }
+                .distinctUntilChanged()
+                .collectLatest { boundaryWallMs ->
+                    if (boundaryWallMs == null) return@collectLatest
+                    delay((boundaryWallMs - timeSource.wallTimeMs()).coerceAtLeast(1L))
+                    repository.tick(timeSource.elapsedRealtimeMs(), timeSource.wallTimeMs())
+                }
+        }
+    }
+
     private fun onGateFocusChanged(focused: Boolean) {
         if (!::foregroundMonitor.isInitialized) return
         foregroundMonitor.setGateFocus(focused)
@@ -220,8 +245,8 @@ class ChromeAccessibilityService : AccessibilityService() {
         PushupChallengeVisibility.prepareLaunch()
         val intent = Intent(this, PushupChallengeActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            foregroundMonitor.lastBrowserPackageName?.let { packageName ->
-                putExtra(PushupChallengeActivity.EXTRA_BROWSER_PACKAGE, packageName)
+            foregroundMonitor.lastProtectedPackageName?.let { packageName ->
+                putExtra(PushupChallengeActivity.EXTRA_RETURN_PACKAGE, packageName)
             }
         }
         try {
@@ -253,7 +278,7 @@ class ChromeAccessibilityService : AccessibilityService() {
         serviceScope.launch {
             repository.updateServiceRuntime(
                 foregroundClass = ForegroundClass.OTHER,
-                browserActive = false,
+                activeTarget = null,
                 gateFocused = false,
                 serviceConnected = false,
             )
@@ -268,7 +293,7 @@ class ChromeAccessibilityService : AccessibilityService() {
             if (activeServiceGeneration.compareAndSet(disconnectingGeneration, 0)) {
                 repository.updateServiceRuntime(
                     foregroundClass = ForegroundClass.OTHER,
-                    browserActive = false,
+                    activeTarget = null,
                     gateFocused = false,
                     serviceConnected = false,
                 )
@@ -311,13 +336,13 @@ class ChromeAccessibilityService : AccessibilityService() {
         serviceScope.launch {
             repository.updateServiceRuntime(
                 foregroundClass = decision.foregroundClass,
-                browserActive = decision.browserActive,
+                activeTarget = decision.activeTarget,
                 gateFocused = decision.gateFocused,
                 screenInteractive = powerManager.isInteractive,
                 keyguardUnlocked = !keyguardManager.isKeyguardLocked,
                 serviceConnected = true,
             )
-            if (leaveRearmGuard.observe(decision.browserActive)) {
+            if (leaveRearmGuard.observe(decision.targetActive)) {
                 renderCurrentOverlayState()
             }
             afterUpdate?.invoke()
@@ -337,7 +362,7 @@ class ChromeAccessibilityService : AccessibilityService() {
         serviceScope.launch {
             repository.updateServiceRuntime(
                 foregroundClass = exited.foregroundClass,
-                browserActive = exited.browserActive,
+                activeTarget = exited.activeTarget,
                 gateFocused = exited.gateFocused,
                 screenInteractive = powerManager.isInteractive,
                 keyguardUnlocked = !keyguardManager.isKeyguardLocked,

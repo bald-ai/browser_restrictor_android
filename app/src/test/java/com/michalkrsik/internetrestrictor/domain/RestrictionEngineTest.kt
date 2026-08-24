@@ -19,7 +19,7 @@ class RestrictionEngineTest {
     private val engine = RestrictionEngine(ids)
     private val ready = RuntimeSignals(
         foregroundClass = ForegroundClass.BROWSER,
-        browserActive = true,
+        activeTarget = ProtectedTarget.BROWSER_POOL,
         gateFocused = true,
         screenInteractive = true,
         keyguardUnlocked = true,
@@ -27,6 +27,10 @@ class RestrictionEngineTest {
         accessibilityEnabled = true,
         storageReady = true,
         gateSessionId = "gate-1",
+    )
+    private val youtubeReady = ready.copy(
+        foregroundClass = ForegroundClass.OTHER,
+        activeTarget = ProtectedTarget.YOUTUBE,
     )
 
     private fun initial(settings: RestrictorSettings = RestrictorSettings()): PersistedState =
@@ -50,6 +54,70 @@ class RestrictionEngineTest {
     @Test
     fun statePriorityStartsOutOfTime() {
         assertEquals(GateMode.OUT_OF_TIME, engine.underlyingMode(initial(), ready, now))
+    }
+
+    @Test
+    fun youtubeStaysLockedUntilTwentyAccumulatedPushups() {
+        val emergency = initial().copy(
+            activeUnlock = UnlockSession("emergency", UnlockSource.EMERGENCY, now, now + HOUR_MS),
+        )
+        assertEquals(GateMode.YOUTUBE_LOCKED, engine.underlyingMode(emergency, youtubeReady, now))
+
+        val partial = applied(engine.recordPushupRepetitions(initial(), 19, now, zone))
+        assertEquals(GateMode.YOUTUBE_LOCKED, engine.underlyingMode(partial, youtubeReady, now))
+
+        val earned = applied(engine.recordPushupRepetitions(partial, 1, now + 1_000, zone))
+        val snapshot = engine.snapshot(earned, youtubeReady, now + 1_000)
+        assertEquals(20, snapshot.verifiedPushupsToday)
+        assertEquals(GateMode.YOUTUBE_ACCESS_GRANTED, snapshot.canonicalMode)
+        assertEquals(ProtectedTarget.YOUTUBE, snapshot.activeTarget)
+        assertFalse(snapshot.usesFullGate)
+        assertFalse(snapshot.usesBadge)
+    }
+
+    @Test
+    fun youtubeUnlockSurvivesEveningResetButEndsAtFourAm() {
+        val beforeEveningReset = ZonedDateTime.of(2026, 7, 10, 19, 59, 59, 0, zone)
+            .toInstant()
+            .toEpochMilli()
+        val earnedBeforeEvening = applied(engine.recordPushupRepetitions(
+            engine.normalize(PersistedState(), beforeEveningReset, zone),
+            20,
+            beforeEveningReset,
+            zone,
+        ))
+        val afterEvening = engine.normalize(earnedBeforeEvening, beforeEveningReset + 1_000, zone)
+        assertEquals(GateMode.YOUTUBE_ACCESS_GRANTED, engine.underlyingMode(
+            afterEvening,
+            youtubeReady,
+            beforeEveningReset + 1_000,
+        ))
+
+        val beforeDailyReset = ZonedDateTime.of(2026, 7, 11, 3, 59, 59, 0, zone)
+            .toInstant()
+            .toEpochMilli()
+        val earnedBeforeDaily = applied(engine.recordPushupRepetitions(
+            engine.normalize(PersistedState(), beforeDailyReset, zone),
+            20,
+            beforeDailyReset,
+            zone,
+        ))
+        val afterDaily = engine.normalize(earnedBeforeDaily, beforeDailyReset + 1_000, zone)
+        assertEquals(0, afterDaily.dailyCounter.earnedBudgetRounds)
+        assertEquals(GateMode.YOUTUBE_LOCKED, engine.underlyingMode(
+            afterDaily,
+            youtubeReady,
+            beforeDailyReset + 1_000,
+        ))
+    }
+
+    @Test
+    fun youtubeAccessDoesNotConsumeBrowserBudget() {
+        val earned = applied(engine.recordPushupRepetitions(initial(), 20, now, zone))
+        val after = engine.consumeUsage(earned, youtubeReady, now, now + MINUTE_MS, zone)
+
+        assertEquals(0, after.dailyUsage.usedMs)
+        assertEquals(0, after.usageReports.single().protectedUsageMs)
     }
 
     @Test
