@@ -60,6 +60,7 @@ import com.michalkrsik.internetrestrictor.domain.GateMode
 import com.michalkrsik.internetrestrictor.domain.MINUTE_MS
 import com.michalkrsik.internetrestrictor.domain.StateSnapshot
 import com.michalkrsik.internetrestrictor.domain.WaitCalculator
+import com.michalkrsik.internetrestrictor.domain.YOUTUBE_UNLOCK_PUSHUPS
 import com.michalkrsik.internetrestrictor.ui.components.BudgetBar
 import com.michalkrsik.internetrestrictor.ui.components.PauseEmblem
 import com.michalkrsik.internetrestrictor.ui.components.formatCompactTime
@@ -103,7 +104,11 @@ fun GateScreen(snapshot: StateSnapshot, actions: GateActions) {
             Row(modifier = Modifier.fillMaxWidth()) {
                 TextButton(onClick = actions.onLeaveBrowser) {
                     Text(
-                        "←  Leave browser",
+                        if (snapshot.canonicalMode == GateMode.YOUTUBE_LOCKED) {
+                            "←  Leave YouTube"
+                        } else {
+                            "←  Leave browser"
+                        },
                         style = MaterialTheme.typography.labelLarge,
                         color = EditorialTheme.colors.accent,
                     )
@@ -171,6 +176,14 @@ fun GateScreen(snapshot: StateSnapshot, actions: GateActions) {
                             actions.onTryAgain()
                         },
                     )
+                    GateMode.YOUTUBE_LOCKED -> YouTubeLockedControls(
+                        snapshot = snapshot,
+                        actionInFlight = actionInFlight,
+                        onPushupChallenge = {
+                            actionInFlight = true
+                            actions.onPushupChallenge()
+                        },
+                    )
                     else -> Unit
                 }
                 snapshot.lastErrorMessage?.let {
@@ -184,6 +197,35 @@ fun GateScreen(snapshot: StateSnapshot, actions: GateActions) {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun YouTubeLockedControls(
+    snapshot: StateSnapshot,
+    actionInFlight: Boolean,
+    onPushupChallenge: () -> Unit,
+) {
+    Column(
+        Modifier.padding(vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Button(
+            onClick = onPushupChallenge,
+            enabled = !actionInFlight,
+            modifier = Modifier.fillMaxWidth().height(58.dp),
+            shape = PillShape,
+        ) {
+            Text("Do push-ups now", style = MaterialTheme.typography.labelLarge)
+        }
+        Text(
+            "${snapshot.verifiedPushupsToday}/$YOUTUBE_UNLOCK_PUSHUPS complete today · " +
+                "unlocks YouTube until 04:00",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
@@ -494,6 +536,7 @@ private fun eyebrow(mode: GateMode): String = when (mode) {
     GateMode.PAUSED -> "TAKE A MOMENT"
     GateMode.WAITING -> "ALMOST THERE"
     GateMode.OUT_OF_TIME, GateMode.OUT_OF_TIME_LATCHED -> "BUDGET USED"
+    GateMode.YOUTUBE_LOCKED -> "MORNING GATE"
     else -> "BROWSER"
 }
 
@@ -501,6 +544,7 @@ private fun headline(mode: GateMode): String = when (mode) {
     GateMode.PAUSED -> "Pause before browsing."
     GateMode.WAITING -> "Hang on a moment."
     GateMode.OUT_OF_TIME, GateMode.OUT_OF_TIME_LATCHED -> "Browser time is used up."
+    GateMode.YOUTUBE_LOCKED -> "Push-ups before YouTube."
     else -> "Browser"
 }
 
@@ -511,5 +555,6 @@ private fun supportingCopy(snapshot: StateSnapshot): String = when (snapshot.can
         "Your $minutes min session is opening soon."
     }
     GateMode.OUT_OF_TIME, GateMode.OUT_OF_TIME_LATCHED -> "Budget used. Try again after reset."
+    GateMode.YOUTUBE_LOCKED -> "Complete 20 verified push-ups to unlock it for the day."
     else -> ""
 }

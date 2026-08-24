@@ -44,7 +44,7 @@ class GateOverlayController(
         val composeView = ComposeView(context).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
             importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_YES
-            contentDescription = "Internet Restrictor browser pause screen"
+            contentDescription = "Internet Restrictor protected app gate"
             isFocusableInTouchMode = true
             setOnKeyListener { _, keyCode, event ->
                 if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
@@ -151,7 +151,7 @@ class GateOverlayController(
         PixelFormat.OPAQUE,
     ).apply {
         gravity = Gravity.FILL
-        title = "Internet Restrictor browser gate"
+        title = "Internet Restrictor protected app gate"
         softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
     }
 }

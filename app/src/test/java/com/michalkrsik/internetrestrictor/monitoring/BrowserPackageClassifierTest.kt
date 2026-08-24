@@ -1,7 +1,10 @@
 package com.michalkrsik.internetrestrictor.monitoring
 
 import com.michalkrsik.internetrestrictor.domain.ForegroundClass
+import com.michalkrsik.internetrestrictor.domain.ProtectedTarget
 import com.michalkrsik.internetrestrictor.domain.SUPPORTED_BROWSERS
+import com.michalkrsik.internetrestrictor.domain.YOUTUBE_PACKAGE_NAME
+import com.michalkrsik.internetrestrictor.domain.protectedTargetForPackage
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -38,5 +41,22 @@ class BrowserPackageClassifierTest {
             ForegroundClass.OTHER,
             classifyForegroundPackage("com.android.settings", restrictorPackage),
         )
+    }
+
+    @Test
+    fun youtubeIsASeparateProtectedTargetRatherThanPartOfTheBrowserPool() {
+        assertEquals(
+            ProtectedTarget.YOUTUBE,
+            protectedTargetForPackage(YOUTUBE_PACKAGE_NAME),
+        )
+        assertEquals(
+            ForegroundClass.OTHER,
+            classifyForegroundPackage(YOUTUBE_PACKAGE_NAME, restrictorPackage),
+        )
+        assertEquals(
+            ProtectedTarget.BROWSER_POOL,
+            protectedTargetForPackage("com.android.chrome"),
+        )
+        assertEquals(null, protectedTargetForPackage("com.google.android.apps.youtube.music"))
     }
 }

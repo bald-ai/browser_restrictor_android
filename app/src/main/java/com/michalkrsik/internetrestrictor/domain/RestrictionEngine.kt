@@ -167,11 +167,18 @@ class RestrictionEngine(
 
     fun underlyingMode(state: PersistedState, runtime: RuntimeSignals, nowWallMs: Long): GateMode {
         if (runtime.storageError) return GateMode.STORAGE_ERROR
-        if (!runtime.browserActive || !runtime.screenInteractive || !runtime.keyguardUnlocked) {
+        if (runtime.activeTarget == null || !runtime.screenInteractive || !runtime.keyguardUnlocked) {
             return GateMode.BROWSER_BACKGROUND
         }
         if (!runtime.storageReady || !runtime.accessibilityEnabled || !runtime.serviceConnected) {
             return GateMode.SERVICE_UNAVAILABLE
+        }
+        if (runtime.activeTarget == ProtectedTarget.YOUTUBE) {
+            return if (state.dailyCounter.verifiedPushups >= YOUTUBE_UNLOCK_PUSHUPS) {
+                GateMode.YOUTUBE_ACCESS_GRANTED
+            } else {
+                GateMode.YOUTUBE_LOCKED
+            }
         }
         state.activeUnlock?.takeIf { it.expiresAtWallMs > nowWallMs }?.let {
             when (it.source) {
@@ -200,7 +207,7 @@ class RestrictionEngine(
         val mode = if (
             underlying != GateMode.OUT_OF_TIME &&
             runtime.outOfTimeLatchToken != null &&
-            runtime.browserActive &&
+            runtime.activeTarget == ProtectedTarget.BROWSER_POOL &&
             runtime.serviceConnected
         ) {
             GateMode.OUT_OF_TIME_LATCHED
@@ -249,6 +256,7 @@ class RestrictionEngine(
             outOfTimeLatchToken = runtime.outOfTimeLatchToken,
             pendingWaitId = pending?.id,
             activeUnlockId = state.activeUnlock?.id,
+            activeTarget = runtime.activeTarget,
             settings = state.settings,
             budgetSnapshots = budgets,
             skipSnapshot = SkipSnapshot(
@@ -268,6 +276,7 @@ class RestrictionEngine(
             activeUnlock = state.activeUnlock,
             earnedBudgetRoundsToday = state.dailyCounter.earnedBudgetRounds,
             pushupRepetitionRemainderToday = state.dailyCounter.pushupRepetitionRemainder,
+            verifiedPushupsToday = state.dailyCounter.verifiedPushups,
             offSessionStartedAtWallMs = state.offUsageReminder.sessionStartedAtWallMs,
             usageReports = state.usageReports,
             todayUsageReport = state.usageReports.firstOrNull {

@@ -7,24 +7,28 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import com.michalkrsik.internetrestrictor.domain.ForegroundClass
+import com.michalkrsik.internetrestrictor.domain.ProtectedTarget
 import com.michalkrsik.internetrestrictor.domain.isSupportedBrowserPackage
+import com.michalkrsik.internetrestrictor.domain.protectedTargetForPackage
 
 data class ForegroundDecision(
     val foregroundClass: ForegroundClass,
-    val browserActive: Boolean,
+    val activeTarget: ProtectedTarget?,
     val gateFocused: Boolean,
-)
+) {
+    val targetActive: Boolean get() = activeTarget != null
+}
 
 class BrowserForegroundMonitor(
     private val service: AccessibilityService,
 ) {
-    private var latchedBrowserContext = false
+    private var latchedTarget: ProtectedTarget? = null
     private var gateVisible = false
     private var gateHasFocus = false
-    private var lastDecision = ForegroundDecision(ForegroundClass.OTHER, false, false)
+    private var lastDecision = ForegroundDecision(ForegroundClass.OTHER, null, false)
     private val exitStabilizer = GateExitStabilizer()
 
-    var lastBrowserPackageName: String? = null
+    var lastProtectedPackageName: String? = null
         private set
 
     val hasPendingGateExit: Boolean get() = exitStabilizer.hasPendingCandidate
@@ -48,21 +52,29 @@ class BrowserForegroundMonitor(
         val windows = service.windows.orEmpty()
         val focused = windows.firstOrNull { it.isFocused }
         val decision = when {
-            gateVisible && latchedBrowserContext -> {
-                val exitCandidate = gateExitCandidatePackage(event, focused, windows)
-                if (exitStabilizer.observe(exitCandidate, nowElapsedMs)) {
-                    ForegroundDecision(ForegroundClass.OTHER, false, false)
+            gateVisible && latchedTarget != null -> {
+                val activePackage = activeApplicationPackage(windows)
+                val switchedTarget = protectedTargetForPackage(activePackage)
+                    ?.takeIf { it != latchedTarget }
+                if (switchedTarget != null) {
+                    val owner = packageClassification(activePackage)
+                    ForegroundDecision(owner.foregroundClass, switchedTarget, false)
                 } else {
-                    ForegroundDecision(
-                        ForegroundClass.RESTRICTOR,
-                        true,
-                        gateHasFocus || focused?.type == AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY,
-                    )
+                    val exitCandidate = gateExitCandidatePackage(event, focused, windows)
+                    if (exitStabilizer.observe(exitCandidate, nowElapsedMs)) {
+                        ForegroundDecision(ForegroundClass.OTHER, null, false)
+                    } else {
+                        ForegroundDecision(
+                            ForegroundClass.RESTRICTOR,
+                            latchedTarget,
+                            gateHasFocus || focused?.type == AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY,
+                        )
+                    }
                 }
             }
             focused?.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD -> classifyImeContext(windows)
             focused?.type == AccessibilityWindowInfo.TYPE_APPLICATION -> classifyApplication(focused, event)
-            focused != null -> ForegroundDecision(ForegroundClass.OTHER, false, false)
+            focused != null -> ForegroundDecision(ForegroundClass.OTHER, null, false)
             else -> {
                 val activeApp = windows.firstOrNull {
                     it.type == AccessibilityWindowInfo.TYPE_APPLICATION && it.isActive && it.isFocused
@@ -72,11 +84,11 @@ class BrowserForegroundMonitor(
         }
 
         when {
-            decision.foregroundClass == ForegroundClass.BROWSER && decision.browserActive -> {
-                latchedBrowserContext = true
+            decision.activeTarget != null -> {
+                latchedTarget = decision.activeTarget
             }
-            decision.foregroundClass == ForegroundClass.RESTRICTOR && gateVisible && decision.browserActive -> Unit
-            else -> latchedBrowserContext = false
+            decision.foregroundClass == ForegroundClass.RESTRICTOR && gateVisible && decision.targetActive -> Unit
+            else -> latchedTarget = null
         }
         lastDecision = decision
         return decision
@@ -85,7 +97,7 @@ class BrowserForegroundMonitor(
     fun confirmPendingGateExit(
         nowElapsedMs: Long = SystemClock.elapsedRealtime(),
     ): ForegroundDecision? {
-        if (!gateVisible || !latchedBrowserContext || !exitStabilizer.hasPendingCandidate) {
+        if (!gateVisible || latchedTarget == null || !exitStabilizer.hasPendingCandidate) {
             return null
         }
         val windows = service.windows.orEmpty()
@@ -99,9 +111,9 @@ class BrowserForegroundMonitor(
 
     fun forceExit(): ForegroundDecision {
         exitStabilizer.reset()
-        latchedBrowserContext = false
+        latchedTarget = null
         gateHasFocus = false
-        lastDecision = ForegroundDecision(ForegroundClass.OTHER, false, false)
+        lastDecision = ForegroundDecision(ForegroundClass.OTHER, null, false)
         return lastDecision
     }
 
@@ -123,12 +135,12 @@ class BrowserForegroundMonitor(
     private fun classifyImeContext(windows: List<AccessibilityWindowInfo>): ForegroundDecision {
         val underlying = windows.firstOrNull {
             it.type == AccessibilityWindowInfo.TYPE_APPLICATION && it.isActive
-        } ?: return ForegroundDecision(ForegroundClass.OTHER, false, false)
-        val owner = ownerClass(underlying) ?: ForegroundClass.OTHER
-        return if (owner == ForegroundClass.BROWSER) {
-            ForegroundDecision(ForegroundClass.BROWSER, true, false)
+        } ?: return ForegroundDecision(ForegroundClass.OTHER, null, false)
+        val owner = ownerClassification(underlying) ?: PackageClassification(ForegroundClass.OTHER, null)
+        return if (owner.activeTarget != null) {
+            ForegroundDecision(owner.foregroundClass, owner.activeTarget, false)
         } else {
-            ForegroundDecision(owner, false, false)
+            ForegroundDecision(owner.foregroundClass, null, false)
         }
     }
 
@@ -136,34 +148,35 @@ class BrowserForegroundMonitor(
         window: AccessibilityWindowInfo,
         event: AccessibilityEvent?,
     ): ForegroundDecision {
-        val owner = ownerClass(window) ?: packageClass(event?.packageName?.toString())
-        return if (owner == ForegroundClass.BROWSER && window.isFocused && window.isActive) {
-            ForegroundDecision(ForegroundClass.BROWSER, true, false)
+        val owner = ownerClassification(window) ?: packageClassification(event?.packageName?.toString())
+        return if (owner.activeTarget != null && window.isFocused && window.isActive) {
+            ForegroundDecision(owner.foregroundClass, owner.activeTarget, false)
         } else {
-            ForegroundDecision(owner, false, false)
+            ForegroundDecision(owner.foregroundClass, null, false)
         }
     }
 
     private fun classifyEventFallback(event: AccessibilityEvent?): ForegroundDecision {
-        val owner = packageClass(event?.packageName?.toString())
-        return if (owner == ForegroundClass.BROWSER) {
-            ForegroundDecision(owner, true, false)
+        val owner = packageClassification(event?.packageName?.toString())
+        return if (owner.activeTarget != null) {
+            ForegroundDecision(owner.foregroundClass, owner.activeTarget, false)
         } else {
-            ForegroundDecision(owner, false, false)
+            ForegroundDecision(owner.foregroundClass, null, false)
         }
     }
 
-    private fun packageClass(packageName: String?): ForegroundClass {
+    private fun packageClassification(packageName: String?): PackageClassification {
         val classification = classifyForegroundPackage(packageName, service.packageName)
-        if (classification == ForegroundClass.BROWSER && packageName != null) {
-            lastBrowserPackageName = packageName
+        val activeTarget = protectedTargetForPackage(packageName)
+        if (activeTarget != null && packageName != null) {
+            lastProtectedPackageName = packageName
         }
-        return classification
+        return PackageClassification(classification, activeTarget)
     }
 
-    private fun ownerClass(window: AccessibilityWindowInfo): ForegroundClass? {
+    private fun ownerClassification(window: AccessibilityWindowInfo): PackageClassification? {
         val packageName = ownerPackage(window) ?: return null
-        return packageClass(packageName)
+        return packageClassification(packageName)
     }
 
     private fun activeApplicationPackage(
@@ -192,9 +205,14 @@ class BrowserForegroundMonitor(
     }
 
     private fun isGateExitPackage(packageName: String): Boolean =
-        !isSupportedBrowserPackage(packageName) &&
+        protectedTargetForPackage(packageName) == null &&
             packageName != service.packageName &&
             packageName != SYSTEM_UI_PACKAGE
+
+    private data class PackageClassification(
+        val foregroundClass: ForegroundClass,
+        val activeTarget: ProtectedTarget?,
+    )
 
     private companion object {
         const val SYSTEM_UI_PACKAGE = "com.android.systemui"
