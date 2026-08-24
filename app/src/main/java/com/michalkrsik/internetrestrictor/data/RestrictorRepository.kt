@@ -220,9 +220,10 @@ class RestrictorRepository(
         )
     }
 
-    suspend fun earnPushupBudget(): Boolean = command(clearOutOfTimeLatch = true) {
-        engine.earnPushupBudget(
+    suspend fun recordPushupRepetitions(repetitions: Int): Boolean = command(clearOutOfTimeLatch = true) {
+        engine.recordPushupRepetitions(
             input = persistedState,
+            repetitions = repetitions.toLong(),
             nowWallMs = timeSource.wallTimeMs(),
             zoneId = timeSource.zoneId(),
         )
@@ -510,6 +511,7 @@ class RestrictorRepository(
         val written = dataStore.updateData { next }
         persistedState = written
         runtime = runtime.copy(storageReady = true, storageError = false, storageWriteError = false)
+        lastError = null
         true
     } catch (error: Exception) {
         runtime = runtime.copy(storageWriteError = true)
@@ -575,7 +577,9 @@ class RestrictorRepository(
             before.activeUnlock == null && after.activeUnlock?.source?.name == "EMERGENCY" ->
                 diagnosticSink("Emergency skip granted")
             before.dailyCounter.earnedBudgetRounds < after.dailyCounter.earnedBudgetRounds ->
-                diagnosticSink("Push-up round added 10 minutes to today's budget")
+                diagnosticSink("Push-up repetitions added budget for today")
+            before.dailyCounter.pushupRepetitionRemainder != after.dailyCounter.pushupRepetitionRemainder ->
+                diagnosticSink("Partial push-up progress saved for today")
             before.settings != after.settings -> diagnosticSink("Settings changed")
         }
     }

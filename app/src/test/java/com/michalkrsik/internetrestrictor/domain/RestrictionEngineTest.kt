@@ -32,6 +32,9 @@ class RestrictionEngineTest {
     private fun initial(settings: RestrictorSettings = RestrictorSettings()): PersistedState =
         engine.normalize(PersistedState(settings = settings), now, zone)
 
+    private fun initialWithBudget(settings: RestrictorSettings = RestrictorSettings()): PersistedState =
+        applied(engine.earnPushupBudget(initial(settings), now, zone)).copy(activityEvents = emptyList())
+
     @Test
     fun defaultsUseFixedDailyBudgetAndWaitRules() {
         val settings = RestrictorSettings()
@@ -40,13 +43,13 @@ class RestrictionEngineTest {
         assertEquals(1, settings.emergencySkipDailyLimit)
         assertEquals(listOf(3L, 5L, 10L), settings.sessionMinutes)
         assertEquals(ThemePreference.DARK, settings.theme)
-        assertEquals(10, engine.budgetSnapshots(initial()).single().limitMinutes)
+        assertEquals(0, engine.budgetSnapshots(initial()).single().limitMinutes)
         assertEquals(12_000, WaitCalculator.requiredFocusMs(3))
     }
 
     @Test
-    fun statePriorityStartsPaused() {
-        assertEquals(GateMode.PAUSED, engine.underlyingMode(initial(), ready, now))
+    fun statePriorityStartsOutOfTime() {
+        assertEquals(GateMode.OUT_OF_TIME, engine.underlyingMode(initial(), ready, now))
     }
 
     @Test
@@ -72,7 +75,7 @@ class RestrictionEngineTest {
         val state = initial(RestrictorSettings(delayEnabled = false))
 
         assertTrue(state.settings.delayEnabled)
-        assertEquals(GateMode.PAUSED, engine.underlyingMode(state, ready, now))
+        assertEquals(GateMode.OUT_OF_TIME, engine.underlyingMode(state, ready, now))
     }
 
     @Test
@@ -88,7 +91,7 @@ class RestrictionEngineTest {
 
     @Test
     fun activeUnlockAccumulatesDailyUsage() {
-        val state = initial().copy(
+        val state = initialWithBudget().copy(
             activeUnlock = UnlockSession("active", UnlockSource.NORMAL, now, now + MINUTE_MS),
         )
         val used = engine.consumeUsage(state, ready, now, now + 10_000, zone)
@@ -97,7 +100,7 @@ class RestrictionEngineTest {
 
     @Test
     fun adjacentBrowserUsageIsKeptAsOneTimedActivity() {
-        val state = initial().copy(
+        val state = initialWithBudget().copy(
             activeUnlock = UnlockSession("active", UnlockSource.NORMAL, now, now + MINUTE_MS),
         )
 
@@ -114,7 +117,7 @@ class RestrictionEngineTest {
 
     @Test
     fun startWaitUsesSnapshotRevisionAndCreatesFixedCost() {
-        val state = initial()
+        val state = initialWithBudget()
         val result = engine.startWait(state, ready, state.stateRevision, 5, now, zone)
         assertTrue(result is CommandResult.Applied)
         val pending = (result as CommandResult.Applied).state.pendingWait
@@ -125,7 +128,7 @@ class RestrictionEngineTest {
 
     @Test
     fun startWaitUsesCustomizedSessionPresets() {
-        val state = initial(RestrictorSettings(sessionMinutes = listOf(1L, 45L, 120L)))
+        val state = initialWithBudget(RestrictorSettings(sessionMinutes = listOf(1L, 45L, 120L)))
 
         val accepted = engine.startWait(state, ready, state.stateRevision, 45, now, zone)
         assertTrue(accepted is CommandResult.Applied)
@@ -145,7 +148,8 @@ class RestrictionEngineTest {
 
     @Test
     fun unfocusedWaitDoesNotAdvance() {
-        val started = applied(engine.startWait(initial(), ready, initial().stateRevision, 10, now, zone))
+        val state = initialWithBudget()
+        val started = applied(engine.startWait(state, ready, state.stateRevision, 10, now, zone))
         val result = engine.advanceWait(
             started,
             ready.copy(gateFocused = false),
@@ -160,14 +164,14 @@ class RestrictionEngineTest {
 
     @Test
     fun focusedCompletionIsAtomic() {
-        val start = initial()
+        val start = initialWithBudget()
         val waiting = applied(engine.startWait(start, ready, start.stateRevision, 10, now, zone))
         val completed = applied(
             engine.advanceWait(waiting, ready, 12_000, now + 12_000, zone, "gate-1"),
         )
         assertNull(completed.pendingWait)
         assertEquals(UnlockSource.NORMAL, completed.activeUnlock!!.source)
-        assertEquals(0, completed.dailyCounter.earnedBudgetRounds)
+        assertEquals(1, completed.dailyCounter.earnedBudgetRounds)
 
         val duplicate = engine.completeNormalWait(
             completed,
@@ -178,7 +182,7 @@ class RestrictionEngineTest {
             "gate-1",
         )
         assertTrue(duplicate is CommandResult.Rejected)
-        assertEquals(0, (duplicate as CommandResult.Rejected).state.dailyCounter.earnedBudgetRounds)
+        assertEquals(1, (duplicate as CommandResult.Rejected).state.dailyCounter.earnedBudgetRounds)
     }
 
     @Test
@@ -203,10 +207,10 @@ class RestrictionEngineTest {
     }
 
     @Test
-    fun emergencySkipAlwaysOffersFullThirtyMinutes() {
+    fun emergencySkipAlwaysOffersFullFifteenMinutes() {
         val state = applied(engine.earnPushupBudget(initial(), now, zone))
         val snapshot = engine.snapshot(state, ready, now)
-        assertEquals(30 * MINUTE_MS, snapshot.skipSnapshot.grantDurationMs)
+        assertEquals(15 * MINUTE_MS, snapshot.skipSnapshot.grantDurationMs)
         assertTrue(snapshot.skipSnapshot.eligible)
     }
 
@@ -222,34 +226,32 @@ class RestrictionEngineTest {
 
         val second = applied(engine.earnPushupBudget(first, now + 1_000, zone))
         assertEquals(1, engine.snapshot(second, ready, now + 1_000).skipSnapshot.remaining)
-        assertEquals(30, engine.budgetSnapshots(second).single().limitMinutes)
+        assertEquals(6, engine.budgetSnapshots(second).single().limitMinutes)
     }
 
     @Test
     fun emergencySkipBypassesExhaustionAndConsumesCount() {
         val earned = applied(engine.earnPushupBudget(initial(), now, zone))
-        val state = earned.copy(dailyUsage = earned.dailyUsage.copy(usedMs = 20 * MINUTE_MS))
+        val state = earned.copy(dailyUsage = earned.dailyUsage.copy(usedMs = 3 * MINUTE_MS))
         val skipped = applied(
             engine.emergencySkip(state, ready, state.stateRevision, null, now, zone),
         )
         assertEquals(UnlockSource.EMERGENCY, skipped.activeUnlock!!.source)
-        assertEquals(now + 30 * MINUTE_MS, skipped.activeUnlock.expiresAtWallMs)
+        assertEquals(now + 15 * MINUTE_MS, skipped.activeUnlock.expiresAtWallMs)
         assertEquals(1, skipped.dailyCounter.emergencySkipsUsed)
         assertEquals(GateMode.ACCESS_GRANTED_EMERGENCY, engine.underlyingMode(skipped, ready, now))
     }
 
     @Test
     fun pushupRoundAddsBudgetButDoesNotUnlockBrowser() {
-        val state = initial().copy(
-            dailyUsage = initial().dailyUsage.copy(usedMs = 10 * MINUTE_MS),
-        )
+        val state = initial()
         val earned = applied(engine.earnPushupBudget(state, now, zone))
         assertNull(earned.activeUnlock)
         assertEquals(1, earned.dailyCounter.earnedBudgetRounds)
         assertEquals(0, earned.dailyCounter.emergencySkipsUsed)
         val budget = engine.budgetSnapshots(earned).single()
-        assertEquals(20, budget.limitMinutes)
-        assertEquals(10 * MINUTE_MS, budget.remainingMs)
+        assertEquals(3, budget.limitMinutes)
+        assertEquals(3 * MINUTE_MS, budget.remainingMs)
         assertEquals(1, engine.snapshot(earned, ready, now).skipSnapshot.remaining)
         assertEquals(GateMode.PAUSED, engine.underlyingMode(earned, ready, now))
     }
@@ -259,12 +261,178 @@ class RestrictionEngineTest {
         val state = initial()
         val earned = applied(engine.earnPushupBudget(state, now, zone))
         assertNull(earned.activeUnlock)
-        assertEquals(20, engine.budgetSnapshots(earned).single().limitMinutes)
+        assertEquals(3, engine.budgetSnapshots(earned).single().limitMinutes)
+    }
+
+    @Test
+    fun partialPushupsCarryAcrossVideosUntilTheyCompleteAReward() {
+        val four = applied(engine.recordPushupRepetitions(initial(), 4, now, zone))
+        assertEquals(0, four.dailyCounter.earnedBudgetRounds)
+        assertEquals(4, four.dailyCounter.pushupRepetitionRemainder)
+        assertEquals(0, engine.budgetSnapshots(four).single().limitMinutes)
+        assertEquals(0, engine.snapshot(four, ready, now).skipSnapshot.remaining)
+        assertTrue(four.activityEvents.isEmpty())
+        assertEquals(4, four.monthlyPushupCycles.single().totalPushups)
+
+        val five = applied(engine.recordPushupRepetitions(four, 1, now + 1_000, zone))
+        assertEquals(1, five.dailyCounter.earnedBudgetRounds)
+        assertEquals(0, five.dailyCounter.pushupRepetitionRemainder)
+        assertEquals(3, engine.budgetSnapshots(five).single().limitMinutes)
+        assertEquals(1, engine.snapshot(five, ready, now + 1_000).skipSnapshot.remaining)
+        assertEquals(3 * MINUTE_MS, five.activityEvents.single().valueMs)
+        assertEquals(5, five.monthlyPushupCycles.single().totalPushups)
+    }
+
+    @Test
+    fun monthlyPushupsRollOverOnPragueNinthWithoutChangingCompletedTotal() {
+        val prague = ZoneId.of("Europe/Prague")
+        val beforeBoundary = ZonedDateTime.of(2026, 9, 8, 23, 59, 59, 0, prague)
+            .toInstant()
+            .toEpochMilli()
+        val afterBoundary = beforeBoundary + 2_000
+        val first = applied(engine.recordPushupRepetitions(
+            engine.normalize(PersistedState(), beforeBoundary, zone),
+            4,
+            beforeBoundary,
+            zone,
+        ))
+
+        val second = applied(engine.recordPushupRepetitions(first, 1, afterBoundary, zone))
+        val snapshot = engine.snapshot(second, ready, afterBoundary, zoneId = zone)
+
+        assertEquals(MonthlyPushupCycle("2026-08-09", 4), second.monthlyPushupCycles[0])
+        assertEquals(MonthlyPushupCycle("2026-09-09", 1), second.monthlyPushupCycles[1])
+        assertEquals(1, snapshot.currentMonthlyPushupCycle.totalPushups)
+        assertEquals(listOf(MonthlyPushupCycle("2026-08-09", 4)), snapshot.completedMonthlyPushupCycles)
+    }
+
+    @Test
+    fun oneVideoAndCombinedVideosCanEarnMultipleRewards() {
+        val combined = applied(engine.recordPushupRepetitions(initial(), 4, now, zone))
+        val combinedTen = applied(engine.recordPushupRepetitions(combined, 6, now + 1_000, zone))
+        assertEquals(2, combinedTen.dailyCounter.earnedBudgetRounds)
+        assertEquals(0, combinedTen.dailyCounter.pushupRepetitionRemainder)
+        assertEquals(6, engine.budgetSnapshots(combinedTen).single().limitMinutes)
+        assertEquals(6 * MINUTE_MS, combinedTen.activityEvents.single().valueMs)
+
+        val twelve = applied(engine.recordPushupRepetitions(initial(), 12, now, zone))
+        assertEquals(2, twelve.dailyCounter.earnedBudgetRounds)
+        assertEquals(2, twelve.dailyCounter.pushupRepetitionRemainder)
+        assertEquals(6, engine.budgetSnapshots(twelve).single().limitMinutes)
+    }
+
+    @Test
+    fun eveningResetWipesOnlySpendableBudgetAndStopsNormalAccess() {
+        val beforeReset = ZonedDateTime.of(2026, 7, 10, 19, 59, 59, 0, zone)
+            .toInstant()
+            .toEpochMilli()
+        val earned = applied(engine.recordPushupRepetitions(
+            engine.normalize(PersistedState(), beforeReset, zone),
+            19,
+            beforeReset,
+            zone,
+        ))
+        val report = earned.usageReports.single()
+        val state = earned.copy(
+            dailyUsage = earned.dailyUsage.copy(usedMs = 5 * MINUTE_MS),
+            activeUnlock = UnlockSession("normal", UnlockSource.NORMAL, beforeReset, beforeReset + MINUTE_MS),
+        )
+
+        val after = engine.normalize(state, beforeReset + 1_000, zone)
+
+        assertEquals(3, after.dailyCounter.earnedBudgetRounds)
+        assertEquals(0, after.dailyCounter.spendableBudgetRounds)
+        assertEquals(4, after.dailyCounter.pushupRepetitionRemainder)
+        assertTrue(after.dailyCounter.eveningResetApplied)
+        assertEquals(0, after.dailyUsage.usedMs)
+        assertNull(after.activeUnlock)
+        assertEquals(report, after.usageReports.single())
+        assertEquals(1, engine.snapshot(after, ready, beforeReset + 1_000).skipSnapshot.remaining)
+        assertEquals(GateMode.OUT_OF_TIME, engine.underlyingMode(after, ready, beforeReset + 1_000))
+    }
+
+    @Test
+    fun normalUsageIsCutOffExactlyAtEveningReset() {
+        val start = ZonedDateTime.of(2026, 7, 10, 19, 59, 59, 500_000_000, zone)
+            .toInstant()
+            .toEpochMilli()
+        val earned = applied(engine.earnPushupBudget(
+            engine.normalize(PersistedState(), start, zone),
+            start,
+            zone,
+        ))
+        val state = earned.copy(
+            activeUnlock = UnlockSession("normal", UnlockSource.NORMAL, start, start + MINUTE_MS),
+        )
+
+        val after = engine.consumeUsage(state, ready, start, start + 1_000, zone)
+
+        assertEquals(0, after.dailyUsage.usedMs)
+        assertEquals(500, after.usageReports.single().protectedUsageMs)
+        assertNull(after.activeUnlock)
+        assertEquals(0, engine.budgetSnapshots(after).single().limitMinutes)
+    }
+
+    @Test
+    fun eveningResetAppliesOnceAndNewPushupsEarnFreshBudget() {
+        val reset = ZonedDateTime.of(2026, 7, 10, 20, 0, 0, 0, zone)
+            .toInstant()
+            .toEpochMilli()
+        val before = applied(engine.recordPushupRepetitions(
+            engine.normalize(PersistedState(), reset - 1_000, zone),
+            4,
+            reset - 1_000,
+            zone,
+        ))
+        val resetState = engine.normalize(before, reset, zone)
+
+        val afterPushup = applied(engine.recordPushupRepetitions(resetState, 1, reset + 1_000, zone))
+        val later = engine.normalize(afterPushup, reset + HOUR_MS, zone)
+
+        assertEquals(1, later.dailyCounter.earnedBudgetRounds)
+        assertEquals(1, later.dailyCounter.spendableBudgetRounds)
+        assertEquals(0, later.dailyCounter.pushupRepetitionRemainder)
+        assertEquals(3, engine.budgetSnapshots(later).single().limitMinutes)
+    }
+
+    @Test
+    fun eveningResetPreservesEmergencyUnlockButCancelsPendingWait() {
+        val reset = ZonedDateTime.of(2026, 7, 10, 20, 0, 0, 0, zone)
+            .toInstant()
+            .toEpochMilli()
+        val earned = applied(engine.earnPushupBudget(
+            engine.normalize(PersistedState(), reset - MINUTE_MS, zone),
+            reset - MINUTE_MS,
+            zone,
+        ))
+        val waiting = applied(engine.startWait(
+            earned,
+            ready,
+            earned.stateRevision,
+            3,
+            reset - 1_000,
+            zone,
+        ))
+        val cancelledWait = engine.normalize(waiting, reset, zone)
+        assertNull(cancelledWait.pendingWait)
+
+        val emergency = earned.copy(
+            activeUnlock = UnlockSession(
+                "emergency",
+                UnlockSource.EMERGENCY,
+                reset - MINUTE_MS,
+                reset + 14 * MINUTE_MS,
+            ),
+        )
+        val preserved = engine.normalize(emergency, reset, zone)
+
+        assertEquals(UnlockSource.EMERGENCY, preserved.activeUnlock!!.source)
+        assertEquals(GateMode.ACCESS_GRANTED_EMERGENCY, engine.underlyingMode(preserved, ready, reset))
     }
 
     @Test
     fun pushupRoundPreservesOrdinaryWaitInsteadOfOpeningBrowser() {
-        val state = initial()
+        val state = initialWithBudget()
         val waiting = applied(
             engine.startWait(state, ready, state.stateRevision, 5, now, zone),
         )
@@ -280,7 +448,7 @@ class RestrictionEngineTest {
     fun exhaustedBudgetCanUseEarnedEmergencySkip() {
         val base = initial()
         val earned = applied(engine.earnPushupBudget(base, now, zone))
-        val state = earned.copy(dailyUsage = earned.dailyUsage.copy(usedMs = 20 * MINUTE_MS))
+        val state = earned.copy(dailyUsage = earned.dailyUsage.copy(usedMs = 3 * MINUTE_MS))
         val snapshot = engine.snapshot(state, ready, now)
         assertEquals(GateMode.OUT_OF_TIME, snapshot.canonicalMode)
         assertTrue(snapshot.skipSnapshot.eligible)
@@ -288,7 +456,7 @@ class RestrictionEngineTest {
 
     @Test
     fun normalCompletionWinsSkipRace() {
-        val state = initial()
+        val state = initialWithBudget()
         val waiting = applied(engine.startWait(state, ready, state.stateRevision, 10, now, zone))
         val atEnd = waiting.copy(
             pendingWait = waiting.pendingWait!!.copy(accumulatedFocusMs = waiting.pendingWait.requiredFocusMs),
@@ -304,18 +472,19 @@ class RestrictionEngineTest {
         assertTrue(result is CommandResult.NormalCompletionWon)
         val completed = (result as CommandResult.NormalCompletionWon).state
         assertEquals(UnlockSource.NORMAL, completed.activeUnlock!!.source)
-        assertEquals(0, completed.dailyCounter.earnedBudgetRounds)
+        assertEquals(1, completed.dailyCounter.earnedBudgetRounds)
         assertEquals(0, completed.dailyCounter.emergencySkipsUsed)
     }
 
     @Test
     fun usageStopsExactlyAtTightestBudget() {
-        val state = initial().copy(
-            dailyUsage = initial().dailyUsage.copy(usedMs = 10 * MINUTE_MS - 500),
+        val budgeted = initialWithBudget()
+        val state = budgeted.copy(
+            dailyUsage = budgeted.dailyUsage.copy(usedMs = 3 * MINUTE_MS - 500),
             activeUnlock = UnlockSession("active", UnlockSource.NORMAL, now, now + MINUTE_MS),
         )
         val used = engine.consumeUsage(state, ready, now, now + 2_000, zone)
-        assertEquals(10 * MINUTE_MS, used.dailyUsage.usedMs)
+        assertEquals(3 * MINUTE_MS, used.dailyUsage.usedMs)
         assertEquals(GateMode.OUT_OF_TIME, engine.underlyingMode(used, ready, now + 2_000))
     }
 
@@ -323,16 +492,16 @@ class RestrictionEngineTest {
     fun emergencyUsageIsReportedWithoutCreatingFutureBudgetDebt() {
         val earnedBase = applied(engine.earnPushupBudget(initial(), now, zone))
         val base = earnedBase.copy(
-            dailyUsage = earnedBase.dailyUsage.copy(usedMs = 20 * MINUTE_MS),
+            dailyUsage = earnedBase.dailyUsage.copy(usedMs = 3 * MINUTE_MS),
             activeUnlock = UnlockSession(
                 id = "emergency",
                 source = UnlockSource.EMERGENCY,
                 grantedAtWallMs = now,
-                expiresAtWallMs = now + 30 * MINUTE_MS,
+                expiresAtWallMs = now + 15 * MINUTE_MS,
             ),
         )
         val used = engine.consumeUsage(base, ready, now, now + 2_000, zone)
-        assertEquals(20 * MINUTE_MS, used.dailyUsage.usedMs)
+        assertEquals(3 * MINUTE_MS, used.dailyUsage.usedMs)
         assertEquals(
             2_000,
             used.usageReports.single { it.localDayKey == "2026-07-10" }.protectedUsageMs,
@@ -341,20 +510,18 @@ class RestrictionEngineTest {
 
         val afterEmergency = engine.cancelActiveUnlock(used, now + 2_000, zone)
         val earned = applied(engine.earnPushupBudget(afterEmergency, now + 2_000, zone))
-        assertEquals(10 * MINUTE_MS, engine.budgetSnapshots(earned).single().remainingMs)
+        assertEquals(3 * MINUTE_MS, engine.budgetSnapshots(earned).single().remainingMs)
     }
 
     @Test
     fun earnedBudgetIsConsumedNormallyAndRemainsInReports() {
-        val base = initial().copy(
-            dailyUsage = initial().dailyUsage.copy(usedMs = 5 * MINUTE_MS),
-        )
+        val base = initial().copy(dailyUsage = initial().dailyUsage.copy(usedMs = MINUTE_MS))
         val earned = applied(engine.earnPushupBudget(base, now, zone))
         val active = earned.copy(
             activeUnlock = UnlockSession("active", UnlockSource.NORMAL, now, now + MINUTE_MS),
         )
         val used = engine.consumeUsage(active, ready, now, now + 2_000, zone)
-        assertEquals(5 * MINUTE_MS + 2_000, used.dailyUsage.usedMs)
+        assertEquals(MINUTE_MS + 2_000, used.dailyUsage.usedMs)
         assertEquals(
             2_000,
             used.usageReports.single { it.localDayKey == "2026-07-10" }.protectedUsageMs,
@@ -364,36 +531,47 @@ class RestrictionEngineTest {
 
     @Test
     fun activeUsageIsSplitAtDailyBoundary() {
-        val start = ZonedDateTime.of(2026, 7, 10, 23, 59, 59, 500_000_000, zone).toInstant().toEpochMilli()
-        val state = engine.normalize(PersistedState(), start, zone).copy(
+        val start = ZonedDateTime.of(2026, 7, 11, 3, 59, 59, 500_000_000, zone).toInstant().toEpochMilli()
+        val state = applied(
+            engine.earnPushupBudget(engine.normalize(PersistedState(), start, zone), start, zone),
+        ).copy(
             activeUnlock = UnlockSession("active", UnlockSource.NORMAL, start, start + 2_000),
         )
         val used = engine.consumeUsage(state, ready, start, start + 1_000, zone)
         assertEquals("2026-07-11", used.dailyUsage.key)
-        assertEquals(500, used.dailyUsage.usedMs)
+        assertEquals(0, used.dailyUsage.usedMs)
     }
 
     @Test
-    fun pendingWaitStaysFixedAcrossMidnightButEarnedBudgetResets() {
-        val beforeMidnight = ZonedDateTime.of(2026, 7, 10, 23, 59, 58, 0, zone).toInstant().toEpochMilli()
-        val base = engine.normalize(PersistedState(), beforeMidnight, zone).copy(
-            dailyCounter = DailyCounter("2026-07-10", earnedBudgetRounds = 3),
+    fun pendingWaitStaysFixedAcrossFourAmButEarnedBudgetResets() {
+        val beforeReset = ZonedDateTime.of(2026, 7, 11, 3, 59, 58, 0, zone).toInstant().toEpochMilli()
+        val base = engine.normalize(PersistedState(), beforeReset, zone).copy(
+            dailyCounter = DailyCounter(
+                "2026-07-10",
+                earnedBudgetRounds = 3,
+                pushupRepetitionRemainder = 4,
+                spendableBudgetRounds = 3,
+                eveningResetApplied = true,
+            ),
             usageReports = listOf(DailyUsageReport("2026-07-10", pushupSessions = 3)),
         )
         val waiting = applied(
-            engine.startWait(base, ready, base.stateRevision, 10, beforeMidnight, zone),
+            engine.startWait(base, ready, base.stateRevision, 10, beforeReset, zone),
         )
         assertEquals(12_000, waiting.pendingWait!!.requiredFocusMs)
-        val after = engine.normalize(waiting, beforeMidnight + 3_000, zone)
+        val after = engine.normalize(waiting, beforeReset + 3_000, zone)
         assertEquals(12_000, after.pendingWait!!.requiredFocusMs)
         assertEquals(0, after.dailyCounter.earnedBudgetRounds)
+        assertEquals(0, after.dailyCounter.spendableBudgetRounds)
         assertEquals(0, after.dailyCounter.emergencySkipsUsed)
-        assertEquals(0, engine.snapshot(after, ready, beforeMidnight + 3_000).skipSnapshot.remaining)
+        assertEquals(0, after.dailyCounter.pushupRepetitionRemainder)
+        assertFalse(after.dailyCounter.eveningResetApplied)
+        assertEquals(0, engine.snapshot(after, ready, beforeReset + 3_000).skipSnapshot.remaining)
     }
 
     @Test
     fun budgetResetDoesNotDeleteStillValidUnlock() {
-        val before = ZonedDateTime.of(2026, 7, 10, 23, 59, 0, 0, zone).toInstant().toEpochMilli()
+        val before = ZonedDateTime.of(2026, 7, 11, 3, 59, 0, 0, zone).toInstant().toEpochMilli()
         val base = engine.normalize(PersistedState(), before, zone)
         val state = base.copy(
             dailyUsage = base.dailyUsage.copy(usedMs = 10 * MINUTE_MS),
@@ -402,7 +580,29 @@ class RestrictionEngineTest {
         val after = engine.normalize(state, before + 2 * MINUTE_MS, zone)
         assertEquals(0, after.dailyUsage.usedMs)
         assertNotNull(after.activeUnlock)
-        assertEquals(GateMode.ACCESS_GRANTED_NORMAL, engine.underlyingMode(after, ready, before + 2 * MINUTE_MS))
+        assertEquals(GateMode.OUT_OF_TIME, engine.underlyingMode(after, ready, before + 2 * MINUTE_MS))
+    }
+
+    @Test
+    fun midnightDoesNotResetTheLogicalDay() {
+        val beforeMidnight = ZonedDateTime.of(2026, 7, 10, 23, 59, 59, 0, zone)
+            .toInstant()
+            .toEpochMilli()
+        val earned = applied(engine.recordPushupRepetitions(
+            engine.normalize(PersistedState(), beforeMidnight, zone),
+            9,
+            beforeMidnight,
+            zone,
+        ))
+        val state = earned.copy(dailyUsage = earned.dailyUsage.copy(usedMs = MINUTE_MS))
+
+        val after = engine.normalize(state, beforeMidnight + 2_000, zone)
+
+        assertEquals("2026-07-10", after.dailyCounter.localDayKey)
+        assertEquals(1, after.dailyCounter.earnedBudgetRounds)
+        assertEquals(1, after.dailyCounter.spendableBudgetRounds)
+        assertEquals(4, after.dailyCounter.pushupRepetitionRemainder)
+        assertEquals(MINUTE_MS, after.dailyUsage.usedMs)
     }
 
     @Test
@@ -442,7 +642,7 @@ class RestrictionEngineTest {
         )
         assertEquals(listOf(now, now + 1_000), afterSecond.activityEvents.map { it.startedAtWallMs })
         assertEquals(
-            listOf(10 * MINUTE_MS, 10 * MINUTE_MS),
+            listOf(3 * MINUTE_MS, 3 * MINUTE_MS),
             afterSecond.activityEvents.map { it.valueMs },
         )
 
@@ -458,7 +658,23 @@ class RestrictionEngineTest {
     }
 
     @Test
-    fun normalizationArchivesLegacyCurrentDayPushupsBeforeMidnightReset() {
+    fun earlyMondayStillShowsThePreviousLogicalWeekUntilFourAm() {
+        val earlyMonday = ZonedDateTime.of(2026, 7, 13, 0, 30, 0, 0, zone)
+            .toInstant()
+            .toEpochMilli()
+        val state = engine.normalize(PersistedState(), earlyMonday, zone).copy(
+            usageReports = listOf(DailyUsageReport("2026-07-12", pushupSessions = 2)),
+        )
+
+        val week = engine.snapshot(state, ready, earlyMonday, zoneId = zone).currentWeekUsageReports
+
+        assertEquals("2026-07-06", week.first().localDayKey)
+        assertEquals("2026-07-12", week.last().localDayKey)
+        assertEquals(2, week.last().pushupSessions)
+    }
+
+    @Test
+    fun normalizationArchivesLegacyCurrentDayPushupsBeforeDailyReset() {
         val nextDay = now + DAY_MS
         val legacy = initial().copy(
             dailyCounter = DailyCounter("2026-07-10", earnedBudgetRounds = 3),
@@ -478,7 +694,7 @@ class RestrictionEngineTest {
         repeat(32) { offset ->
             val start = now - (31 - offset) * DAY_MS
             state = state.copy(
-                activeUnlock = UnlockSession("active-$offset", UnlockSource.NORMAL, start, start + 2_000),
+                activeUnlock = UnlockSession("active-$offset", UnlockSource.EMERGENCY, start, start + 2_000),
             )
             state = engine.consumeUsage(state, ready, start, start + 1_000, zone)
         }
@@ -498,6 +714,17 @@ class RestrictionEngineTest {
         val cleared = engine.clearReportHistory(state)
         assertTrue(cleared.usageReports.isEmpty())
         assertEquals(12_000, cleared.dailyUsage.usedMs)
+    }
+
+    @Test
+    fun clearingDailyReportsNeverDeletesMonthlyPushupHistory() {
+        val cycles = listOf(
+            MonthlyPushupCycle("2026-06-09", 70),
+            MonthlyPushupCycle("2026-07-09", 80),
+        )
+        val state = initial().copy(monthlyPushupCycles = cycles)
+
+        assertEquals(cycles, engine.clearReportHistory(state).monthlyPushupCycles)
     }
 
     @Test

@@ -1,7 +1,6 @@
 package com.michalkrsik.internetrestrictor.domain
 
 import java.time.DayOfWeek
-import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.TemporalAdjusters
@@ -44,6 +43,15 @@ class RestrictionEngine(
             revisionRelevant = true
         }
 
+        val normalizedMonthlyCycles = MonthlyPushupCalculator.ensureCurrentCycle(
+            state.monthlyPushupCycles,
+            nowWallMs,
+        )
+        if (normalizedMonthlyCycles != state.monthlyPushupCycles) {
+            state = state.copy(monthlyPushupCycles = normalizedMonthlyCycles)
+            revisionRelevant = true
+        }
+
         fun normalizedUsage(usage: UsagePeriodState, expectedKey: String): UsagePeriodState {
             if (usage.key == expectedKey) return usage
             revisionRelevant = true
@@ -73,6 +81,20 @@ class RestrictionEngine(
 
         if (state.dailyCounter.localDayKey != keys.daily) {
             state = state.copy(dailyCounter = DailyCounter(localDayKey = keys.daily))
+            revisionRelevant = true
+        }
+
+        val eveningResetWallMs = PeriodCalculator.eveningBudgetReset(nowWallMs, zoneId)
+        if (nowWallMs >= eveningResetWallMs && !state.dailyCounter.eveningResetApplied) {
+            state = state.copy(
+                dailyUsage = state.dailyUsage.copy(usedMs = 0),
+                dailyCounter = state.dailyCounter.copy(
+                    spendableBudgetRounds = 0,
+                    eveningResetApplied = true,
+                ),
+                activeUnlock = state.activeUnlock?.takeIf { it.source == UnlockSource.EMERGENCY },
+                pendingWait = null,
+            )
             revisionRelevant = true
         }
 
@@ -121,7 +143,7 @@ class RestrictionEngine(
         val minutes = Math.addExact(
             DAILY_BASE_BUDGET_MINUTES,
             Math.multiplyExact(
-                state.dailyCounter.earnedBudgetRounds,
+                state.dailyCounter.spendableBudgetRounds,
                 PUSHUP_BUDGET_REWARD_MINUTES,
             ),
         )
@@ -186,6 +208,10 @@ class RestrictionEngine(
             underlying
         }
         val pending = state.pendingWait
+        val currentMonthlyCycleKey = MonthlyPushupCalculator.cycleStartKey(nowWallMs)
+        val currentMonthlyCycle = state.monthlyPushupCycles.firstOrNull {
+            it.cycleStartDate == currentMonthlyCycleKey
+        } ?: MonthlyPushupCycle(currentMonthlyCycleKey)
         val waitSnapshot = pending?.let {
             val remaining = (it.requiredFocusMs - it.accumulatedFocusMs).coerceAtLeast(0)
             WaitSnapshot(
@@ -241,12 +267,17 @@ class RestrictionEngine(
             supportedBrowserInstalled = runtime.supportedBrowserInstalled,
             activeUnlock = state.activeUnlock,
             earnedBudgetRoundsToday = state.dailyCounter.earnedBudgetRounds,
+            pushupRepetitionRemainderToday = state.dailyCounter.pushupRepetitionRemainder,
             offSessionStartedAtWallMs = state.offUsageReminder.sessionStartedAtWallMs,
             usageReports = state.usageReports,
             todayUsageReport = state.usageReports.firstOrNull {
                 it.localDayKey == PeriodCalculator.keysAt(nowWallMs, zoneId).daily
             } ?: DailyUsageReport(PeriodCalculator.keysAt(nowWallMs, zoneId).daily),
             currentWeekUsageReports = currentWeekReports(state, nowWallMs, zoneId),
+            currentMonthlyPushupCycle = currentMonthlyCycle,
+            completedMonthlyPushupCycles = state.monthlyPushupCycles
+                .filter { it.cycleStartDate < currentMonthlyCycleKey }
+                .sortedByDescending { it.cycleStartDate },
             todayActivityEvents = state.activityEvents.filter {
                 it.localDayKey == PeriodCalculator.keysAt(nowWallMs, zoneId).daily
             },
@@ -407,32 +438,76 @@ class RestrictionEngine(
         input: PersistedState,
         nowWallMs: Long,
         zoneId: ZoneId,
+    ): CommandResult = recordPushupRepetitions(
+        input = input,
+        repetitions = PUSHUPS_PER_BUDGET_ROUND,
+        nowWallMs = nowWallMs,
+        zoneId = zoneId,
+    )
+
+    fun recordPushupRepetitions(
+        input: PersistedState,
+        repetitions: Long,
+        nowWallMs: Long,
+        zoneId: ZoneId,
     ): CommandResult {
         val state = normalize(input, nowWallMs, zoneId)
-        if (state.dailyCounter.earnedBudgetRounds >= MAX_SAFE_BUDGET_ROUNDS) {
+        if (repetitions <= 0) return rejected(state, "No push-up repetitions were counted")
+        val accumulatedRepetitions = try {
+            Math.addExact(state.dailyCounter.pushupRepetitionRemainder, repetitions)
+        } catch (_: ArithmeticException) {
+            return rejected(state, "Push-up count is too large")
+        }
+        val newlyEarnedRounds = accumulatedRepetitions / PUSHUPS_PER_BUDGET_ROUND
+        val repetitionRemainder = accumulatedRepetitions % PUSHUPS_PER_BUDGET_ROUND
+        if (newlyEarnedRounds > MAX_SAFE_BUDGET_ROUNDS - state.dailyCounter.earnedBudgetRounds) {
             return rejected(state, "Daily earned budget is at its safe limit")
+        }
+        if (newlyEarnedRounds > MAX_SAFE_BUDGET_ROUNDS - state.dailyCounter.spendableBudgetRounds) {
+            return rejected(state, "Spendable budget is at its safe limit")
+        }
+        val totalEarnedRounds = Math.addExact(
+            state.dailyCounter.earnedBudgetRounds,
+            newlyEarnedRounds,
+        )
+        val spendableRounds = Math.addExact(
+            state.dailyCounter.spendableBudgetRounds,
+            newlyEarnedRounds,
+        )
+        val monthlyPushupCycles = try {
+            MonthlyPushupCalculator.addPushups(
+                cycles = state.monthlyPushupCycles,
+                repetitions = repetitions,
+                nowWallMs = nowWallMs,
+            )
+        } catch (_: ArithmeticException) {
+            return rejected(state, "Monthly push-up total is at its safe limit")
         }
         return CommandResult.Applied(
             state.copy(
                 stateRevision = nextRevision(state.stateRevision),
                 dailyCounter = state.dailyCounter.copy(
-                    earnedBudgetRounds = Math.addExact(
-                        state.dailyCounter.earnedBudgetRounds,
-                        1,
-                    ),
+                    earnedBudgetRounds = totalEarnedRounds,
+                    pushupRepetitionRemainder = repetitionRemainder,
+                    spendableBudgetRounds = spendableRounds,
                 ),
                 usageReports = state.usageReports.withPushupSessions(
                     localDayKey = state.dailyCounter.localDayKey,
-                    sessions = Math.addExact(state.dailyCounter.earnedBudgetRounds, 1),
+                    sessions = totalEarnedRounds,
                 ),
-                activityEvents = (state.activityEvents + ActivityEvent(
-                    id = idGenerator.nextId(),
-                    localDayKey = state.dailyCounter.localDayKey,
-                    type = ActivityEventType.PUSHUP_SET,
-                    startedAtWallMs = nowWallMs,
-                    endedAtWallMs = nowWallMs,
-                    valueMs = PUSHUP_BUDGET_REWARD_MINUTES * MINUTE_MS,
-                )).takeLast(MAX_ACTIVITY_EVENTS),
+                monthlyPushupCycles = monthlyPushupCycles,
+                activityEvents = if (newlyEarnedRounds > 0) {
+                    (state.activityEvents + ActivityEvent(
+                        id = idGenerator.nextId(),
+                        localDayKey = state.dailyCounter.localDayKey,
+                        type = ActivityEventType.PUSHUP_SET,
+                        startedAtWallMs = nowWallMs,
+                        endedAtWallMs = nowWallMs,
+                        valueMs = newlyEarnedRounds * PUSHUP_BUDGET_REWARD_MINUTES * MINUTE_MS,
+                    )).takeLast(MAX_ACTIVITY_EVENTS)
+                } else {
+                    state.activityEvents
+                },
             ),
         )
     }
@@ -451,7 +526,7 @@ class RestrictionEngine(
 
         var cursor = intervalStartWallMs
         val originalExhausted = budgetSnapshots(state).any { it.exhausted }
-        for (interval in PeriodCalculator.splitAtLocalMidnights(
+        for (interval in PeriodCalculator.splitAtBudgetBoundaries(
             intervalStartWallMs,
             intervalEndWallMs,
             zoneId,
@@ -528,7 +603,7 @@ class RestrictionEngine(
         if (intervalEndWallMs <= intervalStartWallMs) return input
         var state = input
         val reports = state.usageReports.associateBy { it.localDayKey }.toMutableMap()
-        for (interval in PeriodCalculator.splitAtLocalMidnights(
+        for (interval in PeriodCalculator.splitAtDailyResets(
             intervalStartWallMs,
             intervalEndWallMs,
             zoneId,
@@ -612,7 +687,7 @@ class RestrictionEngine(
         nowWallMs: Long,
         zoneId: ZoneId,
     ): List<DailyUsageReport> {
-        val today = Instant.ofEpochMilli(nowWallMs).atZone(zoneId).toLocalDate()
+        val today = LocalDate.parse(PeriodCalculator.keysAt(nowWallMs, zoneId).daily)
         val monday = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
         val reports = state.usageReports.associateBy { it.localDayKey }
         return (0L..6L).map { offset ->

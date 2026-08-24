@@ -2,7 +2,7 @@
 
 A native Android version of Internet Restrictor with an earned-budget push-up flow.
 
-Internet Restrictor adds deliberate friction before Chrome, Firefox, Edge, or Opera opens. The user chooses one of three customizable session presets (3, 5, or 10 minutes by default), completes a fixed 12-second focused wait, and then receives a wall-clock unlock. Active, focused use across all supported browsers is charged to one shared daily budget: 10 minutes at local-day start plus 10 minutes for every verified five-push-up round completed that day.
+Internet Restrictor adds deliberate friction before Chrome, Firefox, Edge, or Opera opens. The user chooses one of three customizable session presets (3, 5, or 10 minutes by default), completes a fixed 12-second focused wait, and then receives a wall-clock unlock. Active, focused use across all supported browsers is charged to one shared budget: zero minutes at local-day start plus 3 minutes for every five verified push-ups. Spendable time resets at 20:00 local time and can be earned again afterward.
 
 This is a personal, user-controlled tool—not parental control, device management, or a tamper-proof blocker.
 
@@ -12,11 +12,13 @@ This is a personal, user-controlled tool—not parental control, device manageme
 - A touch-blocking accessibility overlay over supported browsers.
 - A fixed 12-second focused wait before every normal browser session.
 - Three customizable 1-to-120-minute wall-clock session presets, defaulting to 3, 5, and 10 minutes.
-- A rotatable front/back-camera five-push-up challenge on every gate that adds 10 minutes to today's budget after forgiving AI verification. The first successful set of each local day also earns one emergency unlock. It returns to the originating supported browser after success, without bypassing the normal wait, and its use is charged normally.
-- One earned emergency 30-minute access unlock per local day. Each day begins with none; the first successful push-up set earns it, and it can be used even when the daily budget is exhausted.
+- A rotatable front/back-camera push-up challenge on every gate. Every five verified repetitions add 3 minutes to today's budget; incomplete groups carry across videos until the 04:00 local daily reset. A 30-second on-screen countdown bounds each recording. The first completed group of each local day also earns one emergency unlock. It returns to the originating supported browser after earning budget, without bypassing the normal wait, and its use is charged normally.
+- One earned emergency 15-minute access unlock per local day. Each day begins with none; the first completed five-push-up group earns it, and it can be used even when the daily budget is exhausted.
+- At 20:00 local time, accumulated spendable budget and normal browser access reset immediately. Push-up carry-over, the earned emergency unlock, and today's report history survive; new evening push-ups earn fresh spendable time.
+- An append-only push-up ledger counts every verified repetition in Europe/Prague cycles running from the 9th at 00:00 to the next month's 9th. The dashboard shows the current total and all completed cycle totals; completed cycles are never pruned by report cleanup.
 - Emergency unlocks are always enabled; there is no product switch that can disable them.
-- A 10-minute base daily budget with unlimited 10-minute earned increments and no weekly or monthly pool.
-- Exact local-midnight usage splitting, daily usage accounting, and persisted push-up-session history grouped into Monday-to-Sunday weeks.
+- A zero-minute base daily budget with unlimited 3-minute earned increments and no weekly or monthly pool.
+- Exact 04:00 local daily-boundary usage splitting, daily usage accounting, and persisted push-up-session history grouped into Monday-to-Sunday weeks.
 - Out-of-time latching, expiry handling, and stale-command protection.
 - A non-interactive browser status badge during an active unlock.
 - Dashboard, health status, settings, theme selection, and local diagnostic export.
@@ -24,7 +26,7 @@ This is a personal, user-controlled tool—not parental control, device manageme
 - Transactional typed persistence with corruption detection and fail-open startup behavior.
 - Boot, user-unlock, date, time, timezone, screen, keyguard, and service-restart handling.
 - Android 16 Advanced Protection status reporting.
-- No account, backend, telemetry, or advertising ID. Network access is used only to submit a user-recorded challenge video to the configured OpenRouter model for verification.
+- No account, telemetry, or advertising ID. Network access is used only to submit a user-recorded challenge video to the owner's verifier, which preprocesses it, asks the configured OpenRouter model for a repetition count, and deletes the temporary files.
 - Today plus 30 days of browser-time and push-up-session report history.
 
 ## Requirements
@@ -42,6 +44,13 @@ From this directory:
 
 ```bash
 ./gradlew assembleDebug
+```
+
+The ignored `local.properties` must provide the verifier endpoint and its shared bearer secret:
+
+```properties
+verifyUrl=https://your-verifier.example/v1/pushup-verify
+verifySharedSecret=your-shared-secret
 ```
 
 The debug APK is written to:
@@ -102,6 +111,7 @@ The captures in `validation_artifacts/` predate this redesign and are retained o
 - `ui/`: onboarding, dashboard, settings, gate, badge, reusable components, and theme.
 - `diagnostics/`: bounded, local-only operational events that can be copied from the app.
 - `receivers/`: boot and wall-clock boundary recovery signals.
+- `server/`: the ffmpeg-backed push-up verifier. It accepts one authenticated MP4 upload up to 30 seconds, stretches four source frames per second from the complete clip into Gemini's one-frame-per-playback-second sampling path, and computes the single-video pass threshold from the returned repetition count.
 
 The Accessibility service reacts only to window-level changes. It uses the active window package name to distinguish supported browsers, Internet Restrictor, and other apps. It does not traverse the accessibility tree or read URLs, webpage text, form fields, typing, or screenshots.
 
@@ -124,6 +134,18 @@ The manifest intentionally contains no VPN or general system-overlay permission.
 - Boot completion, to re-establish local period and time-boundary state.
 - Android 16 Advanced Protection status query, to report device compatibility honestly.
 - Package visibility for stable Chrome, Firefox, Edge, and Opera.
-- Camera and internet access for the explicit push-up recording and OpenRouter verification flow.
+- Camera and internet access for the explicit push-up recording and owner-operated verification flow.
 
-Backups are disabled so private usage state does not leave the device through Android backup. Bundled typefaces and their license are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Challenge videos are temporarily uploaded to the owner's verifier and sent to OpenRouter through a zero-data-retention provider route. The verifier deletes source and processed files after every request and removes stale temporary directories after a crash. Backups are disabled so private usage state does not leave the device through Android backup. Bundled typefaces and their license are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## Verification server
+
+The server requires Node.js 22 or newer, `ffmpeg`, and `ffprobe`. Run its tests and start it with:
+
+```bash
+cd server
+npm test
+OPENROUTER_API_KEY=... VERIFY_SHARED_SECRET=... npm start
+```
+
+It listens on `127.0.0.1:8787` by default and is intended to sit behind HTTPS. The included user-service unit is the deployment template used by the prototype server.

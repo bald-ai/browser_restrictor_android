@@ -33,6 +33,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -47,7 +48,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.michalkrsik.internetrestrictor.domain.DailyUsageReport
 import com.michalkrsik.internetrestrictor.domain.ActivityEventType
+import com.michalkrsik.internetrestrictor.domain.MonthlyPushupCalculator
+import com.michalkrsik.internetrestrictor.domain.MonthlyPushupCycle
 import com.michalkrsik.internetrestrictor.domain.ProtectionHealth
+import com.michalkrsik.internetrestrictor.domain.PeriodCalculator
 import com.michalkrsik.internetrestrictor.domain.StateSnapshot
 import com.michalkrsik.internetrestrictor.ui.components.HealthCard
 import com.michalkrsik.internetrestrictor.ui.components.formatReportTime
@@ -59,6 +63,8 @@ import java.time.LocalDate
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
+import kotlinx.coroutines.delay
 
 private enum class ActivityPeriod { DAY, WEEK }
 
@@ -107,6 +113,10 @@ fun DashboardScreen(
             )
         }
 
+        Spacer(Modifier.height(18.dp))
+        CarryOverStatus(snapshot)
+        Spacer(Modifier.height(27.dp))
+        MonthlyPushupHistory(snapshot)
         Spacer(Modifier.height(27.dp))
         if (period == ActivityPeriod.WEEK) {
             WeekContent(snapshot)
@@ -138,6 +148,100 @@ fun DashboardScreen(
             },
         )
     }
+}
+
+@Composable
+private fun MonthlyPushupHistory(snapshot: StateSnapshot) {
+    SectionLabel("MONTHLY PUSH-UPS · 9TH TO 9TH")
+    Spacer(Modifier.height(8.dp))
+    Text(
+        "${snapshot.currentMonthlyPushupCycle.totalPushups}",
+        style = MaterialTheme.typography.headlineLarge.copy(fontFamily = InstrumentSerif),
+        color = EditorialTheme.colors.go,
+    )
+    Text(
+        "push-ups this cycle · ${formatMonthlyCycleRange(snapshot.currentMonthlyPushupCycle)}",
+        style = MaterialTheme.typography.bodySmall,
+        color = EditorialTheme.colors.ink3,
+    )
+    Spacer(Modifier.height(14.dp))
+    HorizontalDivider(color = EditorialTheme.colors.hairline)
+    Spacer(Modifier.height(12.dp))
+    SectionLabel("PREVIOUS CYCLES")
+    if (snapshot.completedMonthlyPushupCycles.isEmpty()) {
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "No completed cycles yet",
+            style = MaterialTheme.typography.bodySmall,
+            color = EditorialTheme.colors.ink3,
+        )
+    } else {
+        snapshot.completedMonthlyPushupCycles.forEach { cycle ->
+            Row(
+                modifier = Modifier.fillMaxWidth().heightIn(min = 38.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    formatMonthlyCycleRange(cycle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    "${cycle.totalPushups} push-ups",
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CarryOverStatus(snapshot: StateSnapshot) {
+    val nowWallMs by produceState(
+        initialValue = snapshot.wallNowMs,
+        key1 = snapshot.todayUsageReport.localDayKey,
+    ) {
+        while (true) {
+            value = System.currentTimeMillis()
+            delay(1_000L)
+        }
+    }
+    val expiresIn = carryExpirationRemainingMs(nowWallMs, ZoneId.systemDefault())
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        Column {
+            Text(
+                "PUSH-UP CARRY-OVER",
+                style = MaterialTheme.typography.labelSmall,
+                color = EditorialTheme.colors.ink3,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "${snapshot.pushupRepetitionRemainderToday}/5 push-ups",
+                style = MaterialTheme.typography.titleMedium,
+            )
+        }
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                "EXPIRES IN",
+                style = MaterialTheme.typography.labelSmall,
+                color = EditorialTheme.colors.ink3,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                formatCarryExpiration(expiresIn),
+                style = MaterialTheme.typography.titleMedium,
+            )
+        }
+    }
+    HorizontalDivider(
+        modifier = Modifier.padding(top = 14.dp),
+        color = EditorialTheme.colors.hairlineSoft,
+    )
 }
 
 @Composable
@@ -464,6 +568,25 @@ private fun formatMinutes(ms: Long): String = if (ms < 60_000L) "<1 min" else {
 private fun formatEventTime(wallMs: Long): String = Instant.ofEpochMilli(wallMs)
     .atZone(ZoneId.systemDefault())
     .format(DateTimeFormatter.ofPattern("HH:mm"))
+
+internal fun carryExpirationRemainingMs(nowWallMs: Long, zoneId: ZoneId): Long {
+    return (PeriodCalculator.nextDailyReset(nowWallMs, zoneId) - nowWallMs).coerceAtLeast(0L)
+}
+
+internal fun formatCarryExpiration(remainingMs: Long): String {
+    val totalSeconds = (remainingMs.coerceAtLeast(0L) + 999L) / 1_000L
+    val hours = totalSeconds / 3_600L
+    val minutes = totalSeconds % 3_600L / 60L
+    val seconds = totalSeconds % 60L
+    return String.format(Locale.US, "%02d:%02d:%02d", hours, minutes, seconds)
+}
+
+internal fun formatMonthlyCycleRange(cycle: MonthlyPushupCycle): String {
+    val start = LocalDate.parse(cycle.cycleStartDate)
+    val end = LocalDate.parse(MonthlyPushupCalculator.nextCycleStart(cycle.cycleStartDate))
+    val formatter = DateTimeFormatter.ofPattern("d MMM", Locale.ENGLISH)
+    return "${start.format(formatter)} – ${end.format(formatter)}"
+}
 
 private data class TimelineItem(
     val title: String,

@@ -51,6 +51,7 @@ import com.michalkrsik.internetrestrictor.domain.ProtectionHealth
 import com.michalkrsik.internetrestrictor.domain.RestrictorSettings
 import com.michalkrsik.internetrestrictor.domain.StateSnapshot
 import com.michalkrsik.internetrestrictor.domain.ThemePreference
+import com.michalkrsik.internetrestrictor.ui.challenge.PushupChallengeActivity
 import com.michalkrsik.internetrestrictor.ui.components.HealthCard
 import com.michalkrsik.internetrestrictor.ui.components.PermissionStateRows
 import com.michalkrsik.internetrestrictor.ui.theme.EditorialTheme
@@ -214,6 +215,17 @@ fun SettingsScreen(
                 border = BorderStroke(1.dp, EditorialTheme.colors.hairline),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
             ) { Text("Export diagnostics") }
+            HorizontalDivider(color = EditorialTheme.colors.hairlineSoft)
+            Text(
+                "Push-up verifier model",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                PushupChallengeActivity.MODEL,
+                style = MaterialTheme.typography.labelMedium,
+                color = EditorialTheme.colors.accent,
+            )
         }
 
         Button(
