@@ -1,5 +1,5 @@
 [Unit]
-Description=Browser Restrictor push-up verifier
+Description=Browser Restrictor exercise verifier
 After=network-online.target
 Wants=network-online.target
 
