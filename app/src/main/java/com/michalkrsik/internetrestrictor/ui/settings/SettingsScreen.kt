@@ -51,7 +51,7 @@ import com.michalkrsik.internetrestrictor.domain.ProtectionHealth
 import com.michalkrsik.internetrestrictor.domain.RestrictorSettings
 import com.michalkrsik.internetrestrictor.domain.StateSnapshot
 import com.michalkrsik.internetrestrictor.domain.ThemePreference
-import com.michalkrsik.internetrestrictor.ui.challenge.PushupChallengeActivity
+import com.michalkrsik.internetrestrictor.ui.challenge.ExerciseChallengeActivity
 import com.michalkrsik.internetrestrictor.ui.components.HealthCard
 import com.michalkrsik.internetrestrictor.ui.components.PermissionStateRows
 import com.michalkrsik.internetrestrictor.ui.theme.EditorialTheme
@@ -201,7 +201,7 @@ fun SettingsScreen(
             }
             HorizontalDivider(color = EditorialTheme.colors.hairlineSoft)
             Text(
-                "Deletes the stored browser-time and push-up history used by reports. Today's active budget counters remain unchanged.",
+                "Deletes the stored browser-time and exercise-set history used by reports. Today's active budget counters remain unchanged.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -217,12 +217,12 @@ fun SettingsScreen(
             ) { Text("Export diagnostics") }
             HorizontalDivider(color = EditorialTheme.colors.hairlineSoft)
             Text(
-                "Push-up verifier model",
+                "Exercise verifier model",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                PushupChallengeActivity.MODEL,
+                ExerciseChallengeActivity.MODEL,
                 style = MaterialTheme.typography.labelMedium,
                 color = EditorialTheme.colors.accent,
             )
@@ -249,7 +249,7 @@ fun SettingsScreen(
             onDismissRequest = { showClearReportsDialog = false },
             containerColor = MaterialTheme.colorScheme.surface,
             title = { Text("Clear report history?") },
-            text = { Text("This removes stored browser-time and push-up history. Today's budget and current restriction counters stay.") },
+            text = { Text("This removes stored browser-time and exercise-set history. Today's budget and current restriction counters stay. Monthly push-up history is kept.") },
             confirmButton = {
                 Button(onClick = {
                     showClearReportsDialog = false

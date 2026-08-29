@@ -10,6 +10,8 @@ import com.michalkrsik.internetrestrictor.domain.DailyUsageReport
 import com.michalkrsik.internetrestrictor.domain.DEFAULT_SESSION_MINUTES
 import com.michalkrsik.internetrestrictor.domain.EMERGENCY_SKIP_DAILY_LIMIT
 import com.michalkrsik.internetrestrictor.domain.ForegroundClass
+import com.michalkrsik.internetrestrictor.domain.MACHINE_REPS_PER_SET
+import com.michalkrsik.internetrestrictor.domain.MAX_DAILY_CREDITED_EXERCISE_VERIFICATIONS
 import com.michalkrsik.internetrestrictor.domain.MAX_SESSION_MINUTES
 import com.michalkrsik.internetrestrictor.domain.MAX_SAFE_BUDGET_ROUNDS
 import com.michalkrsik.internetrestrictor.domain.MIN_SESSION_MINUTES
@@ -17,7 +19,8 @@ import com.michalkrsik.internetrestrictor.domain.MonthlyPushupCycle
 import com.michalkrsik.internetrestrictor.domain.PendingWait
 import com.michalkrsik.internetrestrictor.domain.OffUsageReminderState
 import com.michalkrsik.internetrestrictor.domain.PersistedState
-import com.michalkrsik.internetrestrictor.domain.PUSHUPS_PER_BUDGET_ROUND
+import com.michalkrsik.internetrestrictor.domain.PLANK_SECONDS_PER_SET
+import com.michalkrsik.internetrestrictor.domain.PUSHUPS_PER_SET
 import com.michalkrsik.internetrestrictor.domain.RESTRICTOR_SCHEMA_VERSION
 import com.michalkrsik.internetrestrictor.domain.RestrictionEngine
 import com.michalkrsik.internetrestrictor.domain.RestrictorSettings
@@ -134,6 +137,28 @@ object AppStateSerializer : Serializer<PersistedState> {
             val pushupRepetitionRemainder = if (schema >= 7) source.readLong() else 0L
             val spendableBudgetRounds = if (schema >= 8) source.readLong() else earnedBudgetRounds
             val eveningResetApplied = if (schema >= 8) source.readBoolean() else false
+            val verifiedPushups: Long
+            val plankSecondRemainder: Long
+            val machineRepetitionRemainder: Long
+            val creditedExerciseVerificationIds: List<String>
+            if (schema >= 10) {
+                verifiedPushups = source.readLong()
+                plankSecondRemainder = source.readLong()
+                machineRepetitionRemainder = source.readLong()
+                val creditedVerificationCount = source.readInt()
+                if (creditedVerificationCount !in 0..MAX_DAILY_CREDITED_EXERCISE_VERIFICATIONS) {
+                    throw CorruptionException("Invalid credited exercise verification count")
+                }
+                creditedExerciseVerificationIds = List(creditedVerificationCount) { source.readUTF() }
+            } else {
+                verifiedPushups = Math.addExact(
+                    Math.multiplyExact(earnedBudgetRounds, PUSHUPS_PER_SET),
+                    pushupRepetitionRemainder,
+                )
+                plankSecondRemainder = 0L
+                machineRepetitionRemainder = 0L
+                creditedExerciseVerificationIds = emptyList()
+            }
             val counter = DailyCounter(
                 localDayKey = localDayKey,
                 earnedBudgetRounds = earnedBudgetRounds,
@@ -141,6 +166,10 @@ object AppStateSerializer : Serializer<PersistedState> {
                 pushupRepetitionRemainder = pushupRepetitionRemainder,
                 spendableBudgetRounds = spendableBudgetRounds,
                 eveningResetApplied = eveningResetApplied,
+                plankSecondRemainder = plankSecondRemainder,
+                machineRepetitionRemainder = machineRepetitionRemainder,
+                verifiedPushups = verifiedPushups,
+                creditedExerciseVerificationIds = creditedExerciseVerificationIds,
             )
             val metadata = RuntimeMetadata(
                 lastCommittedWallMs = source.readLong(),
@@ -153,12 +182,12 @@ object AppStateSerializer : Serializer<PersistedState> {
                     val localDayKey = source.readUTF()
                     val protectedUsageMs = source.readLong()
                     source.readLong() // Retired protection-off usage is deliberately discarded.
-                    val pushupSessions = if (schema >= 5) source.readLong() else 0L
+                    val exerciseSets = if (schema >= 5) source.readLong() else 0L
                     DailyUsageReport(
                         localDayKey = localDayKey,
                         protectedUsageMs = protectedUsageMs,
                         offUsageMs = 0,
-                        pushupSessions = pushupSessions,
+                        exerciseSets = exerciseSets,
                     )
                 }
             } else emptyList()
@@ -267,6 +296,11 @@ object AppStateSerializer : Serializer<PersistedState> {
             target.writeLong(pushupRepetitionRemainder)
             target.writeLong(spendableBudgetRounds)
             target.writeBoolean(eveningResetApplied)
+            target.writeLong(verifiedPushups)
+            target.writeLong(plankSecondRemainder)
+            target.writeLong(machineRepetitionRemainder)
+            target.writeInt(creditedExerciseVerificationIds.size)
+            creditedExerciseVerificationIds.forEach(target::writeUTF)
         }
         with(t.runtimeMetadata) {
             target.writeLong(lastCommittedWallMs)
@@ -279,7 +313,7 @@ object AppStateSerializer : Serializer<PersistedState> {
             target.writeUTF(it.localDayKey)
             target.writeLong(it.protectedUsageMs)
             target.writeLong(0L) // Keep the stable slot while protection-off history is retired.
-            target.writeLong(it.pushupSessions)
+            target.writeLong(it.exerciseSets)
         }
         with(t.offUsageReminder) {
             target.writeLong(sessionStartedAtWallMs)
@@ -340,7 +374,17 @@ object AppStateSerializer : Serializer<PersistedState> {
             state.dailyCounter.earnedBudgetRounds !in 0..MAX_SAFE_BUDGET_ROUNDS ||
             state.dailyCounter.spendableBudgetRounds !in 0..state.dailyCounter.earnedBudgetRounds ||
             state.dailyCounter.emergencySkipsUsed < 0 ||
-            state.dailyCounter.pushupRepetitionRemainder !in 0 until PUSHUPS_PER_BUDGET_ROUND
+            state.dailyCounter.pushupRepetitionRemainder !in 0 until PUSHUPS_PER_SET ||
+            state.dailyCounter.plankSecondRemainder !in 0 until PLANK_SECONDS_PER_SET ||
+            state.dailyCounter.machineRepetitionRemainder !in 0 until MACHINE_REPS_PER_SET ||
+            state.dailyCounter.verifiedPushups < 0 ||
+            state.dailyCounter.creditedExerciseVerificationIds.size >
+            MAX_DAILY_CREDITED_EXERCISE_VERIFICATIONS ||
+            state.dailyCounter.creditedExerciseVerificationIds.any {
+                it.isBlank() || it.length > 128
+            } ||
+            state.dailyCounter.creditedExerciseVerificationIds.distinct().size !=
+            state.dailyCounter.creditedExerciseVerificationIds.size
         ) {
             invalid("Invalid daily counter")
         }
@@ -348,7 +392,7 @@ object AppStateSerializer : Serializer<PersistedState> {
         state.usageReports.forEach {
             if (
                 it.localDayKey.isBlank() || it.protectedUsageMs < 0 || it.offUsageMs != 0L ||
-                it.pushupSessions < 0
+                it.exerciseSets < 0
             ) {
                 invalid("Invalid usage report")
             }

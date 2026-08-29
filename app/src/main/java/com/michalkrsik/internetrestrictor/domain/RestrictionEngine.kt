@@ -69,10 +69,10 @@ class RestrictionEngine(
             val reportKey = state.dailyCounter.localDayKey
             val reports = state.usageReports.associateBy { it.localDayKey }.toMutableMap()
             val existing = reports[reportKey] ?: DailyUsageReport(reportKey)
-            if (existing.pushupSessions != state.dailyCounter.earnedBudgetRounds) {
+            if (existing.exerciseSets != state.dailyCounter.earnedBudgetRounds) {
                 reports[reportKey] = existing.copy(
                     offUsageMs = 0,
-                    pushupSessions = state.dailyCounter.earnedBudgetRounds,
+                    exerciseSets = state.dailyCounter.earnedBudgetRounds,
                 )
                 state = state.copy(usageReports = reports.values.sortedBy { it.localDayKey })
                 revisionRelevant = true
@@ -144,7 +144,7 @@ class RestrictionEngine(
             DAILY_BASE_BUDGET_MINUTES,
             Math.multiplyExact(
                 state.dailyCounter.spendableBudgetRounds,
-                PUSHUP_BUDGET_REWARD_MINUTES,
+                EXERCISE_SET_REWARD_MINUTES,
             ),
         )
         val limitMs = safeMinutesToMs(minutes)
@@ -174,7 +174,7 @@ class RestrictionEngine(
             return GateMode.SERVICE_UNAVAILABLE
         }
         if (runtime.activeTarget == ProtectedTarget.YOUTUBE) {
-            return if (state.dailyCounter.verifiedPushups >= YOUTUBE_UNLOCK_PUSHUPS) {
+            return if (state.dailyCounter.earnedBudgetRounds >= YOUTUBE_UNLOCK_SETS) {
                 GateMode.YOUTUBE_ACCESS_GRANTED
             } else {
                 GateMode.YOUTUBE_LOCKED
@@ -276,6 +276,8 @@ class RestrictionEngine(
             activeUnlock = state.activeUnlock,
             earnedBudgetRoundsToday = state.dailyCounter.earnedBudgetRounds,
             pushupRepetitionRemainderToday = state.dailyCounter.pushupRepetitionRemainder,
+            plankSecondRemainderToday = state.dailyCounter.plankSecondRemainder,
+            machineRepetitionRemainderToday = state.dailyCounter.machineRepetitionRemainder,
             verifiedPushupsToday = state.dailyCounter.verifiedPushups,
             offSessionStartedAtWallMs = state.offUsageReminder.sessionStartedAtWallMs,
             usageReports = state.usageReports,
@@ -447,9 +449,10 @@ class RestrictionEngine(
         input: PersistedState,
         nowWallMs: Long,
         zoneId: ZoneId,
-    ): CommandResult = recordPushupRepetitions(
+    ): CommandResult = recordVerifiedExercise(
         input = input,
-        repetitions = PUSHUPS_PER_BUDGET_ROUND,
+        exerciseId = ExerciseId.PUSH_UP,
+        value = PUSHUPS_PER_SET,
         nowWallMs = nowWallMs,
         zoneId = zoneId,
     )
@@ -459,16 +462,65 @@ class RestrictionEngine(
         repetitions: Long,
         nowWallMs: Long,
         zoneId: ZoneId,
+    ): CommandResult = recordVerifiedExercise(
+        input = input,
+        exerciseId = ExerciseId.PUSH_UP,
+        value = repetitions,
+        nowWallMs = nowWallMs,
+        zoneId = zoneId,
+    )
+
+    fun recordVerifiedExercise(
+        input: PersistedState,
+        exerciseId: ExerciseId,
+        value: Long,
+        nowWallMs: Long,
+        zoneId: ZoneId,
+    ): CommandResult = recordVerifiedExercise(
+        input = input,
+        verificationId = idGenerator.nextId(),
+        exerciseId = exerciseId,
+        value = value,
+        nowWallMs = nowWallMs,
+        zoneId = zoneId,
+    )
+
+    fun recordVerifiedExercise(
+        input: PersistedState,
+        verificationId: String,
+        exerciseId: ExerciseId,
+        value: Long,
+        nowWallMs: Long,
+        zoneId: ZoneId,
     ): CommandResult {
         val state = normalize(input, nowWallMs, zoneId)
-        if (repetitions <= 0) return rejected(state, "No push-up repetitions were counted")
-        val accumulatedRepetitions = try {
-            Math.addExact(state.dailyCounter.pushupRepetitionRemainder, repetitions)
-        } catch (_: ArithmeticException) {
-            return rejected(state, "Push-up count is too large")
+        if (verificationId.isBlank() || verificationId.length > 128) {
+            return rejected(state, "Invalid exercise verification ID")
         }
-        val newlyEarnedRounds = accumulatedRepetitions / PUSHUPS_PER_BUDGET_ROUND
-        val repetitionRemainder = accumulatedRepetitions % PUSHUPS_PER_BUDGET_ROUND
+        if (verificationId in state.dailyCounter.creditedExerciseVerificationIds) {
+            return rejected(state, "Exercise verification was already credited")
+        }
+        if (
+            state.dailyCounter.creditedExerciseVerificationIds.size >=
+            MAX_DAILY_CREDITED_EXERCISE_VERIFICATIONS
+        ) {
+            return rejected(state, "Daily exercise verification history is at its safe limit")
+        }
+        val policy = ExercisePolicies.find(exerciseId)
+        if (policy == null || !policy.credited) {
+            return rejected(state, "Unsupported exercise cannot earn credit")
+        }
+        if (value <= 0) return rejected(state, "No countable ${policy.displayName.lowercase()} were measured")
+        val accumulation = try {
+            accumulateExerciseUnits(
+                previousRemainder = state.dailyCounter.remainderFor(exerciseId),
+                added = value,
+                unitsPerSet = policy.unitsPerSet,
+            )
+        } catch (_: ArithmeticException) {
+            return rejected(state, "${policy.displayName} measurement is too large")
+        }
+        val newlyEarnedRounds = accumulation.completedSets
         if (newlyEarnedRounds > MAX_SAFE_BUDGET_ROUNDS - state.dailyCounter.earnedBudgetRounds) {
             return rejected(state, "Daily earned budget is at its safe limit")
         }
@@ -483,24 +535,39 @@ class RestrictionEngine(
             state.dailyCounter.spendableBudgetRounds,
             newlyEarnedRounds,
         )
-        val monthlyPushupCycles = try {
-            MonthlyPushupCalculator.addPushups(
-                cycles = state.monthlyPushupCycles,
-                repetitions = repetitions,
-                nowWallMs = nowWallMs,
-            )
-        } catch (_: ArithmeticException) {
-            return rejected(state, "Monthly push-up total is at its safe limit")
+        val monthlyPushupCycles = if (exerciseId == ExerciseId.PUSH_UP) {
+            try {
+                MonthlyPushupCalculator.addPushups(
+                    cycles = state.monthlyPushupCycles,
+                    repetitions = value,
+                    nowWallMs = nowWallMs,
+                )
+            } catch (_: ArithmeticException) {
+                return rejected(state, "Monthly push-up total is at its safe limit")
+            }
+        } else {
+            state.monthlyPushupCycles
+        }
+        val verifiedPushups = if (exerciseId == ExerciseId.PUSH_UP) {
+            try {
+                Math.addExact(state.dailyCounter.verifiedPushups, value)
+            } catch (_: ArithmeticException) {
+                return rejected(state, "Daily push-up total is at its safe limit")
+            }
+        } else {
+            state.dailyCounter.verifiedPushups
         }
         return CommandResult.Applied(
             state.copy(
                 stateRevision = nextRevision(state.stateRevision),
-                dailyCounter = state.dailyCounter.copy(
+                dailyCounter = state.dailyCounter.withRemainder(exerciseId, accumulation.remainder).copy(
                     earnedBudgetRounds = totalEarnedRounds,
-                    pushupRepetitionRemainder = repetitionRemainder,
                     spendableBudgetRounds = spendableRounds,
+                    verifiedPushups = verifiedPushups,
+                    creditedExerciseVerificationIds =
+                        state.dailyCounter.creditedExerciseVerificationIds + verificationId,
                 ),
-                usageReports = state.usageReports.withPushupSessions(
+                usageReports = state.usageReports.withExerciseSets(
                     localDayKey = state.dailyCounter.localDayKey,
                     sessions = totalEarnedRounds,
                 ),
@@ -509,10 +576,10 @@ class RestrictionEngine(
                     (state.activityEvents + ActivityEvent(
                         id = idGenerator.nextId(),
                         localDayKey = state.dailyCounter.localDayKey,
-                        type = ActivityEventType.PUSHUP_SET,
+                        type = ActivityEventType.EXERCISE_SET,
                         startedAtWallMs = nowWallMs,
                         endedAtWallMs = nowWallMs,
-                        valueMs = newlyEarnedRounds * PUSHUP_BUDGET_REWARD_MINUTES * MINUTE_MS,
+                        valueMs = newlyEarnedRounds * EXERCISE_SET_REWARD_MINUTES * MINUTE_MS,
                     )).takeLast(MAX_ACTIVITY_EVENTS)
                 } else {
                     state.activityEvents
@@ -705,13 +772,13 @@ class RestrictionEngine(
         }
     }
 
-    private fun List<DailyUsageReport>.withPushupSessions(
+    private fun List<DailyUsageReport>.withExerciseSets(
         localDayKey: String,
         sessions: Long,
     ): List<DailyUsageReport> {
         val reports = associateBy { it.localDayKey }.toMutableMap()
         val current = reports[localDayKey] ?: DailyUsageReport(localDayKey)
-        reports[localDayKey] = current.copy(offUsageMs = 0, pushupSessions = sessions)
+        reports[localDayKey] = current.copy(offUsageMs = 0, exerciseSets = sessions)
         return reports.values.sortedBy { it.localDayKey }.takeLast(MAX_REPORT_DAYS)
     }
 

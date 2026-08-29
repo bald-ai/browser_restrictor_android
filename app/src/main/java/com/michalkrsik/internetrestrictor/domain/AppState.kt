@@ -31,16 +31,19 @@ fun protectedTargetForPackage(packageName: String?): ProtectedTarget? = when {
 
 fun isProtectedTargetPackage(packageName: String?): Boolean =
     protectedTargetForPackage(packageName) != null
-const val RESTRICTOR_SCHEMA_VERSION = 9
+const val RESTRICTOR_SCHEMA_VERSION = 10
 const val MINUTE_MS = 60_000L
 const val HOUR_MS = 60L * MINUTE_MS
 const val DAY_MS = 24L * HOUR_MS
 const val PENDING_WAIT_EXPIRY_MS = DAY_MS
 const val EMERGENCY_UNLOCK_MS = 15L * MINUTE_MS
 const val DAILY_BASE_BUDGET_MINUTES = 0L
-const val PUSHUP_BUDGET_REWARD_MINUTES = 3L
-const val PUSHUPS_PER_BUDGET_ROUND = 5L
-const val YOUTUBE_UNLOCK_PUSHUPS = 20L
+const val EXERCISE_SET_REWARD_MINUTES = 3L
+const val PUSHUPS_PER_SET = 5L
+const val PLANK_SECONDS_PER_SET = 18L
+const val MACHINE_REPS_PER_SET = 10L
+const val YOUTUBE_UNLOCK_SETS = 4L
+const val MAX_DAILY_CREDITED_EXERCISE_VERIFICATIONS = 256
 const val EMERGENCY_SKIP_DAILY_LIMIT = 1L
 const val EVENING_BUDGET_RESET_HOUR = 20
 const val DAILY_RESET_HOUR = 4
@@ -50,7 +53,7 @@ val DEFAULT_SESSION_MINUTES = listOf(3L, 5L, 10L)
 const val FIXED_WAIT_MS = 12_000L
 const val MAX_SAFE_MINUTES = Long.MAX_VALUE / MINUTE_MS
 const val MAX_SAFE_BUDGET_ROUNDS =
-    (MAX_SAFE_MINUTES - DAILY_BASE_BUDGET_MINUTES) / PUSHUP_BUDGET_REWARD_MINUTES
+    (MAX_SAFE_MINUTES - DAILY_BASE_BUDGET_MINUTES) / EXERCISE_SET_REWARD_MINUTES
 
 enum class ThemePreference { DARK, LIGHT }
 
@@ -60,7 +63,7 @@ enum class UnlockSource { NORMAL, EMERGENCY }
 
 enum class ForegroundClass { BROWSER, RESTRICTOR, OTHER }
 
-enum class ActivityEventType { PUSHUP_SET, BROWSER_SESSION }
+enum class ActivityEventType { EXERCISE_SET, BROWSER_SESSION }
 
 enum class GateMode {
     SERVICE_UNAVAILABLE,
@@ -107,7 +110,7 @@ data class DailyUsageReport(
     val localDayKey: String,
     val protectedUsageMs: Long = 0,
     val offUsageMs: Long = 0,
-    val pushupSessions: Long = 0,
+    val exerciseSets: Long = 0,
 )
 
 data class ActivityEvent(
@@ -156,10 +159,11 @@ data class DailyCounter(
     val pushupRepetitionRemainder: Long = 0,
     val spendableBudgetRounds: Long = 0,
     val eveningResetApplied: Boolean = false,
+    val plankSecondRemainder: Long = 0,
+    val machineRepetitionRemainder: Long = 0,
+    val verifiedPushups: Long = 0,
+    val creditedExerciseVerificationIds: List<String> = emptyList(),
 )
-
-val DailyCounter.verifiedPushups: Long
-    get() = earnedBudgetRounds * PUSHUPS_PER_BUDGET_ROUND + pushupRepetitionRemainder
 
 data class MonthlyPushupCycle(
     val cycleStartDate: String,
@@ -257,6 +261,8 @@ data class StateSnapshot(
     val activeUnlock: UnlockSession?,
     val earnedBudgetRoundsToday: Long,
     val pushupRepetitionRemainderToday: Long,
+    val plankSecondRemainderToday: Long,
+    val machineRepetitionRemainderToday: Long,
     val verifiedPushupsToday: Long,
     val offSessionStartedAtWallMs: Long,
     val usageReports: List<DailyUsageReport>,

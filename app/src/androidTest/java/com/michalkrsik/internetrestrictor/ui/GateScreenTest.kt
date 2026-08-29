@@ -57,8 +57,12 @@ class GateScreenTest {
         composeRule.onNodeWithText(
             "Every normal browser session starts with the same 12 sec focused wait.",
         ).assertIsDisplayed()
-        composeRule.onNodeWithText("Earn +3 minutes today").assertIsDisplayed()
-        composeRule.onNodeWithText("0/5 push-ups carried over · resets at 04:00").assertIsDisplayed()
+        composeRule.onNodeWithText("Start exercise").assertIsDisplayed()
+        composeRule.onNodeWithText("Each set earns +3 minutes").assertIsDisplayed()
+        composeRule.onNodeWithText("5 push-ups · 18s plank · 10 machine reps").assertIsDisplayed()
+        composeRule.onNodeWithText("0/5 push-ups carried").assertIsDisplayed()
+        composeRule.onNodeWithText("0/18s plank carried").assertIsDisplayed()
+        composeRule.onNodeWithText("0/10 machine reps carried").assertIsDisplayed()
         composeRule.onNodeWithText("←  Leave browser").assertIsDisplayed()
         composeRule.onAllNodesWithText("Settings", substring = true).assertCountEquals(0)
     }
@@ -86,8 +90,10 @@ class GateScreenTest {
         }
 
         composeRule.onNodeWithText("Browser time is used up.").assertIsDisplayed()
-        composeRule.onNodeWithText("Earn +3 minutes today").assertIsDisplayed()
-        composeRule.onNodeWithText("4/5 push-ups carried over · resets at 04:00").assertIsDisplayed()
+        composeRule.onNodeWithText("Start exercise").assertIsDisplayed()
+        composeRule.onNodeWithText("4/5 push-ups carried").assertIsDisplayed()
+        composeRule.onNodeWithText("0/18s plank carried").assertIsDisplayed()
+        composeRule.onNodeWithText("0/10 machine reps carried").assertIsDisplayed()
         composeRule.onNodeWithText("Try again").assertIsDisplayed()
         composeRule.onAllNodesWithText("minute session", substring = true).assertCountEquals(0)
         composeRule.onAllNodesWithText("emergency skip", substring = true).assertCountEquals(0)
@@ -115,9 +121,9 @@ class GateScreenTest {
             RestrictorTheme(snapshot.settings.theme) { GateScreen(snapshot, actions) }
         }
 
-        composeRule.onNodeWithText("Push-ups before YouTube.").assertIsDisplayed()
-        composeRule.onNodeWithText("Do push-ups now").assertIsDisplayed()
-        composeRule.onNodeWithText("19/20 complete today · unlocks YouTube until 04:00").assertIsDisplayed()
+        composeRule.onNodeWithText("Exercise before YouTube.").assertIsDisplayed()
+        composeRule.onNodeWithText("Start exercise").assertIsDisplayed()
+        composeRule.onNodeWithText("3/4 sets today · unlocks until 04:00").assertIsDisplayed()
         composeRule.onNodeWithText("←  Leave YouTube").assertIsDisplayed()
         composeRule.onAllNodesWithText("minute session", substring = true).assertCountEquals(0)
         composeRule.onAllNodesWithText("emergency skip", substring = true).assertCountEquals(0)

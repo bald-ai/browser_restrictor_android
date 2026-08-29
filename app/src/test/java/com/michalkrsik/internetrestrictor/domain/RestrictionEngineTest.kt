@@ -69,6 +69,7 @@ class RestrictionEngineTest {
         val earned = applied(engine.recordPushupRepetitions(partial, 1, now + 1_000, zone))
         val snapshot = engine.snapshot(earned, youtubeReady, now + 1_000)
         assertEquals(20, snapshot.verifiedPushupsToday)
+        assertEquals(4, snapshot.earnedBudgetRoundsToday)
         assertEquals(GateMode.YOUTUBE_ACCESS_GRANTED, snapshot.canonicalMode)
         assertEquals(ProtectedTarget.YOUTUBE, snapshot.activeTarget)
         assertFalse(snapshot.usesFullGate)
@@ -621,7 +622,7 @@ class RestrictionEngineTest {
                 spendableBudgetRounds = 3,
                 eveningResetApplied = true,
             ),
-            usageReports = listOf(DailyUsageReport("2026-07-10", pushupSessions = 3)),
+            usageReports = listOf(DailyUsageReport("2026-07-10", exerciseSets = 3)),
         )
         val waiting = applied(
             engine.startWait(base, ready, base.stateRevision, 10, beforeReset, zone),
@@ -703,9 +704,9 @@ class RestrictionEngineTest {
         val afterSecond = applied(engine.earnPushupBudget(afterFirst, now + 1_000, zone))
 
         assertEquals(2, afterSecond.dailyCounter.earnedBudgetRounds)
-        assertEquals(2, afterSecond.usageReports.single().pushupSessions)
+        assertEquals(2, afterSecond.usageReports.single().exerciseSets)
         assertEquals(
-            listOf(ActivityEventType.PUSHUP_SET, ActivityEventType.PUSHUP_SET),
+            listOf(ActivityEventType.EXERCISE_SET, ActivityEventType.EXERCISE_SET),
             afterSecond.activityEvents.map { it.type },
         )
         assertEquals(listOf(now, now + 1_000), afterSecond.activityEvents.map { it.startedAtWallMs })
@@ -722,7 +723,7 @@ class RestrictionEngineTest {
             ),
             week.map { it.localDayKey },
         )
-        assertEquals(2, week.single { it.localDayKey == "2026-07-10" }.pushupSessions)
+        assertEquals(2, week.single { it.localDayKey == "2026-07-10" }.exerciseSets)
     }
 
     @Test
@@ -731,14 +732,14 @@ class RestrictionEngineTest {
             .toInstant()
             .toEpochMilli()
         val state = engine.normalize(PersistedState(), earlyMonday, zone).copy(
-            usageReports = listOf(DailyUsageReport("2026-07-12", pushupSessions = 2)),
+            usageReports = listOf(DailyUsageReport("2026-07-12", exerciseSets = 2)),
         )
 
         val week = engine.snapshot(state, ready, earlyMonday, zoneId = zone).currentWeekUsageReports
 
         assertEquals("2026-07-06", week.first().localDayKey)
         assertEquals("2026-07-12", week.last().localDayKey)
-        assertEquals(2, week.last().pushupSessions)
+        assertEquals(2, week.last().exerciseSets)
     }
 
     @Test
@@ -751,7 +752,7 @@ class RestrictionEngineTest {
 
         val normalized = engine.normalize(legacy, nextDay, zone)
 
-        assertEquals(3, normalized.usageReports.single { it.localDayKey == "2026-07-10" }.pushupSessions)
+        assertEquals(3, normalized.usageReports.single { it.localDayKey == "2026-07-10" }.exerciseSets)
         assertEquals(0, normalized.dailyCounter.earnedBudgetRounds)
         assertEquals("2026-07-11", normalized.dailyCounter.localDayKey)
     }
@@ -776,7 +777,7 @@ class RestrictionEngineTest {
         val state = initial().copy(
             dailyUsage = initial().dailyUsage.copy(usedMs = 12_000),
             usageReports = listOf(
-                DailyUsageReport("2026-07-10", protectedUsageMs = 12_000, pushupSessions = 2),
+                DailyUsageReport("2026-07-10", protectedUsageMs = 12_000, exerciseSets = 2),
             ),
         )
         val cleared = engine.clearReportHistory(state)
@@ -802,7 +803,7 @@ class RestrictionEngineTest {
         val report = DailyUsageReport(
             "2026-07-10",
             protectedUsageMs = 12_000,
-            pushupSessions = 2,
+            exerciseSets = 2,
         )
         val state = base.copy(
             dailyUsage = base.dailyUsage.copy(usedMs = 10_000),

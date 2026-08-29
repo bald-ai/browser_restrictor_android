@@ -1,5 +1,7 @@
 package com.michalkrsik.internetrestrictor.ui.challenge
 
+import com.michalkrsik.internetrestrictor.domain.ExerciseId
+import com.michalkrsik.internetrestrictor.domain.ExerciseMetric
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -22,30 +24,56 @@ class ExerciseChallengeCatalogTest {
     }
 
     @Test
-    fun onlyExistingPushupFlowIsLaunchReady() {
-        assertTrue(ExerciseChallengeCatalog.default.launchReady)
-        ExerciseChallengeCatalog.all
-            .filter { it.id != ExerciseId.PUSH_UP }
-            .forEach { assertFalse(it.launchReady) }
+    fun creditedExercisesAreLaunchReadyWithoutAPicker() {
+        assertTrue(ExerciseChallengeCatalog.find(ExerciseId.PUSH_UP)!!.launchReady)
+        assertTrue(ExerciseChallengeCatalog.find(ExerciseId.PLANK)!!.launchReady)
+        assertTrue(ExerciseChallengeCatalog.find(ExerciseId.OUTDOOR_LAT_PULLDOWN)!!.launchReady)
+        assertFalse(ExerciseChallengeCatalog.find(ExerciseId.SIT_UP)!!.launchReady)
     }
 
     @Test
-    fun plankKeepsChosenTwentyFiveSecondThresholdInsideThirtySecondRecording() {
+    fun plankAndMachineUseTheAgreedSetSizesInsideThirtySecondRecording() {
         val plank = requireNotNull(ExerciseChallengeCatalog.find(ExerciseId.PLANK))
+        val machine = requireNotNull(ExerciseChallengeCatalog.find(ExerciseId.OUTDOOR_LAT_PULLDOWN))
 
-        assertEquals(25, plank.minimumQualifyingValue)
+        assertEquals(18, plank.unitsPerSet)
         assertEquals(30, plank.recordingLimitSeconds)
-        assertEquals(ExerciseMetric.HOLD_SECONDS, plank.metric)
+        assertEquals(10, machine.unitsPerSet)
+        assertEquals(30, machine.recordingLimitSeconds)
     }
 
     @Test
-    fun futureExercisesUseGenericEndpointWithoutChangingPushupConfiguration() {
+    fun configuredPushupUrlIsRewrittenToTheGenericClassifierEndpoint() {
         val configured = "https://verify.example/v1/pushup-verify"
 
-        assertEquals(configured, verificationUrlForExercise(configured, ExerciseId.PUSH_UP))
+        assertEquals("https://verify.example/v1/exercise-verify", verificationUrl(configured))
         assertEquals(
             "https://verify.example/v1/exercise-verify",
-            verificationUrlForExercise(configured, ExerciseId.PLANK),
+            verificationUrl("https://verify.example/v1/exercise-verify"),
         )
     }
+
+    @Test
+    fun classifierResultDoesNotRequireAPickedExercise() {
+        val plank = parseExerciseVerificationResult(
+            """{"exercise_id":"plank","metric":"hold_seconds","value":20,"reason":"Hold"}""",
+        )
+        assertEquals(ExerciseId.PLANK, plank.exerciseId)
+        assertEquals(ExerciseMetric.HOLD_SECONDS, plank.metric)
+        assertEquals(20, plank.value)
+
+        val unsupported = parseExerciseVerificationResult(
+            """{"exercise_id":"unsupported","metric":"none","value":0,"reason":"Walking"}""",
+        )
+        assertEquals(ExerciseId.UNSUPPORTED, unsupported.exerciseId)
+        assertEquals(0, unsupported.value)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun classifierResultRejectsAMetricThatDoesNotMatchTheExercise() {
+        parseExerciseVerificationResult(
+            """{"exercise_id":"plank","metric":"repetitions","value":18,"reason":"Hold"}""",
+        )
+    }
+
 }

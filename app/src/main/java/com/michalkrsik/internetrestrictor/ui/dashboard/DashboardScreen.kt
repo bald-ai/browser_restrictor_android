@@ -48,8 +48,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.michalkrsik.internetrestrictor.domain.DailyUsageReport
 import com.michalkrsik.internetrestrictor.domain.ActivityEventType
+import com.michalkrsik.internetrestrictor.domain.MACHINE_REPS_PER_SET
 import com.michalkrsik.internetrestrictor.domain.MonthlyPushupCalculator
 import com.michalkrsik.internetrestrictor.domain.MonthlyPushupCycle
+import com.michalkrsik.internetrestrictor.domain.PLANK_SECONDS_PER_SET
+import com.michalkrsik.internetrestrictor.domain.PUSHUPS_PER_SET
 import com.michalkrsik.internetrestrictor.domain.ProtectionHealth
 import com.michalkrsik.internetrestrictor.domain.PeriodCalculator
 import com.michalkrsik.internetrestrictor.domain.StateSnapshot
@@ -73,7 +76,7 @@ fun DashboardScreen(
     snapshot: StateSnapshot,
     onOpenSettings: () -> Unit,
     onTestBrowser: () -> Unit,
-    onDoPushups: () -> Unit,
+    onStartExercise: () -> Unit,
     onHealthAction: () -> Unit,
 ) {
     var period by rememberSaveable { mutableStateOf(ActivityPeriod.WEEK) }
@@ -126,11 +129,11 @@ fun DashboardScreen(
 
         Spacer(Modifier.height(22.dp))
         Button(
-            onClick = onDoPushups,
+            onClick = onStartExercise,
             modifier = Modifier.fillMaxWidth().height(52.dp),
             shape = PillShape,
         ) {
-            Text("Do push-ups")
+            Text("Start exercise")
         }
         Spacer(Modifier.height(10.dp))
         Text(
@@ -208,39 +211,47 @@ private fun CarryOverStatus(snapshot: StateSnapshot) {
         }
     }
     val expiresIn = carryExpirationRemainingMs(nowWallMs, ZoneId.systemDefault())
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.Bottom,
-    ) {
-        Column {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Bottom,
+        ) {
             Text(
-                "PUSH-UP CARRY-OVER",
+                "EXERCISE CARRY-OVER",
                 style = MaterialTheme.typography.labelSmall,
                 color = EditorialTheme.colors.ink3,
             )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                "${snapshot.pushupRepetitionRemainderToday}/5 push-ups",
-                style = MaterialTheme.typography.titleMedium,
-            )
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    "EXPIRES IN",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = EditorialTheme.colors.ink3,
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    formatCarryExpiration(expiresIn),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            }
         }
-        Column(horizontalAlignment = Alignment.End) {
-            Text(
-                "EXPIRES IN",
-                style = MaterialTheme.typography.labelSmall,
-                color = EditorialTheme.colors.ink3,
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                formatCarryExpiration(expiresIn),
-                style = MaterialTheme.typography.titleMedium,
-            )
-        }
+        Spacer(Modifier.height(10.dp))
+        CarryOverRow("${snapshot.pushupRepetitionRemainderToday}/$PUSHUPS_PER_SET push-ups")
+        CarryOverRow("${snapshot.plankSecondRemainderToday}/${PLANK_SECONDS_PER_SET}s plank")
+        CarryOverRow("${snapshot.machineRepetitionRemainderToday}/$MACHINE_REPS_PER_SET machine reps")
     }
     HorizontalDivider(
         modifier = Modifier.padding(top = 14.dp),
         color = EditorialTheme.colors.hairlineSoft,
+    )
+}
+
+@Composable
+private fun CarryOverRow(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.titleMedium,
+        modifier = Modifier.padding(bottom = 4.dp),
     )
 }
 
@@ -348,8 +359,8 @@ private fun PeriodChoice(
 private fun WeekContent(snapshot: StateSnapshot) {
     val reports = snapshot.currentWeekUsageReports
     val totalUsage = reports.sumOf { it.protectedUsageMs }
-    val totalSets = reports.sumOf { it.pushupSessions }
-    SummaryTotals(totalUsage, totalSets, "browser time this week", "push-up sessions this week")
+    val totalSets = reports.sumOf { it.exerciseSets }
+    SummaryTotals(totalUsage, totalSets, "browser time this week", "exercise sets this week")
     Spacer(Modifier.height(24.dp))
     SectionLabel("MONDAY – SUNDAY")
     Spacer(Modifier.height(8.dp))
@@ -371,17 +382,17 @@ private fun DayContent(snapshot: StateSnapshot) {
     val report = snapshot.todayUsageReport
     SummaryTotals(
         report.protectedUsageMs,
-        report.pushupSessions,
+        report.exerciseSets,
         "browser time today",
-        "push-up sessions today",
+        "exercise sets today",
     )
     Spacer(Modifier.height(24.dp))
     SectionLabel("TODAY'S ACTIVITY")
     Spacer(Modifier.height(8.dp))
     val events = snapshot.todayActivityEvents.sortedBy { it.startedAtWallMs }.map { event ->
         when (event.type) {
-            ActivityEventType.PUSHUP_SET -> TimelineItem(
-                title = "Push-up set",
+            ActivityEventType.EXERCISE_SET -> TimelineItem(
+                title = "Exercise set",
                 detail = formatEventTime(event.startedAtWallMs),
                 value = "+${formatMinutes(event.valueMs)}",
                 earned = true,
@@ -396,9 +407,9 @@ private fun DayContent(snapshot: StateSnapshot) {
     }.ifEmpty {
         listOf(
             TimelineItem(
-                title = "Push-up sets",
-                detail = if (report.pushupSessions > 0) "Earlier today" else "None yet today",
-                value = formatSets(report.pushupSessions),
+                title = "Exercise sets",
+                detail = if (report.exerciseSets > 0) "Earlier today" else "None yet today",
+                value = formatSets(report.exerciseSets),
                 earned = true,
             ),
             TimelineItem(
@@ -501,10 +512,10 @@ private fun WeekDayRow(
             textAlign = androidx.compose.ui.text.style.TextAlign.End,
         )
         Text(
-            formatSets(report.pushupSessions),
+            formatSets(report.exerciseSets),
             modifier = Modifier.width(54.dp),
             style = MaterialTheme.typography.bodySmall,
-            color = if (report.pushupSessions > 0) EditorialTheme.colors.go else EditorialTheme.colors.ink3,
+            color = if (report.exerciseSets > 0) EditorialTheme.colors.go else EditorialTheme.colors.ink3,
             textAlign = androidx.compose.ui.text.style.TextAlign.End,
         )
     }

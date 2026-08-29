@@ -27,7 +27,7 @@ class GateOverlayController(
     private val windowManager: WindowManager,
     private val repository: RestrictorRepository,
     private val scope: CoroutineScope,
-    private val onPushupChallenge: () -> Unit,
+    private val onExerciseChallenge: () -> Unit,
     private val onLeaveBrowser: () -> Unit,
     private val onFocusChanged: (Boolean) -> Unit,
     private val onAttachFailure: (Throwable) -> Unit,
@@ -84,7 +84,7 @@ class GateOverlayController(
                                     )
                                 }
                             },
-                            onPushupChallenge = onPushupChallenge,
+                            onExerciseChallenge = onExerciseChallenge,
                             onTryAgain = {
                                 scope.launch {
                                     repository.tryAgain(

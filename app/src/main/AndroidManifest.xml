@@ -43,7 +43,7 @@
         </activity>
 
         <activity
-            android:name=".ui.challenge.PushupChallengeActivity"
+            android:name=".ui.challenge.ExerciseChallengeActivity"
             android:configChanges="orientation|screenSize"
             android:exported="false"
             android:screenOrientation="fullSensor" />
