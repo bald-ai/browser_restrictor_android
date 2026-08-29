@@ -16,6 +16,7 @@ This is a personal, user-controlled tool—not parental control, device manageme
 - A fixed 12-second focused wait before every normal browser session.
 - Three customizable 1-to-120-minute wall-clock session presets, defaulting to 3, 5, and 10 minutes.
 - A rotatable front/back-camera push-up challenge on every gate. Every five verified repetitions add 3 minutes to today's budget; incomplete groups carry across videos until the 04:00 local daily reset. A 30-second on-screen countdown bounds each recording. The first completed group of each local day also earns one emergency unlock. It returns to the originating supported browser after earning budget, without bypassing the normal wait, and its use is charged normally.
+- A disabled-by-default multi-exercise verification contract for plank holds, outdoor lat pull-down repetitions, and sit-up repetitions. These activities cannot grant access until example-derived prompts, qualifying values, and separate reward policies are explicitly completed.
 - One earned emergency 15-minute access unlock per local day. Each day begins with none; the first completed five-push-up group earns it, and it can be used even when the daily budget is exhausted.
 - At 20:00 local time, accumulated spendable budget and normal browser access reset immediately. Push-up carry-over, the earned emergency unlock, and today's report history survive; new evening push-ups earn fresh spendable time.
 - An append-only push-up ledger counts every verified repetition in Europe/Prague cycles running from the 9th at 00:00 to the next month's 9th. The dashboard shows the current total and all completed cycle totals; completed cycles are never pruned by report cleanup.
@@ -114,7 +115,7 @@ The captures in `validation_artifacts/` predate this redesign and are retained o
 - `ui/`: onboarding, dashboard, settings, gate, badge, reusable components, and theme.
 - `diagnostics/`: bounded, local-only operational events that can be copied from the app.
 - `receivers/`: boot and wall-clock boundary recovery signals.
-- `server/`: the ffmpeg-backed push-up verifier. It accepts one authenticated MP4 upload up to 30 seconds, stretches four source frames per second from the complete clip into Gemini's one-frame-per-playback-second sampling path, and computes the single-video pass threshold from the returned repetition count.
+- `server/`: the ffmpeg-backed exercise verifier. It accepts one authenticated MP4 upload up to 30 seconds, stretches four source frames per second from the complete clip into Gemini's one-frame-per-playback-second sampling path, and applies a typed exercise definition. The legacy push-up endpoint remains supported; unfinished exercise definitions fail closed before model processing. See [the exercise-verification architecture](EXERCISE_VERIFICATION_ARCHITECTURE.md).
 
 The Accessibility service reacts only to window-level changes. It uses the active window package name to distinguish supported browsers, YouTube, Internet Restrictor, and other apps. It does not traverse the accessibility tree or read URLs, webpage text, form fields, typing, or screenshots.
 

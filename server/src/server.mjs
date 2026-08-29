@@ -5,27 +5,21 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import {
+  exerciseIsReady,
+  getExerciseDefinition,
+  publicExerciseCatalog,
+} from "./exercises.mjs";
 
 const MODEL = "google/gemini-3.7-flash";
-const REQUIRED_REPETITIONS = 5;
 const MAX_VIDEO_BYTES = 40 * 1024 * 1024;
 const MAX_REQUEST_BYTES = MAX_VIDEO_BYTES + 1024 * 1024;
 const MAX_SOURCE_SECONDS = 30.5;
 const MODEL_SAMPLE_FPS = 4;
 const FFMPEG_TIMEOUT_MS = 20_000;
 const OPENROUTER_TIMEOUT_MS = 180_000;
-const TEMP_PREFIX = "browser-restrictor-pushup-";
-
-const systemPrompt = [
-  "Count push-up repetitions in casual phone videos.",
-  "Count each complete lowering-and-rising motion cycle once.",
-  "The whole body does not need to be visible; continuous repeated motion of the visible head, shoulders, torso, or arms is sufficient.",
-  "Tolerate imperfect framing, ordinary form, incomplete depth, brief occlusion, and camera shake.",
-  "Ignore setup, repositioning, unrelated movement, cuts, loops, and motion before or after the exercise sequence.",
-  "Identify the exercise segment, track its successive high and low body positions chronologically, and count each return from a low position to a high position as one cycle.",
-  "Before answering, scan the full exercise segment a second time and reconcile the cycle count; do not estimate from elapsed time.",
-  "Return zero only when no push-up-like repetition cycles are visible.",
-].join(" ");
+const TEMP_PREFIX = "browser-restrictor-exercise-";
+const LEGACY_TEMP_PREFIX = "browser-restrictor-pushup-";
 
 class HttpError extends Error {
   constructor(status, message) {
@@ -56,7 +50,7 @@ async function readBoundedBody(req, limit) {
   return Buffer.concat(chunks, size);
 }
 
-export function parseMultipartVideo(body, contentType) {
+function parseMultipartParts(body, contentType) {
   const boundaryMatch = contentType?.match(/boundary=(?:"([^"]+)"|([^;]+))/i);
   const boundaryText = boundaryMatch?.[1] ?? boundaryMatch?.[2]?.trim();
   if (!boundaryText) throw new HttpError(400, "Expected multipart/form-data");
@@ -64,6 +58,7 @@ export function parseMultipartVideo(body, contentType) {
   const boundary = Buffer.from(`--${boundaryText}`);
   const delimiter = Buffer.from(`\r\n--${boundaryText}`);
   const headerSeparator = Buffer.from("\r\n\r\n");
+  const parts = [];
   let cursor = body.indexOf(boundary);
   while (cursor !== -1) {
     cursor += boundary.length;
@@ -75,19 +70,39 @@ export function parseMultipartVideo(body, contentType) {
     const dataStart = headerEnd + headerSeparator.length;
     const dataEnd = body.indexOf(delimiter, dataStart);
     if (dataEnd === -1) break;
-    const isVideoField = /content-disposition:[^\r\n]*\bname="video"/i.test(headers);
-    if (isVideoField) {
-      if (!/^content-type:\s*video\/mp4\s*$/im.test(headers)) {
-        throw new HttpError(400, "The video field must be video/mp4");
-      }
-      const video = body.subarray(dataStart, dataEnd);
-      if (video.length === 0) throw new HttpError(400, "The video is empty");
-      if (video.length > MAX_VIDEO_BYTES) throw new HttpError(413, "Video upload is too large");
-      return video;
+    const name = headers.match(/content-disposition:[^\r\n]*\bname="([^"]+)"/i)?.[1];
+    if (name) {
+      parts.push({ name, headers, value: body.subarray(dataStart, dataEnd) });
     }
     cursor = body.indexOf(boundary, dataEnd);
   }
-  throw new HttpError(400, "Missing multipart video field");
+  return parts;
+}
+
+export function parseExerciseMultipart(body, contentType, { defaultExerciseId = null } = {}) {
+  const parts = parseMultipartParts(body, contentType);
+  const videos = parts.filter((part) => part.name === "video");
+  if (videos.length !== 1) throw new HttpError(400, "Expected one multipart video field");
+  const videoPart = videos[0];
+  if (!/^content-type:\s*video\/mp4\s*$/im.test(videoPart.headers)) {
+    throw new HttpError(400, "The video field must be video/mp4");
+  }
+  if (videoPart.value.length === 0) throw new HttpError(400, "The video is empty");
+  if (videoPart.value.length > MAX_VIDEO_BYTES) throw new HttpError(413, "Video upload is too large");
+
+  const exerciseParts = parts.filter((part) => part.name === "exercise_id");
+  if (exerciseParts.length > 1) throw new HttpError(400, "Expected at most one exercise_id field");
+  const suppliedExerciseId = exerciseParts[0]?.value.toString("utf8").trim();
+  if (suppliedExerciseId !== undefined && !/^[a-z][a-z0-9_]{0,63}$/.test(suppliedExerciseId)) {
+    throw new HttpError(400, "Invalid exercise_id");
+  }
+  const exerciseId = suppliedExerciseId || defaultExerciseId;
+  if (!exerciseId) throw new HttpError(400, "Missing multipart exercise_id field");
+  return { exerciseId, video: videoPart.value };
+}
+
+export function parseMultipartVideo(body, contentType) {
+  return parseExerciseMultipart(body, contentType, { defaultExerciseId: "push_up" }).video;
 }
 
 async function runProcess(command, args, timeoutMs) {
@@ -164,12 +179,13 @@ async function prepareVideo(inputPath, outputPath) {
   await runProcess("ffmpeg", args, FFMPEG_TIMEOUT_MS);
 }
 
-export function validateVerdict(value) {
+export function validateVerdict(value, definition = getExerciseDefinition("push_up")) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid verdict object");
   const keys = Object.keys(value).sort();
-  if (keys.join(",") !== "confidence,reason,repetition_count") throw new Error("Unexpected verdict fields");
-  if (!Number.isInteger(value.repetition_count) || value.repetition_count < 0 || value.repetition_count > 1000) {
-    throw new Error("Invalid repetition_count");
+  const expectedKeys = ["confidence", "reason", definition.resultField].sort();
+  if (keys.join(",") !== expectedKeys.join(",")) throw new Error("Unexpected verdict fields");
+  if (!Number.isInteger(value[definition.resultField]) || value[definition.resultField] < 0 || value[definition.resultField] > 1000) {
+    throw new Error(`Invalid ${definition.resultField}`);
   }
   if (typeof value.confidence !== "number" || value.confidence < 0 || value.confidence > 1) {
     throw new Error("Invalid confidence");
@@ -178,17 +194,17 @@ export function validateVerdict(value) {
   return value;
 }
 
-async function callOpenRouter(videoPath, apiKey) {
+async function callOpenRouter(videoPath, apiKey, definition) {
   const video = await fs.readFile(videoPath);
   const payload = {
     model: MODEL,
     messages: [
-      { role: "system", content: systemPrompt },
+      { role: "system", content: definition.systemPrompt },
       {
         role: "user",
         content: [
           { type: "video_url", video_url: { url: `data:video/mp4;base64,${video.toString("base64")}` } },
-          { type: "text", text: "Count the repetitions in the preceding video." },
+          { type: "text", text: definition.userPrompt },
         ],
       },
     ],
@@ -197,16 +213,16 @@ async function callOpenRouter(videoPath, apiKey) {
     response_format: {
       type: "json_schema",
       json_schema: {
-        name: "pushup_count",
+        name: definition.schemaName,
         strict: true,
         schema: {
           type: "object",
           properties: {
             confidence: { type: "number", minimum: 0, maximum: 1 },
-            repetition_count: { type: "integer", minimum: 0 },
+            [definition.resultField]: { type: "integer", minimum: 0 },
             reason: { type: "string" },
           },
-          required: ["confidence", "repetition_count", "reason"],
+          required: ["confidence", definition.resultField, "reason"],
           additionalProperties: false,
         },
       },
@@ -222,7 +238,7 @@ async function callOpenRouter(videoPath, apiKey) {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
         "HTTP-Referer": "https://github.com/bald-ai/browser_restrictor_android",
-        "X-Title": "browser-restrictor-pushup-verifier",
+        "X-Title": "browser-restrictor-exercise-verifier",
       },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(OPENROUTER_TIMEOUT_MS),
@@ -237,7 +253,7 @@ async function callOpenRouter(videoPath, apiKey) {
   try {
     const envelope = JSON.parse(text);
     if (envelope.choices?.[0]?.finish_reason !== "stop") throw new Error("Incomplete model response");
-    const verdict = validateVerdict(JSON.parse(envelope.choices[0].message.content));
+    const verdict = validateVerdict(JSON.parse(envelope.choices[0].message.content), definition);
     return {
       verdict,
       diagnostics: {
@@ -255,7 +271,10 @@ async function cleanupStaleDirectories() {
   const parent = os.tmpdir();
   const now = Date.now();
   for (const entry of await fs.readdir(parent, { withFileTypes: true })) {
-    if (!entry.isDirectory() || !entry.name.startsWith(TEMP_PREFIX)) continue;
+    if (
+      !entry.isDirectory() ||
+      (!entry.name.startsWith(TEMP_PREFIX) && !entry.name.startsWith(LEGACY_TEMP_PREFIX))
+    ) continue;
     const target = path.join(parent, entry.name);
     const stat = await fs.stat(target).catch(() => null);
     if (stat && now - stat.mtimeMs > 60 * 60 * 1000) {
@@ -270,9 +289,15 @@ export function createServer({ apiKey, sharedSecret }) {
     const requestId = crypto.randomUUID();
     const startedAt = performance.now();
     if (req.method === "GET" && req.url === "/health") {
-      return json(res, 200, { status: "ok", model: MODEL });
+      return json(res, 200, {
+        status: "ok",
+        model: MODEL,
+        exercises: publicExerciseCatalog(),
+      });
     }
-    if (req.method !== "POST" || req.url !== "/v1/pushup-verify") {
+    const legacyPushupRequest = req.method === "POST" && req.url === "/v1/pushup-verify";
+    const exerciseRequest = req.method === "POST" && req.url === "/v1/exercise-verify";
+    if (!legacyPushupRequest && !exerciseRequest) {
       return json(res, 404, { error: "Not found" });
     }
     const authorization = req.headers.authorization;
@@ -285,26 +310,50 @@ export function createServer({ apiKey, sharedSecret }) {
     let tempDirectory;
     try {
       const body = await readBoundedBody(req, MAX_REQUEST_BYTES);
-      const video = parseMultipartVideo(body, req.headers["content-type"]);
+      const upload = parseExerciseMultipart(body, req.headers["content-type"], {
+        defaultExerciseId: legacyPushupRequest ? "push_up" : null,
+      });
+      if (legacyPushupRequest && upload.exerciseId !== "push_up") {
+        throw new HttpError(400, "The legacy endpoint accepts only push_up");
+      }
+      const definition = getExerciseDefinition(upload.exerciseId);
+      if (!definition) throw new HttpError(400, "Unknown exercise_id");
+      if (!exerciseIsReady(definition)) {
+        throw new HttpError(
+          409,
+          `Exercise verification is not ready: ${definition.pending.join(", ")}`,
+        );
+      }
       tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), TEMP_PREFIX));
       const inputPath = path.join(tempDirectory, "input.mp4");
       const outputPath = path.join(tempDirectory, "prepared.mp4");
-      await fs.writeFile(inputPath, video, { mode: 0o600 });
+      await fs.writeFile(inputPath, upload.video, { mode: 0o600 });
       const metadata = await inspectVideo(inputPath);
       await prepareVideo(inputPath, outputPath);
       const modelStartedAt = performance.now();
-      const { verdict, diagnostics } = await callOpenRouter(outputPath, apiKey);
+      const { verdict, diagnostics } = await callOpenRouter(outputPath, apiKey, definition);
       const modelMs = Math.round(performance.now() - modelStartedAt);
-      const response = {
-        is_success: verdict.repetition_count >= REQUIRED_REPETITIONS,
-        repetition_count: verdict.repetition_count,
+      const value = verdict[definition.resultField];
+      const commonResponse = {
+        is_success: value >= definition.minimumSuccessValue,
         confidence: verdict.confidence,
         reason: verdict.reason,
+      };
+      const response = legacyPushupRequest ? {
+        ...commonResponse,
+        repetition_count: value,
+      } : {
+        ...commonResponse,
+        exercise_id: definition.id,
+        metric: definition.metric,
+        value,
       };
       console.log(JSON.stringify({
         request_id: requestId,
         status: "ok",
-        repetition_count: verdict.repetition_count,
+        exercise_id: definition.id,
+        metric: definition.metric,
+        value,
         source_seconds: Number(metadata.duration.toFixed(3)),
         processed_seconds: Number(metadata.duration.toFixed(3)),
         model_ms: modelMs,

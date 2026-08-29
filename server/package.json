@@ -1,5 +1,5 @@
 {
-  "name": "browser-restrictor-pushup-verifier",
+  "name": "browser-restrictor-exercise-verifier",
   "private": true,
   "type": "module",
   "scripts": {
