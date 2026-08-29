@@ -30,7 +30,7 @@ import com.michalkrsik.internetrestrictor.domain.ProtectionHealth
 import com.michalkrsik.internetrestrictor.domain.StateSnapshot
 import com.michalkrsik.internetrestrictor.domain.ThemePreference
 import com.michalkrsik.internetrestrictor.ui.dashboard.DashboardScreen
-import com.michalkrsik.internetrestrictor.ui.challenge.PushupChallengeActivity
+import com.michalkrsik.internetrestrictor.ui.challenge.ExerciseChallengeActivity
 import com.michalkrsik.internetrestrictor.ui.onboarding.OnboardingScreen
 import com.michalkrsik.internetrestrictor.ui.settings.SettingsScreen
 import com.michalkrsik.internetrestrictor.ui.theme.EditorialTheme
@@ -151,7 +151,7 @@ class MainActivity : ComponentActivity() {
                 snapshot = snapshot,
                 onOpenSettings = { destination = DESTINATION_SETTINGS },
                 onTestBrowser = ::launchBrowser,
-                onDoPushups = ::launchPushupChallenge,
+                onStartExercise = ::launchExerciseChallenge,
                 onHealthAction = { handleHealthAction(snapshot.enforcementHealth) },
             )
         }
@@ -218,8 +218,8 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun launchPushupChallenge() {
-        startActivity(Intent(this, PushupChallengeActivity::class.java))
+    private fun launchExerciseChallenge() {
+        startActivity(Intent(this, ExerciseChallengeActivity::class.java))
     }
 
     private fun openBrowserListing() {

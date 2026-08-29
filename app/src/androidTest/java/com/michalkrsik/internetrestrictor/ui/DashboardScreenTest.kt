@@ -49,6 +49,8 @@ class DashboardScreenTest {
 
         composeRule.onNodeWithText("Your week.").assertIsDisplayed()
         composeRule.onNodeWithText("4/5 push-ups").assertIsDisplayed()
+        composeRule.onNodeWithText("0/18s plank").assertIsDisplayed()
+        composeRule.onNodeWithText("0/10 machine reps").assertIsDisplayed()
         composeRule.onNodeWithText("EXPIRES IN").assertIsDisplayed()
         composeRule.onNodeWithText("MONDAY – SUNDAY").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Open settings").assertIsDisplayed()

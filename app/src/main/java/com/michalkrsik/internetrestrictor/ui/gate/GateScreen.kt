@@ -57,10 +57,13 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.michalkrsik.internetrestrictor.domain.GateMode
+import com.michalkrsik.internetrestrictor.domain.MACHINE_REPS_PER_SET
 import com.michalkrsik.internetrestrictor.domain.MINUTE_MS
+import com.michalkrsik.internetrestrictor.domain.PLANK_SECONDS_PER_SET
+import com.michalkrsik.internetrestrictor.domain.PUSHUPS_PER_SET
 import com.michalkrsik.internetrestrictor.domain.StateSnapshot
 import com.michalkrsik.internetrestrictor.domain.WaitCalculator
-import com.michalkrsik.internetrestrictor.domain.YOUTUBE_UNLOCK_PUSHUPS
+import com.michalkrsik.internetrestrictor.domain.YOUTUBE_UNLOCK_SETS
 import com.michalkrsik.internetrestrictor.ui.components.BudgetBar
 import com.michalkrsik.internetrestrictor.ui.components.PauseEmblem
 import com.michalkrsik.internetrestrictor.ui.components.formatCompactTime
@@ -73,7 +76,7 @@ import com.michalkrsik.internetrestrictor.ui.theme.editorialTitle
 data class GateActions(
     val onStartSession: (Long) -> Unit,
     val onEmergencySkip: () -> Unit,
-    val onPushupChallenge: () -> Unit,
+    val onExerciseChallenge: () -> Unit,
     val onTryAgain: () -> Unit,
     val onLeaveBrowser: () -> Unit,
 )
@@ -155,17 +158,17 @@ fun GateScreen(snapshot: StateSnapshot, actions: GateActions) {
                             actionInFlight = true
                             actions.onEmergencySkip()
                         },
-                        onPushupChallenge = {
+                        onExerciseChallenge = {
                             actionInFlight = true
-                            actions.onPushupChallenge()
+                            actions.onExerciseChallenge()
                         },
                     )
                     GateMode.OUT_OF_TIME, GateMode.OUT_OF_TIME_LATCHED -> OutOfTimeControls(
                         snapshot = snapshot,
                         actionInFlight = actionInFlight,
-                        onPushupChallenge = {
+                        onExerciseChallenge = {
                             actionInFlight = true
-                            actions.onPushupChallenge()
+                            actions.onExerciseChallenge()
                         },
                         onSkip = {
                             actionInFlight = true
@@ -179,9 +182,9 @@ fun GateScreen(snapshot: StateSnapshot, actions: GateActions) {
                     GateMode.YOUTUBE_LOCKED -> YouTubeLockedControls(
                         snapshot = snapshot,
                         actionInFlight = actionInFlight,
-                        onPushupChallenge = {
+                        onExerciseChallenge = {
                             actionInFlight = true
-                            actions.onPushupChallenge()
+                            actions.onExerciseChallenge()
                         },
                     )
                     else -> Unit
@@ -204,28 +207,42 @@ fun GateScreen(snapshot: StateSnapshot, actions: GateActions) {
 private fun YouTubeLockedControls(
     snapshot: StateSnapshot,
     actionInFlight: Boolean,
-    onPushupChallenge: () -> Unit,
+    onExerciseChallenge: () -> Unit,
 ) {
     Column(
         Modifier.padding(vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Button(
-            onClick = onPushupChallenge,
+            onClick = onExerciseChallenge,
             enabled = !actionInFlight,
             modifier = Modifier.fillMaxWidth().height(58.dp),
             shape = PillShape,
         ) {
-            Text("Do push-ups now", style = MaterialTheme.typography.labelLarge)
+            Text("Start exercise", style = MaterialTheme.typography.labelLarge)
         }
         Text(
-            "${snapshot.verifiedPushupsToday}/$YOUTUBE_UNLOCK_PUSHUPS complete today · " +
-                "unlocks YouTube until 04:00",
+            "${snapshot.earnedBudgetRoundsToday}/$YOUTUBE_UNLOCK_SETS sets today · unlocks until 04:00",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth(),
         )
+        Text(
+            "Each set earns +3 minutes",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text(
+            "5 push-ups · 18s plank · 10 machine reps",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        CarryOverRows(snapshot)
     }
 }
 
@@ -237,7 +254,7 @@ private fun PausedControls(
     actionInFlight: Boolean,
     onStart: () -> Unit,
     onSkip: () -> Unit,
-    onPushupChallenge: () -> Unit,
+    onExerciseChallenge: () -> Unit,
 ) {
     val waitMs = WaitCalculator.requiredFocusMs(selectedMinutes)
     Column(
@@ -269,7 +286,7 @@ private fun PausedControls(
         ) {
             Text("Begin $selectedMinutes minute session", style = MaterialTheme.typography.labelLarge)
         }
-        PushupButton(snapshot, actionInFlight, onPushupChallenge)
+        ExerciseButton(snapshot, actionInFlight, onExerciseChallenge)
         SkipButton(snapshot, actionInFlight, onSkip)
         Budgets(snapshot)
     }
@@ -388,7 +405,7 @@ private fun CountdownBudget(snapshot: StateSnapshot) {
 private fun OutOfTimeControls(
     snapshot: StateSnapshot,
     actionInFlight: Boolean,
-    onPushupChallenge: () -> Unit,
+    onExerciseChallenge: () -> Unit,
     onSkip: () -> Unit,
     onTryAgain: () -> Unit,
 ) {
@@ -397,7 +414,7 @@ private fun OutOfTimeControls(
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         Budgets(snapshot)
-        PushupButton(snapshot, actionInFlight, onPushupChallenge)
+        ExerciseButton(snapshot, actionInFlight, onExerciseChallenge)
         SkipButton(snapshot, actionInFlight, onSkip)
         Button(
             onClick = onTryAgain,
@@ -411,23 +428,58 @@ private fun OutOfTimeControls(
 }
 
 @Composable
-private fun PushupButton(snapshot: StateSnapshot, actionInFlight: Boolean, onClick: () -> Unit) {
+private fun ExerciseButton(snapshot: StateSnapshot, actionInFlight: Boolean, onClick: () -> Unit) {
     OutlinedButton(
         onClick = onClick,
         enabled = !actionInFlight,
-        modifier = Modifier.fillMaxWidth().height(58.dp),
+        modifier = Modifier.fillMaxWidth(),
         shape = PillShape,
         border = BorderStroke(1.dp, EditorialTheme.colors.hairline),
         colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Earn +3 minutes today", fontWeight = FontWeight.Bold)
+        Column(
+            modifier = Modifier.padding(vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text("Start exercise", fontWeight = FontWeight.Bold)
             Text(
-                "${snapshot.pushupRepetitionRemainderToday}/5 push-ups carried over · resets at 04:00",
+                "Each set earns +3 minutes",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            Text(
+                "5 push-ups · 18s plank · 10 machine reps",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            CarryOverRows(snapshot)
         }
+    }
+}
+
+@Composable
+internal fun CarryOverRows(snapshot: StateSnapshot) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(
+            "${snapshot.pushupRepetitionRemainderToday}/$PUSHUPS_PER_SET push-ups carried",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            "${snapshot.plankSecondRemainderToday}/${PLANK_SECONDS_PER_SET}s plank carried",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            "${snapshot.machineRepetitionRemainderToday}/$MACHINE_REPS_PER_SET machine reps carried",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -544,7 +596,7 @@ private fun headline(mode: GateMode): String = when (mode) {
     GateMode.PAUSED -> "Pause before browsing."
     GateMode.WAITING -> "Hang on a moment."
     GateMode.OUT_OF_TIME, GateMode.OUT_OF_TIME_LATCHED -> "Browser time is used up."
-    GateMode.YOUTUBE_LOCKED -> "Push-ups before YouTube."
+    GateMode.YOUTUBE_LOCKED -> "Exercise before YouTube."
     else -> "Browser"
 }
 
@@ -555,6 +607,6 @@ private fun supportingCopy(snapshot: StateSnapshot): String = when (snapshot.can
         "Your $minutes min session is opening soon."
     }
     GateMode.OUT_OF_TIME, GateMode.OUT_OF_TIME_LATCHED -> "Budget used. Try again after reset."
-    GateMode.YOUTUBE_LOCKED -> "Complete 20 verified push-ups to unlock it for the day."
+    GateMode.YOUTUBE_LOCKED -> "Any combination of 4 sets unlocks it until 04:00."
     else -> ""
 }

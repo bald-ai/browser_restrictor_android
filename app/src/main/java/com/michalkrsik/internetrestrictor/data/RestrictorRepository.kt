@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.core.DataStoreFactory
 import com.michalkrsik.internetrestrictor.domain.CommandResult
+import com.michalkrsik.internetrestrictor.domain.ExerciseId
 import com.michalkrsik.internetrestrictor.domain.ForegroundClass
 import com.michalkrsik.internetrestrictor.domain.GateMode
 import com.michalkrsik.internetrestrictor.domain.IdGenerator
@@ -223,10 +224,23 @@ class RestrictorRepository(
         )
     }
 
-    suspend fun recordPushupRepetitions(repetitions: Int): Boolean = command(clearOutOfTimeLatch = true) {
-        engine.recordPushupRepetitions(
+    suspend fun recordPushupRepetitions(repetitions: Int): Boolean =
+        recordVerifiedExercise(
+            verificationId = idGenerator.nextId(),
+            exerciseId = ExerciseId.PUSH_UP,
+            value = repetitions,
+        )
+
+    suspend fun recordVerifiedExercise(
+        verificationId: String,
+        exerciseId: ExerciseId,
+        value: Int,
+    ): Boolean = command(clearOutOfTimeLatch = true) {
+        engine.recordVerifiedExercise(
             input = persistedState,
-            repetitions = repetitions.toLong(),
+            verificationId = verificationId,
+            exerciseId = exerciseId,
+            value = value.toLong(),
             nowWallMs = timeSource.wallTimeMs(),
             zoneId = timeSource.zoneId(),
         )
@@ -592,9 +606,11 @@ class RestrictorRepository(
             before.activeUnlock == null && after.activeUnlock?.source?.name == "EMERGENCY" ->
                 diagnosticSink("Emergency skip granted")
             before.dailyCounter.earnedBudgetRounds < after.dailyCounter.earnedBudgetRounds ->
-                diagnosticSink("Push-up repetitions added budget for today")
-            before.dailyCounter.pushupRepetitionRemainder != after.dailyCounter.pushupRepetitionRemainder ->
-                diagnosticSink("Partial push-up progress saved for today")
+                diagnosticSink("Exercise sets added budget for today")
+            before.dailyCounter.pushupRepetitionRemainder != after.dailyCounter.pushupRepetitionRemainder ||
+                before.dailyCounter.plankSecondRemainder != after.dailyCounter.plankSecondRemainder ||
+                before.dailyCounter.machineRepetitionRemainder != after.dailyCounter.machineRepetitionRemainder ->
+                diagnosticSink("Partial exercise progress saved for today")
             before.settings != after.settings -> diagnosticSink("Settings changed")
         }
     }

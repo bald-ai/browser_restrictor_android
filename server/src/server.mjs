@@ -6,13 +6,18 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
+  CLASSIFIER_EXERCISE_IDS,
+  DENSIFY_FACTOR,
+  classifierPrompt,
+  classifierUserPrompt,
+  expectedMetricForExercise,
   exerciseIsReady,
   getExerciseDefinition,
   publicExerciseCatalog,
 } from "./exercises.mjs";
 
 const MODEL = "google/gemini-3.7-flash";
-const MAX_VIDEO_BYTES = 40 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 75 * 1024 * 1024;
 const MAX_REQUEST_BYTES = MAX_VIDEO_BYTES + 1024 * 1024;
 const MAX_SOURCE_SECONDS = 30.5;
 const MODEL_SAMPLE_FPS = 4;
@@ -79,7 +84,7 @@ function parseMultipartParts(body, contentType) {
   return parts;
 }
 
-export function parseExerciseMultipart(body, contentType, { defaultExerciseId = null } = {}) {
+export function parseExerciseMultipart(body, contentType, { defaultExerciseId = null, requireExerciseId = true } = {}) {
   const parts = parseMultipartParts(body, contentType);
   const videos = parts.filter((part) => part.name === "video");
   if (videos.length !== 1) throw new HttpError(400, "Expected one multipart video field");
@@ -97,8 +102,8 @@ export function parseExerciseMultipart(body, contentType, { defaultExerciseId = 
     throw new HttpError(400, "Invalid exercise_id");
   }
   const exerciseId = suppliedExerciseId || defaultExerciseId;
-  if (!exerciseId) throw new HttpError(400, "Missing multipart exercise_id field");
-  return { exerciseId, video: videoPart.value };
+  if (requireExerciseId && !exerciseId) throw new HttpError(400, "Missing multipart exercise_id field");
+  return { exerciseId: exerciseId ?? null, video: videoPart.value };
 }
 
 export function parseMultipartVideo(body, contentType) {
@@ -194,17 +199,55 @@ export function validateVerdict(value, definition = getExerciseDefinition("push_
   return value;
 }
 
-async function callOpenRouter(videoPath, apiKey, definition) {
+export function validateClassifierVerdict(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid verdict object");
+  const keys = Object.keys(value).sort();
+  if (keys.join(",") !== ["exercise_id", "metric", "reason", "value"].join(",")) {
+    throw new Error("Unexpected verdict fields");
+  }
+  if (!CLASSIFIER_EXERCISE_IDS.includes(value.exercise_id)) throw new Error("Invalid exercise_id");
+  const expectedMetric = expectedMetricForExercise(value.exercise_id);
+  if (value.metric !== expectedMetric) throw new Error("Verification metric does not match exercise");
+  if (!Number.isInteger(value.value) || value.value < 0 || value.value > 1000) {
+    throw new Error("Invalid value");
+  }
+  if (value.exercise_id === "unsupported" && value.value !== 0) throw new Error("Unsupported clips must return value 0");
+  if (typeof value.reason !== "string" || value.reason.length > 2000) throw new Error("Invalid reason");
+  return value;
+}
+
+export function normalizeClassifierVerdict(value) {
+  const verdict = validateClassifierVerdict(value);
+  if (verdict.exercise_id !== "plank") return verdict;
+  return {
+    ...verdict,
+    value: Math.round(verdict.value / DENSIFY_FACTOR),
+  };
+}
+
+const classifierSchema = Object.freeze({
+  type: "object",
+  properties: {
+    exercise_id: { type: "string", enum: [...CLASSIFIER_EXERCISE_IDS] },
+    metric: { type: "string", enum: ["repetitions", "hold_seconds", "none"] },
+    value: { type: "integer", minimum: 0 },
+    reason: { type: "string" },
+  },
+  required: ["exercise_id", "metric", "value", "reason"],
+  additionalProperties: false,
+});
+
+async function callOpenRouter(videoPath, apiKey, request) {
   const video = await fs.readFile(videoPath);
   const payload = {
     model: MODEL,
     messages: [
-      { role: "system", content: definition.systemPrompt },
+      { role: "system", content: request.systemPrompt },
       {
         role: "user",
         content: [
           { type: "video_url", video_url: { url: `data:video/mp4;base64,${video.toString("base64")}` } },
-          { type: "text", text: definition.userPrompt },
+          { type: "text", text: request.userPrompt },
         ],
       },
     ],
@@ -213,18 +256,9 @@ async function callOpenRouter(videoPath, apiKey, definition) {
     response_format: {
       type: "json_schema",
       json_schema: {
-        name: definition.schemaName,
+        name: request.schemaName,
         strict: true,
-        schema: {
-          type: "object",
-          properties: {
-            confidence: { type: "number", minimum: 0, maximum: 1 },
-            [definition.resultField]: { type: "integer", minimum: 0 },
-            reason: { type: "string" },
-          },
-          required: ["confidence", definition.resultField, "reason"],
-          additionalProperties: false,
-        },
+        schema: request.schema,
       },
     },
     provider: { require_parameters: true, zdr: true },
@@ -253,7 +287,7 @@ async function callOpenRouter(videoPath, apiKey, definition) {
   try {
     const envelope = JSON.parse(text);
     if (envelope.choices?.[0]?.finish_reason !== "stop") throw new Error("Incomplete model response");
-    const verdict = validateVerdict(JSON.parse(envelope.choices[0].message.content), definition);
+    const verdict = request.validate(JSON.parse(envelope.choices[0].message.content));
     return {
       verdict,
       diagnostics: {
@@ -266,6 +300,33 @@ async function callOpenRouter(videoPath, apiKey, definition) {
     throw new HttpError(502, "Verification model returned an invalid result");
   }
 }
+
+function legacyPushupModelRequest(definition) {
+  return {
+    systemPrompt: definition.systemPrompt,
+    userPrompt: definition.userPrompt,
+    schemaName: definition.schemaName,
+    schema: {
+      type: "object",
+      properties: {
+        confidence: { type: "number", minimum: 0, maximum: 1 },
+        [definition.resultField]: { type: "integer", minimum: 0 },
+        reason: { type: "string" },
+      },
+      required: ["confidence", definition.resultField, "reason"],
+      additionalProperties: false,
+    },
+    validate: (value) => validateVerdict(value, definition),
+  };
+}
+
+const classifierModelRequest = Object.freeze({
+  systemPrompt: classifierPrompt,
+  userPrompt: classifierUserPrompt,
+  schemaName: "exercise_classification",
+  schema: classifierSchema,
+  validate: normalizeClassifierVerdict,
+});
 
 async function cleanupStaleDirectories() {
   const parent = os.tmpdir();
@@ -312,17 +373,10 @@ export function createServer({ apiKey, sharedSecret }) {
       const body = await readBoundedBody(req, MAX_REQUEST_BYTES);
       const upload = parseExerciseMultipart(body, req.headers["content-type"], {
         defaultExerciseId: legacyPushupRequest ? "push_up" : null,
+        requireExerciseId: legacyPushupRequest,
       });
       if (legacyPushupRequest && upload.exerciseId !== "push_up") {
         throw new HttpError(400, "The legacy endpoint accepts only push_up");
-      }
-      const definition = getExerciseDefinition(upload.exerciseId);
-      if (!definition) throw new HttpError(400, "Unknown exercise_id");
-      if (!exerciseIsReady(definition)) {
-        throw new HttpError(
-          409,
-          `Exercise verification is not ready: ${definition.pending.join(", ")}`,
-        );
       }
       tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), TEMP_PREFIX));
       const inputPath = path.join(tempDirectory, "input.mp4");
@@ -331,36 +385,56 @@ export function createServer({ apiKey, sharedSecret }) {
       const metadata = await inspectVideo(inputPath);
       await prepareVideo(inputPath, outputPath);
       const modelStartedAt = performance.now();
-      const { verdict, diagnostics } = await callOpenRouter(outputPath, apiKey, definition);
-      const modelMs = Math.round(performance.now() - modelStartedAt);
-      const value = verdict[definition.resultField];
-      const commonResponse = {
-        is_success: value >= definition.minimumSuccessValue,
-        confidence: verdict.confidence,
-        reason: verdict.reason,
-      };
-      const response = legacyPushupRequest ? {
-        ...commonResponse,
-        repetition_count: value,
-      } : {
-        ...commonResponse,
-        exercise_id: definition.id,
-        metric: definition.metric,
-        value,
-      };
+      if (legacyPushupRequest) {
+        const definition = getExerciseDefinition("push_up");
+        if (!exerciseIsReady(definition)) {
+          throw new HttpError(409, `Exercise verification is not ready: ${definition.pending.join(", ")}`);
+        }
+        const { verdict, diagnostics } = await callOpenRouter(
+          outputPath,
+          apiKey,
+          legacyPushupModelRequest(definition),
+        );
+        const value = verdict[definition.resultField];
+        console.log(JSON.stringify({
+          request_id: requestId,
+          status: "ok",
+          exercise_id: definition.id,
+          metric: definition.metric,
+          value,
+          source_seconds: Number(metadata.duration.toFixed(3)),
+          processed_seconds: Number(metadata.duration.toFixed(3)),
+          model_ms: Math.round(performance.now() - modelStartedAt),
+          total_ms: Math.round(performance.now() - startedAt),
+          ...diagnostics,
+        }));
+        return json(res, 200, {
+          is_success: value >= definition.unitsPerSet,
+          confidence: verdict.confidence,
+          reason: verdict.reason,
+          repetition_count: value,
+        });
+      }
+
+      const { verdict, diagnostics } = await callOpenRouter(outputPath, apiKey, classifierModelRequest);
       console.log(JSON.stringify({
         request_id: requestId,
         status: "ok",
-        exercise_id: definition.id,
-        metric: definition.metric,
-        value,
+        exercise_id: verdict.exercise_id,
+        metric: verdict.metric,
+        value: verdict.value,
         source_seconds: Number(metadata.duration.toFixed(3)),
         processed_seconds: Number(metadata.duration.toFixed(3)),
-        model_ms: modelMs,
+        model_ms: Math.round(performance.now() - modelStartedAt),
         total_ms: Math.round(performance.now() - startedAt),
         ...diagnostics,
       }));
-      return json(res, 200, response);
+      return json(res, 200, {
+        exercise_id: verdict.exercise_id,
+        metric: verdict.metric,
+        value: verdict.value,
+        reason: verdict.reason,
+      });
     } catch (error) {
       const status = error instanceof HttpError ? error.status : 500;
       console.error(JSON.stringify({

@@ -132,12 +132,12 @@ private fun DefaultsStep() {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         InfoCard("Daily budget", "Every local day starts at zero minutes. Spendable budget resets again at 20:00.")
-        InfoCard("Earn more", "Every five verified push-ups add 3 minutes. Partial groups carry across videos until 04:00.")
-        InfoCard("Monthly history", "Every verified push-up is counted in permanent 9th-to-9th monthly history.")
+        InfoCard("Earn more", "Each completed set earns +3 minutes. 5 push-ups, 18s plank, or 10 machine reps make a set. Surplus carries across videos until 04:00.")
+        InfoCard("Monthly history", "Every verified push-up is counted in permanent 9th-to-9th monthly history. Plank and machine work stay off that ledger.")
         InfoCard("Sessions", "Choose 3, 5, or 10 minutes by default. You can customize all three presets in Settings. Every normal opening has one fixed 12-second focused wait.")
         InfoCard(
             "Emergency unlock",
-            "Each day starts with none. Your first completed five-push-up group earns one 15-minute emergency unlock for that day.",
+            "Each day starts with none. Your first completed exercise set earns one 15-minute emergency unlock for that day.",
         )
     }
 }

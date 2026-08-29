@@ -20,8 +20,8 @@ import com.michalkrsik.internetrestrictor.domain.StateSnapshot
 import com.michalkrsik.internetrestrictor.overlay.BadgeOverlayController
 import com.michalkrsik.internetrestrictor.overlay.GateOverlayController
 import com.michalkrsik.internetrestrictor.overlay.OverlayCoordinator
-import com.michalkrsik.internetrestrictor.ui.challenge.PushupChallengeActivity
-import com.michalkrsik.internetrestrictor.ui.challenge.PushupChallengeVisibility
+import com.michalkrsik.internetrestrictor.ui.challenge.ExerciseChallengeActivity
+import com.michalkrsik.internetrestrictor.ui.challenge.ExerciseChallengeVisibility
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -77,7 +77,7 @@ class ChromeAccessibilityService : AccessibilityService() {
             windowManager = windowManager,
             repository = repository,
             scope = serviceScope,
-            onPushupChallenge = ::openPushupChallenge,
+            onExerciseChallenge = ::openExerciseChallenge,
             onLeaveBrowser = ::leaveBrowser,
             onFocusChanged = ::onGateFocusChanged,
             onAttachFailure = ::onOverlayAttachFailure,
@@ -170,7 +170,7 @@ class ChromeAccessibilityService : AccessibilityService() {
         renderJob = serviceScope.launch {
             combine(
                 repository.snapshot,
-                PushupChallengeVisibility.active,
+                ExerciseChallengeVisibility.active,
             ) { snapshot, challengeActive -> snapshot to challengeActive }
                 .collect { (snapshot, challengeActive) ->
                 overlayCoordinator.render(targetFor(snapshot, challengeActive))
@@ -240,13 +240,13 @@ class ChromeAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun openPushupChallenge() {
-        eventLog.record("Push-up challenge requested")
-        PushupChallengeVisibility.prepareLaunch()
-        val intent = Intent(this, PushupChallengeActivity::class.java).apply {
+    private fun openExerciseChallenge() {
+        eventLog.record("Exercise challenge requested")
+        ExerciseChallengeVisibility.prepareLaunch()
+        val intent = Intent(this, ExerciseChallengeActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             foregroundMonitor.lastProtectedPackageName?.let { packageName ->
-                putExtra(PushupChallengeActivity.EXTRA_RETURN_PACKAGE, packageName)
+                putExtra(ExerciseChallengeActivity.EXTRA_RETURN_PACKAGE, packageName)
             }
         }
         try {
@@ -258,15 +258,15 @@ class ChromeAccessibilityService : AccessibilityService() {
             challengeLaunchWatchdogJob?.cancel()
             challengeLaunchWatchdogJob = serviceScope.launch {
                 delay(CHALLENGE_LAUNCH_TIMEOUT_MS)
-                if (!PushupChallengeVisibility.activityStarted.value) {
-                    eventLog.record("Push-up challenge did not become visible; gate restored")
-                    PushupChallengeVisibility.cancelLaunch()
+                if (!ExerciseChallengeVisibility.activityStarted.value) {
+                    eventLog.record("Exercise challenge did not become visible; gate restored")
+                    ExerciseChallengeVisibility.cancelLaunch()
                     renderCurrentOverlayState()
                 }
             }
         } catch (error: Exception) {
-            eventLog.record("Push-up challenge launch failed: ${error.javaClass.simpleName}")
-            PushupChallengeVisibility.cancelLaunch()
+            eventLog.record("Exercise challenge launch failed: ${error.javaClass.simpleName}")
+            ExerciseChallengeVisibility.cancelLaunch()
             renderCurrentOverlayState()
         }
     }
@@ -376,7 +376,7 @@ class ChromeAccessibilityService : AccessibilityService() {
 
     private fun renderCurrentOverlayState() {
         if (!::overlayCoordinator.isInitialized) return
-        val challengeActive = PushupChallengeVisibility.active.value
+        val challengeActive = ExerciseChallengeVisibility.active.value
         overlayCoordinator.render(targetFor(repository.snapshot.value, challengeActive))
     }
 

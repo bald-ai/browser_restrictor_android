@@ -63,10 +63,14 @@ import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
 import com.michalkrsik.internetrestrictor.BuildConfig
 import com.michalkrsik.internetrestrictor.appContainer
-import com.michalkrsik.internetrestrictor.domain.PUSHUP_BUDGET_REWARD_MINUTES
+import com.michalkrsik.internetrestrictor.domain.EXERCISE_SET_REWARD_MINUTES
+import com.michalkrsik.internetrestrictor.domain.ExerciseId
+import com.michalkrsik.internetrestrictor.domain.ExercisePolicies
 import com.michalkrsik.internetrestrictor.domain.SUPPORTED_BROWSERS
+import com.michalkrsik.internetrestrictor.domain.StateSnapshot
 import com.michalkrsik.internetrestrictor.domain.YOUTUBE_PACKAGE_NAME
-import com.michalkrsik.internetrestrictor.domain.YOUTUBE_UNLOCK_PUSHUPS
+import com.michalkrsik.internetrestrictor.domain.YOUTUBE_UNLOCK_SETS
+import com.michalkrsik.internetrestrictor.domain.accumulateExerciseUnits
 import com.michalkrsik.internetrestrictor.domain.isProtectedTargetPackage
 import com.michalkrsik.internetrestrictor.ui.theme.EditorialTheme
 import com.michalkrsik.internetrestrictor.ui.theme.PillShape
@@ -76,14 +80,14 @@ import java.io.File
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class PushupChallengeActivity : ComponentActivity() {
+class ExerciseChallengeActivity : ComponentActivity() {
     private val handler = Handler(Looper.getMainLooper())
-    private lateinit var exercise: ExerciseChallengeSpec
     private lateinit var previewView: PreviewView
     private var cameraProvider: ProcessCameraProvider? = null
     private var previewUseCase: Preview? = null
@@ -94,7 +98,7 @@ class PushupChallengeActivity : ComponentActivity() {
     private var phase by mutableStateOf(ChallengePhase.PREPARING)
     private var status by mutableStateOf("Preparing camera…")
     private var recordingSecondsRemaining by mutableIntStateOf(
-        ExerciseChallengeCatalog.default.recordingLimitSeconds,
+        ExerciseChallengeCatalog.RECORDING_LIMIT_SECONDS,
     )
     private var lensFacing by mutableIntStateOf(CameraSelector.LENS_FACING_FRONT)
     private var hasFrontCamera by mutableStateOf(false)
@@ -134,10 +138,7 @@ class PushupChallengeActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val requestedExerciseId = intent.getStringExtra(EXTRA_EXERCISE_ID)
-        val requestedExercise = ExerciseChallengeCatalog.resolve(requestedExerciseId)
-        exercise = requestedExercise ?: ExerciseChallengeCatalog.default
-        recordingSecondsRemaining = exercise.recordingLimitSeconds
+        recordingSecondsRemaining = ExerciseChallengeCatalog.RECORDING_LIMIT_SECONDS
         WindowCompat.setDecorFitsSystemWindows(window, false)
         previewView = PreviewView(this).apply {
             scaleType = PreviewView.ScaleType.FILL_CENTER
@@ -146,29 +147,19 @@ class PushupChallengeActivity : ComponentActivity() {
         setContent {
             val snapshot by appContainer.repository.snapshot.collectAsState()
             RestrictorTheme(snapshot.settings.theme) {
-                PushupChallengeScreen()
+                ExerciseChallengeScreen()
             }
-        }
-        if (requestedExerciseId != null && requestedExercise == null) {
-            phase = ChallengePhase.ERROR
-            status = "Unknown exercise challenge."
-            return
-        }
-        if (!exercise.launchReady) {
-            phase = ChallengePhase.ERROR
-            status = "${exercise.displayName} verification is waiting for its example video and reward policy."
-            return
         }
         ensureCameraPermission()
     }
 
     override fun onStart() {
         super.onStart()
-        PushupChallengeVisibility.onActivityStarted()
+        ExerciseChallengeVisibility.onActivityStarted()
     }
 
     override fun onStop() {
-        PushupChallengeVisibility.onActivityStopped()
+        ExerciseChallengeVisibility.onActivityStopped()
         super.onStop()
     }
 
@@ -194,7 +185,7 @@ class PushupChallengeActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun PushupChallengeScreen() {
+    private fun ExerciseChallengeScreen() {
         val isLandscape =
             LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
         Surface(
@@ -222,8 +213,15 @@ class PushupChallengeActivity : ComponentActivity() {
         ) {
             ChallengeTopRow()
             Text(
-                text = exercise.rewardHeadline ?: exercise.displayName,
+                text = ExerciseChallengeCatalog.REWARD_COPY,
                 style = MaterialTheme.typography.headlineMedium,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                text = ExerciseChallengeCatalog.EQUIVALENCE_COPY,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center,
             )
@@ -254,8 +252,15 @@ class PushupChallengeActivity : ComponentActivity() {
             ) {
                 ChallengeTopRow()
                 Text(
-                    text = exercise.rewardHeadline ?: exercise.displayName,
+                    text = ExerciseChallengeCatalog.REWARD_COPY,
                     style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center,
+                )
+                Text(
+                    text = ExerciseChallengeCatalog.EQUIVALENCE_COPY,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.fillMaxWidth(),
                     textAlign = TextAlign.Center,
                 )
@@ -307,7 +312,7 @@ class PushupChallengeActivity : ComponentActivity() {
     @Composable
     private fun InstructionText() {
         Text(
-            text = exercise.cameraInstruction.orEmpty(),
+            text = ExerciseChallengeCatalog.CAMERA_INSTRUCTION,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.fillMaxWidth(),
@@ -362,7 +367,7 @@ class PushupChallengeActivity : ComponentActivity() {
         ) {
             Text(
                 when (phase) {
-                    ChallengePhase.READY -> "Start recording"
+                    ChallengePhase.READY -> "Start exercise"
                     ChallengePhase.RECORDING -> "Finish recording"
                     ChallengePhase.CHECKING -> "Checking video…"
                     ChallengePhase.RETRY -> "Record again"
@@ -472,16 +477,17 @@ class PushupChallengeActivity : ComponentActivity() {
         val capture = videoCapture ?: return
         if (BuildConfig.VERIFY_URL.isBlank() || BuildConfig.VERIFY_SHARED_SECRET.isBlank()) {
             phase = ChallengePhase.ERROR
-            status = "${exercise.displayName} verification is not configured."
+            status = "Exercise verification is not configured."
             return
         }
 
         discardFinalize = false
-        recordingSecondsRemaining = exercise.recordingLimitSeconds
+        recordingSecondsRemaining = ExerciseChallengeCatalog.RECORDING_LIMIT_SECONDS
         recordingStartedElapsedMs = SystemClock.elapsedRealtime()
         phase = ChallengePhase.RECORDING
         status = "Recording…"
         val outputFile = File(cacheDir, "exercise_challenge_${System.currentTimeMillis()}.mp4")
+        val verificationId = UUID.randomUUID().toString()
         val outputOptions = FileOutputOptions.Builder(outputFile).build()
         activeRecording = capture.output
             .prepareRecording(this, outputOptions)
@@ -497,7 +503,7 @@ class PushupChallengeActivity : ComponentActivity() {
                     Log.e(TAG, "Recording failed: ${event.error}")
                     showRetry("Recording failed. Try again.")
                 } else {
-                    checkVideo(outputFile)
+                    checkVideo(outputFile, verificationId)
                 }
             }
         handler.post(recordingTicker)
@@ -513,9 +519,9 @@ class PushupChallengeActivity : ComponentActivity() {
         activeRecording?.stop()
     }
 
-    private fun checkVideo(videoFile: File) {
+    private fun checkVideo(videoFile: File, verificationId: String) {
         phase = ChallengePhase.CHECKING
-        status = "Checking ${exercise.displayName.lowercase()}…"
+        status = "Checking exercise…"
         lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
                 try {
@@ -524,7 +530,6 @@ class PushupChallengeActivity : ComponentActivity() {
                             videoFile = videoFile,
                             verifyUrl = BuildConfig.VERIFY_URL,
                             sharedSecret = BuildConfig.VERIFY_SHARED_SECRET,
-                            exercise = exercise,
                         )
                     }
                 } finally {
@@ -533,67 +538,71 @@ class PushupChallengeActivity : ComponentActivity() {
             }
             result.fold(
                 onSuccess = onSuccess@{ verdict ->
-                    if (verdict.exerciseId != ExerciseId.PUSH_UP) {
-                        showRetry("${exercise.displayName} reward policy is not configured.")
+                    val policy = ExercisePolicies.find(verdict.exerciseId)
+                    if (verdict.exerciseId == ExerciseId.UNSUPPORTED || policy == null) {
+                        appContainer.eventLog.record(
+                            "Exercise video was unsupported: ${verdict.reason}",
+                        )
+                        showRetry("No supported exercise detected: ${verdict.reason}")
                         return@onSuccess
                     }
-                    if (verdict.value > 0) {
-                        val previous = appContainer.repository.snapshot.value
-                        val saved = appContainer.repository.recordPushupRepetitions(verdict.value)
-                        if (saved) {
-                            val updated = appContainer.repository.snapshot.value
-                            val priorRemainder = if (
-                                previous.todayUsageReport.localDayKey == updated.todayUsageReport.localDayKey
-                            ) {
-                                previous.pushupRepetitionRemainderToday
-                            } else {
-                                0L
-                            }
-                            val newlyEarnedRounds = (
-                                priorRemainder + verdict.value
-                            ) / REQUIRED_PUSHUPS
-                            val earnedMinutes = newlyEarnedRounds * PUSHUP_BUDGET_REWARD_MINUTES
-                            appContainer.eventLog.record(
-                                "Push-up video counted ${verdict.value} reps; " +
-                                    "$earnedMinutes daily budget minutes earned; " +
-                                    "${updated.pushupRepetitionRemainderToday} reps carried",
-                            )
-                            val baseResultMessage = formatPushupResult(
-                                repetitionCount = verdict.value,
-                                earnedMinutes = earnedMinutes,
-                                carriedRepetitions = updated.pushupRepetitionRemainderToday,
-                            )
-                            val returningToYoutube =
-                                intent.getStringExtra(EXTRA_RETURN_PACKAGE) == YOUTUBE_PACKAGE_NAME
-                            val youtubeUnlocked =
-                                updated.verifiedPushupsToday >= YOUTUBE_UNLOCK_PUSHUPS
-                            val resultMessage = when {
-                                returningToYoutube && youtubeUnlocked ->
-                                    "$baseResultMessage · YouTube unlocked until 04:00"
-                                returningToYoutube ->
-                                    "$baseResultMessage · ${updated.verifiedPushupsToday}/" +
-                                        "$YOUTUBE_UNLOCK_PUSHUPS toward YouTube"
-                                else -> baseResultMessage
-                            }
-                            if (shouldReturnAfterPushupResult(
-                                returningToYoutube = returningToYoutube,
-                                youtubeUnlocked = youtubeUnlocked,
-                                newlyEarnedRounds = newlyEarnedRounds,
-                            )) {
-                                showResultAndReturn(resultMessage)
-                            } else {
-                                showRetry(resultMessage)
-                            }
-                        } else {
-                            showRetry("Push-ups were counted, but the progress could not be saved.")
-                        }
-                    } else {
+                    if (verdict.value <= 0) {
                         appContainer.eventLog.record(
-                            "Push-up video had no countable repetitions",
+                            "${policy.displayName} video had no countable ${policy.remainderNounPlural}",
                         )
-                        showRetry(
-                            "No push-ups counted: ${verdict.reason}",
-                        )
+                        showRetry("No ${policy.displayName.lowercase()} counted: ${verdict.reason}")
+                        return@onSuccess
+                    }
+                    val previous = appContainer.repository.snapshot.value
+                    val saved = appContainer.repository.recordVerifiedExercise(
+                        verificationId,
+                        verdict.exerciseId,
+                        verdict.value,
+                    )
+                    if (!saved) {
+                        showRetry("${policy.displayName} were counted, but the progress could not be saved.")
+                        return@onSuccess
+                    }
+                    val updated = appContainer.repository.snapshot.value
+                    val priorRemainder = previousRemainderFor(previous, updated, verdict.exerciseId)
+                    val newlyEarnedRounds = accumulateExerciseUnits(
+                        previousRemainder = priorRemainder,
+                        added = verdict.value.toLong(),
+                        unitsPerSet = policy.unitsPerSet,
+                    ).completedSets
+                    val earnedMinutes = newlyEarnedRounds * EXERCISE_SET_REWARD_MINUTES
+                    val carried = updated.remainderFor(verdict.exerciseId)
+                    appContainer.eventLog.record(
+                        "${policy.displayName} video measured ${verdict.value}; " +
+                            "$earnedMinutes daily budget minutes earned; " +
+                            "$carried ${policy.remainderNounPlural} carried",
+                    )
+                    val baseResultMessage = formatExerciseResult(
+                        exerciseId = verdict.exerciseId,
+                        measuredValue = verdict.value,
+                        completedSets = newlyEarnedRounds,
+                        remainder = carried,
+                    )
+                    val returningToYoutube =
+                        intent.getStringExtra(EXTRA_RETURN_PACKAGE) == YOUTUBE_PACKAGE_NAME
+                    val youtubeUnlocked =
+                        updated.earnedBudgetRoundsToday >= YOUTUBE_UNLOCK_SETS
+                    val resultMessage = when {
+                        returningToYoutube && youtubeUnlocked ->
+                            "$baseResultMessage · YouTube unlocked until 04:00"
+                        returningToYoutube ->
+                            "$baseResultMessage · ${updated.earnedBudgetRoundsToday}/" +
+                                "$YOUTUBE_UNLOCK_SETS toward YouTube"
+                        else -> baseResultMessage
+                    }
+                    if (shouldReturnAfterExerciseResult(
+                        returningToYoutube = returningToYoutube,
+                        youtubeUnlocked = youtubeUnlocked,
+                        newlyEarnedRounds = newlyEarnedRounds,
+                    )) {
+                        showResultAndReturn(resultMessage)
+                    } else {
+                        showRetry(resultMessage)
                     }
                 },
                 onFailure = { error ->
@@ -624,22 +633,16 @@ class PushupChallengeActivity : ComponentActivity() {
         videoFile: File,
         verifyUrl: String,
         sharedSecret: String,
-        exercise: ExerciseChallengeSpec,
     ): ExerciseVerificationResult {
         val boundary = "browser-restrictor-${System.currentTimeMillis()}"
-        val exercisePart = (
-            "--$boundary\r\n" +
-                "Content-Disposition: form-data; name=\"exercise_id\"\r\n\r\n" +
-                "${exercise.id.wireId}\r\n"
-        ).toByteArray(Charsets.UTF_8)
         val videoPart = (
             "--$boundary\r\n" +
                 "Content-Disposition: form-data; name=\"video\"; filename=\"challenge.mp4\"\r\n" +
                 "Content-Type: video/mp4\r\n\r\n"
         ).toByteArray(Charsets.UTF_8)
         val suffix = "\r\n--$boundary--\r\n".toByteArray(Charsets.UTF_8)
-        val contentLength = exercisePart.size.toLong() + videoPart.size + videoFile.length() + suffix.size
-        val endpointUrl = verificationUrlForExercise(verifyUrl, exercise.id)
+        val contentLength = videoPart.size.toLong() + videoFile.length() + suffix.size
+        val endpointUrl = verificationUrl(verifyUrl)
         val connection = (URL(endpointUrl).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 30_000
@@ -651,7 +654,6 @@ class PushupChallengeActivity : ComponentActivity() {
         }
         try {
             connection.outputStream.buffered().use { output ->
-                output.write(exercisePart)
                 output.write(videoPart)
                 videoFile.inputStream().buffered().use { input -> input.copyTo(output) }
                 output.write(suffix)
@@ -660,7 +662,7 @@ class PushupChallengeActivity : ComponentActivity() {
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
             val body = stream?.let { BufferedReader(InputStreamReader(it)).use(BufferedReader::readText) }.orEmpty()
             if (code !in 200..299) throw IllegalStateException("Verification HTTP $code")
-            return parseExerciseVerificationResult(body, exercise)
+            return parseExerciseVerificationResult(body)
         } finally {
             connection.disconnect()
         }
@@ -697,31 +699,58 @@ class PushupChallengeActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_RETURN_PACKAGE = "return_package"
-        const val EXTRA_EXERCISE_ID = "exercise_id"
-        private const val TAG = "PushupChallenge"
+        private const val TAG = "ExerciseChallenge"
         const val MODEL = "google/gemini-3.7-flash"
-        private const val REQUIRED_PUSHUPS = 5
         private const val RESULT_DISPLAY_MS = 2_000L
     }
 
     private val maxRecordingMs: Long
-        get() = exercise.recordingLimitSeconds * 1_000L
+        get() = ExerciseChallengeCatalog.RECORDING_LIMIT_SECONDS * 1_000L
 }
 
-internal fun formatPushupResult(
-    repetitionCount: Int,
-    earnedMinutes: Long,
-    carriedRepetitions: Long,
-): String = "$repetitionCount push-ups counted · $earnedMinutes minutes granted · " +
-    "$carriedRepetitions/5 carried over"
+internal fun formatExerciseResult(
+    exerciseId: ExerciseId,
+    measuredValue: Int,
+    completedSets: Long,
+    remainder: Long,
+): String {
+    val policy = ExercisePolicies.find(exerciseId)
+    val detected = "${policy?.resultLabel ?: "Exercise"} detected"
+    val measurementText = if (exerciseId == ExerciseId.PLANK) {
+        "$measuredValue ${if (measuredValue == 1) "second" else "seconds"}"
+    } else {
+        "$measuredValue ${if (measuredValue == 1) "repetition" else "repetitions"}"
+    }
+    val setWord = if (completedSets == 1L) "set" else "sets"
+    val carriedNoun = policy?.let {
+        if (remainder == 1L) it.remainderNounSingular else it.remainderNounPlural
+    } ?: if (remainder == 1L) "unit" else "units"
+    return "$detected · $measurementText · $completedSets $setWord earned · $remainder $carriedNoun carried"
+}
 
-internal fun shouldReturnAfterPushupResult(
+internal fun shouldReturnAfterExerciseResult(
     returningToYoutube: Boolean,
     youtubeUnlocked: Boolean,
     newlyEarnedRounds: Long,
 ): Boolean = newlyEarnedRounds > 0 && (!returningToYoutube || youtubeUnlocked)
 
-internal object PushupChallengeVisibility {
+internal fun StateSnapshot.remainderFor(id: ExerciseId): Long = when (id) {
+    ExerciseId.PUSH_UP -> pushupRepetitionRemainderToday
+    ExerciseId.PLANK -> plankSecondRemainderToday
+    ExerciseId.OUTDOOR_LAT_PULLDOWN -> machineRepetitionRemainderToday
+    ExerciseId.SIT_UP, ExerciseId.UNSUPPORTED -> 0
+}
+
+private fun previousRemainderFor(
+    previous: StateSnapshot,
+    updated: StateSnapshot,
+    exerciseId: ExerciseId,
+): Long {
+    val sameDay = previous.todayUsageReport.localDayKey == updated.todayUsageReport.localDayKey
+    return if (sameDay) previous.remainderFor(exerciseId) else 0L
+}
+
+internal object ExerciseChallengeVisibility {
     val active = MutableStateFlow(false)
     val activityStarted = MutableStateFlow(false)
 
