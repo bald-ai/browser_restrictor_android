@@ -421,6 +421,29 @@ class RestrictionEngineTest {
     }
 
     @Test
+    fun expiredUnlockRecordDoesNotHideEarnedEmergencySkip() {
+        val base = initial()
+        val state = base.copy(
+            dailyCounter = base.dailyCounter.copy(
+                earnedBudgetRounds = 1,
+                spendableBudgetRounds = 0,
+            ),
+            activeUnlock = UnlockSession(
+                id = "expired-normal",
+                source = UnlockSource.NORMAL,
+                grantedAtWallMs = now - 2 * MINUTE_MS,
+                expiresAtWallMs = now - MINUTE_MS,
+            ),
+        )
+
+        val snapshot = engine.snapshot(state, ready, now)
+
+        assertEquals(GateMode.OUT_OF_TIME, snapshot.canonicalMode)
+        assertTrue(snapshot.skipSnapshot.eligible)
+        assertEquals(1, snapshot.skipSnapshot.remaining)
+    }
+
+    @Test
     fun normalUsageIsCutOffExactlyAtEveningReset() {
         val start = ZonedDateTime.of(2026, 7, 10, 19, 59, 59, 500_000_000, zone)
             .toInstant()
