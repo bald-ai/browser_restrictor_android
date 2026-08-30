@@ -243,10 +243,11 @@ class RestrictionEngine(
             GateMode.OUT_OF_TIME, GateMode.OUT_OF_TIME_LATCHED -> true
             else -> false
         }
+        val activeUnlockIsCurrent = state.activeUnlock?.expiresAtWallMs?.let { it > nowWallMs } == true
         val skipEligible = emergencyEarnedToday &&
             remainingSkips > 0 &&
             skipModeEligible &&
-            state.activeUnlock == null &&
+            !activeUnlockIsCurrent &&
             grantDuration > 0
 
         return StateSnapshot(
