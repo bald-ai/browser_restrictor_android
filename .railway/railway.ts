@@ -6,7 +6,6 @@ export default defineRailway(() => {
     healthcheck: "/health",
     healthcheckTimeout: 60,
     deploy: {
-      restartPolicyType: "ON_FAILURE",
       restartPolicyMaxRetries: 3,
     },
     env: {
