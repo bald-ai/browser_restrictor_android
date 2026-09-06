@@ -77,6 +77,12 @@ android {
         )
     }
 
+    signingConfigs.getByName("debug") {
+        providers.environmentVariable("ANDROID_DEBUG_KEYSTORE_PATH").orNull?.let {
+            storeFile = rootProject.file(it)
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
