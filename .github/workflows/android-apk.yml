@@ -36,7 +36,10 @@ jobs:
           printf '%s' "$ANDROID_DEBUG_KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/debug.keystore"
           chmod 600 "$HOME/.android/debug.keystore"
       - name: Install Android SDK packages
-        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+        uses: android-actions/setup-android@v4.0.1
+        with:
+          packages: "platform-tools platforms;android-36 build-tools;36.0.0"
+          log-accepted-android-sdk-licenses: false
       - name: Test and build installable APK
         run: ./gradlew --no-daemon testDebugUnitTest :app:compileDebugAndroidTestKotlin lintDebug assembleDebug
       - name: Verify application identity
