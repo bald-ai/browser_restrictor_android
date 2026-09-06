@@ -6,7 +6,7 @@ test("Railway's assigned port accepts traffic from its proxy", () => {
   assert.deepEqual(listenAddress({ PORT: "43210" }), { host: "0.0.0.0", port: 43210 });
 });
 
-test("existing VPS deployments keep their loopback default and overrides", () => {
+test("local development supports loopback defaults and explicit overrides", () => {
   assert.deepEqual(listenAddress({}), { host: "127.0.0.1", port: 8787 });
   assert.deepEqual(listenAddress({ VERIFY_HOST: "127.0.0.2", VERIFY_PORT: "8788", PORT: "8080" }), {
     host: "127.0.0.2", port: 8788,
