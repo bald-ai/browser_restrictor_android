@@ -41,11 +41,15 @@ jobs:
           packages: "platform-tools platforms;android-36 build-tools;36.0.0"
           log-accepted-android-sdk-licenses: false
       - name: Test and build installable APK
-        run: ./gradlew --no-daemon testDebugUnitTest :app:compileDebugAndroidTestKotlin lintDebug assembleDebug
+        run: ANDROID_DEBUG_KEYSTORE_PATH="$HOME/.android/debug.keystore" ./gradlew --no-daemon testDebugUnitTest :app:compileDebugAndroidTestKotlin lintDebug assembleDebug
       - name: Verify application identity
         run: |
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging app/build/outputs/apk/debug/app-debug.apk > "$RUNNER_TEMP/apk-badging.txt"
           grep -F "package: name='com.michalkrsik.browserrestrictor'" "$RUNNER_TEMP/apk-badging.txt"
+          keytool -exportcert -keystore "$HOME/.android/debug.keystore" -alias androiddebugkey -storepass android > "$RUNNER_TEMP/signing-cert.der"
+          expected_cert=$(sha256sum "$RUNNER_TEMP/signing-cert.der" | cut -d ' ' -f 1)
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs app/build/outputs/apk/debug/app-debug.apk > "$RUNNER_TEMP/apk-signing.txt"
+          grep -F "Signer #1 certificate SHA-256 digest: $expected_cert" "$RUNNER_TEMP/apk-signing.txt"
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: internet-restrictor-android
