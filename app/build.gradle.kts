@@ -13,6 +13,44 @@ val localProperties = Properties().apply {
     }
 }
 
+fun verifierSetting(propertyName: String, environmentName: String): String =
+    providers.gradleProperty(propertyName).orNull?.trim()?.takeIf { it.isNotEmpty() }
+        ?: localProperties.getProperty(propertyName)?.trim()?.takeIf { it.isNotEmpty() }
+        ?: providers.environmentVariable(environmentName).orNull?.trim().orEmpty()
+
+val verifierUrl = verifierSetting("verifyUrl", "VERIFY_URL")
+val verifierSecret = verifierSetting("verifySharedSecret", "VERIFY_SHARED_SECRET")
+
+fun buildConfigString(value: String): String = "\"" + value
+    .replace("\\", "\\\\")
+    .replace("\"", "\\\"")
+    .replace("\n", "\\n")
+    .replace("\r", "\\r") + "\""
+
+val validateVerifierConfiguration by tasks.registering {
+    group = "verification"
+    description = "Prevent distributing an app that cannot start exercise verification."
+    doLast {
+        val missing = buildList {
+            if (verifierUrl.isBlank()) add("verifyUrl / VERIFY_URL")
+            if (verifierSecret.isBlank()) add("verifySharedSecret / VERIFY_SHARED_SECRET")
+        }
+        check(missing.isEmpty()) {
+            "Cannot package Internet Restrictor: missing ${missing.joinToString()}. " +
+                "Set these in local.properties, Gradle properties, or environment variables. " +
+                "Exercise recording requires a configured verifier."
+        }
+    }
+}
+
+// Keep compilation and unit tests available without deployment configuration,
+// but never package an APK or bundle with an unusable exercise flow.
+androidComponents.onVariants { variant ->
+    val variantName = variant.name.replaceFirstChar { it.uppercaseChar() }
+    tasks.matching { it.name == "package$variantName" || it.name == "bundle$variantName" }
+        .configureEach { dependsOn(validateVerifierConfiguration) }
+}
+
 android {
     namespace = "com.michalkrsik.internetrestrictor"
     compileSdk = 36
@@ -30,12 +68,12 @@ android {
         buildConfigField(
             "String",
             "VERIFY_URL",
-            "\"${localProperties.getProperty("verifyUrl", "")}\"",
+            buildConfigString(verifierUrl),
         )
         buildConfigField(
             "String",
             "VERIFY_SHARED_SECRET",
-            "\"${localProperties.getProperty("verifySharedSecret", "")}\"",
+            buildConfigString(verifierSecret),
         )
     }
 

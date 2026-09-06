@@ -32,34 +32,34 @@ fun healthCopy(
 ): HealthCopy = when (health) {
     ProtectionHealth.READY -> HealthCopy(
         "Protection ready",
-        "Supported browsers are protected and recovery access is available.",
+        "Supported browsers and X are protected, and recovery access is available.",
         null,
         true,
     )
     ProtectionHealth.READY_LIMITED_RECOVERY -> if (usageAccessGranted) {
         HealthCopy(
             "Protection ready",
-            "Usage access is enabled and the real-time browser gate is working. Recovery after a process interruption remains limited in this build.",
+            "Usage access is enabled and the real-time browser and X gate is working. Recovery after a process interruption remains limited in this build.",
             null,
             true,
         )
     } else {
         HealthCopy(
             "Protected with limited recovery",
-            "The real-time browser gate is working. A process interruption may leave a small usage gap uncounted.",
+            "The real-time browser and X gate is working. A process interruption may leave a small usage gap uncounted.",
             "Improve recovery",
             true,
         )
     }
     ProtectionHealth.ENFORCEMENT_OFF -> HealthCopy(
         "Enforcement is off",
-        "Browsers are not gated, but active supported-browser use is still counted in your report.",
+        "Browsers and X are not gated, but their active use is still counted in your report.",
         "Turn on",
         false,
     )
     ProtectionHealth.ACCESSIBILITY_REQUIRED -> HealthCopy(
         "Accessibility access required",
-        "Internet Restrictor cannot protect browsers until its service is enabled in Android Settings.",
+        "Internet Restrictor cannot protect browsers or X until its service is enabled in Android Settings.",
         "Open Accessibility",
         false,
     )
@@ -76,9 +76,9 @@ fun healthCopy(
         false,
     )
     ProtectionHealth.BROWSERS_NOT_FOUND -> HealthCopy(
-        "No supported browser found",
-        "Install or enable Chrome, Firefox, Edge, or Opera.",
-        "Get a browser",
+        "No supported app found",
+        "Install or enable Chrome, Firefox, Edge, Opera, or X.",
+        "Get a supported app",
         false,
     )
     ProtectionHealth.STORAGE_ERROR -> HealthCopy(
@@ -95,7 +95,7 @@ fun healthCopy(
     )
     ProtectionHealth.ADVANCED_PROTECTION_BLOCKED -> HealthCopy(
         "Advanced Protection blocks setup",
-        "This device mode does not allow the non-accessibility-tool service, so browsers cannot be protected here.",
+        "This device mode does not allow the non-accessibility-tool service, so browsers and X cannot be protected here.",
         "Open Android help",
         false,
     )

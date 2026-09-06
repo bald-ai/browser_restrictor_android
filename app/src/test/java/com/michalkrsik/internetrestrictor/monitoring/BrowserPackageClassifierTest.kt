@@ -3,6 +3,7 @@ package com.michalkrsik.internetrestrictor.monitoring
 import com.michalkrsik.internetrestrictor.domain.ForegroundClass
 import com.michalkrsik.internetrestrictor.domain.ProtectedTarget
 import com.michalkrsik.internetrestrictor.domain.SUPPORTED_BROWSERS
+import com.michalkrsik.internetrestrictor.domain.X_PACKAGE_NAME
 import com.michalkrsik.internetrestrictor.domain.YOUTUBE_PACKAGE_NAME
 import com.michalkrsik.internetrestrictor.domain.protectedTargetForPackage
 import org.junit.Assert.assertEquals
@@ -19,6 +20,7 @@ class BrowserPackageClassifierTest {
                 "org.mozilla.firefox",
                 "com.microsoft.emmx",
                 "com.opera.browser",
+                X_PACKAGE_NAME,
             ),
             SUPPORTED_BROWSERS.map { it.packageName },
         )
@@ -29,6 +31,18 @@ class BrowserPackageClassifierTest {
                 classifyForegroundPackage(browser.packageName, restrictorPackage),
             )
         }
+    }
+
+    @Test
+    fun xUsesTheSharedBrowserPoolPolicy() {
+        assertEquals(
+            ForegroundClass.BROWSER,
+            classifyForegroundPackage(X_PACKAGE_NAME, restrictorPackage),
+        )
+        assertEquals(
+            ProtectedTarget.BROWSER_POOL,
+            protectedTargetForPackage(X_PACKAGE_NAME),
+        )
     }
 
     @Test

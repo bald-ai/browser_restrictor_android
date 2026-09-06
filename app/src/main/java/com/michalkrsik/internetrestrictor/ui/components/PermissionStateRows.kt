@@ -58,7 +58,7 @@ fun PermissionStateRows(
         PermissionRow(
             role = "REQUIRED",
             title = "Accessibility",
-            purpose = "Runs the real-time browser gate and measures focused browser use.",
+            purpose = "Runs the real-time browser and X gate and measures their focused use.",
             state = accessibility,
             onAction = onOpenAccessibility,
         )

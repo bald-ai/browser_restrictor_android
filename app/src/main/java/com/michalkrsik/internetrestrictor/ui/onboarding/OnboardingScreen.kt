@@ -107,7 +107,7 @@ private fun WelcomeStep() {
         PauseEmblem()
         Text(editorialTitle("Pause before browsing."), style = MaterialTheme.typography.headlineLarge)
         Text(
-            "Internet Restrictor adds a deliberate pause before supported browsers, then measures their active use against today's shared time pool.",
+            "Internet Restrictor adds a deliberate pause before supported browsers and X, then measures their active use against today's shared time pool.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -127,7 +127,7 @@ private fun DefaultsStep() {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text(editorialTitle("Your starting rules."), style = MaterialTheme.typography.headlineLarge)
         Text(
-            "These rules apply across Chrome, Firefox, Edge, and Opera.",
+            "These rules apply across Chrome, Firefox, Edge, Opera, and X.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -191,9 +191,9 @@ private fun DisclosureCard() {
             Text("What the service does", style = MaterialTheme.typography.titleMedium)
             listOf(
                 "Observes which app is currently in front.",
-                "Only needs to know whether a supported browser is active.",
-                "Draws the pause screen over supported browsers.",
-                "Measures active, focused browser time.",
+                "Only needs to know whether a supported browser, X, or YouTube is active.",
+                "Draws the pause screen over supported browsers and X.",
+                "Measures active, focused browser and X time in one shared pool.",
                 "Does not inspect URLs, webpages, text, typing, or screenshots.",
                 "Keeps usage and settings on this device.",
             ).forEach { Text("•  $it", style = MaterialTheme.typography.bodyMedium) }

@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { listenAddress } from "./runtime-config.mjs";
 import {
   CLASSIFIER_EXERCISE_IDS,
   DENSIFY_FACTOR,
@@ -16,7 +17,7 @@ import {
   publicExerciseCatalog,
 } from "./exercises.mjs";
 
-const MODEL = "google/gemini-3.7-flash";
+const MODEL = "google/gemini-3.8-flash";
 const MAX_VIDEO_BYTES = 75 * 1024 * 1024;
 const MAX_REQUEST_BYTES = MAX_VIDEO_BYTES + 1024 * 1024;
 const MAX_SOURCE_SECONDS = 30.5;
@@ -460,8 +461,7 @@ async function main() {
   const sharedSecret = process.env.VERIFY_SHARED_SECRET;
   if (!apiKey || !sharedSecret) throw new Error("OPENROUTER_API_KEY and VERIFY_SHARED_SECRET are required");
   await cleanupStaleDirectories();
-  const host = process.env.VERIFY_HOST ?? "127.0.0.1";
-  const port = Number(process.env.VERIFY_PORT ?? "8787");
+  const { host, port } = listenAddress();
   const server = createServer({ apiKey, sharedSecret });
   server.listen(port, host, () => console.log(JSON.stringify({ status: "listening", host, port, model: MODEL })));
 }

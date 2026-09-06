@@ -18,6 +18,7 @@
         <package android:name="org.mozilla.firefox" />
         <package android:name="com.microsoft.emmx" />
         <package android:name="com.opera.browser" />
+        <package android:name="com.twitter.android" />
         <package android:name="com.google.android.youtube" />
     </queries>
 

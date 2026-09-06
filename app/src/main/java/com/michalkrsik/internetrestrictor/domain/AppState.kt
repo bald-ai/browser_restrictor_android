@@ -7,11 +7,15 @@ data class SupportedBrowser(
     val packageName: String,
 )
 
+const val X_PACKAGE_NAME = "com.twitter.android"
+
 val SUPPORTED_BROWSERS = listOf(
     SupportedBrowser("Chrome", "com.android.chrome"),
     SupportedBrowser("Firefox", "org.mozilla.firefox"),
     SupportedBrowser("Edge", "com.microsoft.emmx"),
     SupportedBrowser("Opera", "com.opera.browser"),
+    // X intentionally follows the browser policy and consumes the same shared budget.
+    SupportedBrowser("X", X_PACKAGE_NAME),
 )
 
 val SUPPORTED_BROWSER_PACKAGES = SUPPORTED_BROWSERS.mapTo(linkedSetOf()) { it.packageName }

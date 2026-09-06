@@ -2,7 +2,7 @@
 
 A native Android version of Internet Restrictor with an earned-budget exercise flow.
 
-Internet Restrictor adds deliberate friction before Chrome, Firefox, Edge, or Opera opens. The user chooses one of three customizable session presets (3, 5, or 10 minutes by default), completes a fixed 12-second focused wait, and then receives a wall-clock unlock. Active, focused use across all supported browsers is charged to one shared budget: zero minutes at local-day start plus 3 minutes for every completed exercise set. Spendable time resets at 20:00 local time and can be earned again afterward.
+Internet Restrictor adds deliberate friction before Chrome, Firefox, Edge, Opera, or X opens. The user chooses one of three customizable session presets (3, 5, or 10 minutes by default), completes a fixed 12-second focused wait, and then receives a wall-clock unlock. Active, focused use across all supported browsers and X is charged to one shared budget: zero minutes at local-day start plus 3 minutes for every completed exercise set. Spendable time resets at 20:00 local time and can be earned again afterward.
 
 The official YouTube app is a separate protected target. It stays locked until 4 exercise sets accumulate in the logical day, then remains open without consuming browser budget until the 04:00 daily reset.
 
@@ -11,7 +11,7 @@ This is a personal, user-controlled tool—not parental control, device manageme
 ## What is implemented
 
 - A five-step native onboarding flow with clear privacy and accessibility disclosure.
-- A touch-blocking accessibility overlay over supported browsers.
+- A touch-blocking accessibility overlay over supported browsers and X.
 - A separate morning gate over the official YouTube app (`com.google.android.youtube`) until 4 exercise sets have accumulated in the logical day.
 - A fixed 12-second focused wait before every normal browser session.
 - Three customizable 1-to-120-minute wall-clock session presets, defaulting to 3, 5, and 10 minutes.
@@ -38,7 +38,7 @@ This is a personal, user-controlled tool—not parental control, device manageme
 - Android Studio or another Android toolchain with JDK 17.
 - Android SDK Platform 36 and Build Tools installed.
 - An Android 10 (API 29) or newer device.
-- At least one supported browser installed: stable Chrome, Firefox, Edge, or Opera.
+- At least one shared-pool app installed: stable Chrome, Firefox, Edge, Opera, or X.
 
 The project uses Gradle 8.14.5, Android Gradle Plugin 8.13.2, Kotlin 2.3.20, Jetpack Compose BOM 2026.06.00, and DataStore 1.2.1.
 
@@ -50,12 +50,26 @@ From this directory:
 ./gradlew assembleDebug
 ```
 
-The ignored `local.properties` must provide the verifier endpoint and its shared bearer secret:
+The verifier address is checked into `gradle.properties`, so every checkout uses
+the Railway service. For a local build, the ignored `local.properties` supplies
+the shared verifier secret:
 
 ```properties
-verifyUrl=https://your-verifier.example/v1/pushup-verify
 verifySharedSecret=your-shared-secret
 ```
+
+Alternatively, supply `verifyUrl` and `verifySharedSecret` as Gradle properties,
+or use the `VERIFY_URL` and `VERIFY_SHARED_SECRET` environment variables.
+Gradle properties take precedence over `local.properties`, then environment variables.
+APK and bundle packaging fails if either setting is missing, because that build
+would disable exercise recording. Compilation and unit tests still run without
+verifier settings.
+
+The **Build Android APK** GitHub Actions workflow builds an installable APK
+using the repository secrets `VERIFY_SHARED_SECRET` and
+`ANDROID_DEBUG_KEYSTORE_BASE64`. The latter preserves the signing key between
+builds, allowing updates without uninstalling the app. Download the
+`internet-restrictor-android` artifact from the successful workflow run.
 
 The debug APK is written to:
 
@@ -117,11 +131,11 @@ The captures in `validation_artifacts/` predate this redesign and are retained o
 - `receivers/`: boot and wall-clock boundary recovery signals.
 - `server/`: the ffmpeg-backed exercise verifier. It accepts one authenticated MP4 upload up to 75 MB and 30 seconds, stretches four source frames per second from the complete clip into Gemini's one-frame-per-playback-second sampling path, and classifies the clip with a typed result. The legacy push-up endpoint remains supported. See [the exercise-verification architecture](EXERCISE_VERIFICATION_ARCHITECTURE.md).
 
-The Accessibility service reacts only to window-level changes. It uses the active window package name to distinguish supported browsers, YouTube, Internet Restrictor, and other apps. It does not traverse the accessibility tree or read URLs, webpage text, form fields, typing, or screenshots.
+The Accessibility service reacts only to window-level changes. It uses the active window package name to distinguish supported browsers, X, YouTube, Internet Restrictor, and other apps. It does not traverse the accessibility tree or read URLs, webpage text, form fields, typing, or screenshots.
 
 ## Important boundaries
 
-- Supported packages are stable Chrome (`com.android.chrome`), Firefox (`org.mozilla.firefox`), Edge (`com.microsoft.emmx`), and Opera (`com.opera.browser`). Their use is combined into one budget and one active session.
+- The shared browser pool contains stable Chrome (`com.android.chrome`), Firefox (`org.mozilla.firefox`), Edge (`com.microsoft.emmx`), Opera (`com.opera.browser`), and X (`com.twitter.android`). Their use is combined into one budget and one active session.
 - Other browsers and browser variants are outside the current scope.
 - The real-time Accessibility signal is authoritative. Ambiguous gaps are left uncounted instead of being guessed.
 - Usage Access history reconciliation is not yet implemented; the current build explicitly labels recovery as limited.
@@ -137,12 +151,50 @@ The manifest intentionally contains no VPN or general system-overlay permission.
 - Usage Access, granted manually and optional in this MVP, for the future bounded recovery path.
 - Boot completion, to re-establish local period and time-boundary state.
 - Android 16 Advanced Protection status query, to report device compatibility honestly.
-- Package visibility for stable Chrome, Firefox, Edge, and Opera.
+- Package visibility for stable Chrome, Firefox, Edge, Opera, and X.
 - Camera and internet access for the explicit exercise recording and owner-operated verification flow.
 
 Challenge videos are temporarily uploaded to the owner's verifier and sent to OpenRouter through a zero-data-retention provider route. The verifier deletes source and processed files after every request and removes stale temporary directories after a crash. Backups are disabled so private usage state does not leave the device through Android backup. Bundled typefaces and their license are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Verification server
+
+### Railway deployment
+
+The `server/` directory is a self-contained Railway service. Its Dockerfile
+installs Node.js 22 and FFmpeg, runs the server tests, and starts the verifier.
+`.railway/railway.ts` configures a `/health` deployment check and one European replica.
+No database or persistent disk is required; uploaded clips are temporary.
+
+Set these service variables in Railway:
+
+- `OPENROUTER_API_KEY`: the owner's OpenRouter API key.
+- `VERIFY_SHARED_SECRET`: the same verifier secret supplied to the Android build.
+
+The container listens on `0.0.0.0` and Railway's assigned `PORT`. The existing
+`VERIFY_HOST` and `VERIFY_PORT` overrides remain supported for VPS deployments.
+The production endpoint is
+`https://exercise-verifier-production.up.railway.app/v1/exercise-verify`.
+The [Railway project](https://railway.com/project/da2c70e8-6f57-47a5-bab2-d697888abbae)
+contains the service `exercise-verifier` in the `production` environment.
+
+Deploy with the Railway CLI from this repository:
+
+```bash
+npm ci
+npx railway login
+npx railway link --project da2c70e8-6f57-47a5-bab2-d697888abbae --environment production --service exercise-verifier
+npm run hosting:plan
+npm run hosting:apply
+npm run hosting:deploy
+```
+
+The infrastructure file preserves the credentials already stored in Railway.
+The Docker build uses `server/` as its root, while the project-level hosting
+settings are applied by `hosting:apply` from the repository root.
+Keep the original VPS running until the replacement service has passed a video
+verification check and the replacement Android APK has been verified.
+
+### Local or VPS deployment
 
 The server requires Node.js 22 or newer, `ffmpeg`, and `ffprobe`. Run its tests and start it with:
 

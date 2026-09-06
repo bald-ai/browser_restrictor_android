@@ -700,7 +700,7 @@ class ExerciseChallengeActivity : ComponentActivity() {
     companion object {
         const val EXTRA_RETURN_PACKAGE = "return_package"
         private const val TAG = "ExerciseChallenge"
-        const val MODEL = "google/gemini-3.7-flash"
+        const val MODEL = "google/gemini-3.8-flash"
         private const val RESULT_DISPLAY_MS = 2_000L
     }
 
