@@ -1,0 +1,51 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, codex/railway-verifier]
+    paths:
+      - "app/**"
+      - "gradle/**"
+      - "*.gradle.kts"
+      - "gradle.properties"
+      - ".github/workflows/android-apk.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      VERIFY_SHARED_SECRET: ${{ secrets.VERIFY_SHARED_SECRET }}
+      ANDROID_DEBUG_KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-java@v6.0.0
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Restore consistent APK signing and validate configuration
+        shell: bash
+        run: |
+          test -n "$VERIFY_SHARED_SECRET" || { echo "Missing VERIFY_SHARED_SECRET repository secret"; exit 1; }
+          test -n "$ANDROID_DEBUG_KEYSTORE_BASE64" || { echo "Missing ANDROID_DEBUG_KEYSTORE_BASE64 repository secret"; exit 1; }
+          mkdir -p "$HOME/.android"
+          printf '%s' "$ANDROID_DEBUG_KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/debug.keystore"
+          chmod 600 "$HOME/.android/debug.keystore"
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - name: Test and build installable APK
+        run: ./gradlew --no-daemon testDebugUnitTest :app:compileDebugAndroidTestKotlin lintDebug assembleDebug
+      - name: Verify application identity
+        run: |
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging app/build/outputs/apk/debug/app-debug.apk > "$RUNNER_TEMP/apk-badging.txt"
+          grep -F "package: name='com.michalkrsik.browserrestrictor'" "$RUNNER_TEMP/apk-badging.txt"
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: internet-restrictor-android
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30

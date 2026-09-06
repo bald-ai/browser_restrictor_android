@@ -1,0 +1,13 @@
+{
+  "name": "browser-restrictor-deployment",
+  "private": true,
+  "scripts": {
+    "hosting:plan": "railway config plan",
+    "hosting:apply": "railway config apply",
+    "hosting:deploy": "railway up server --path-as-root --service exercise-verifier"
+  },
+  "devDependencies": {
+    "@railway/cli": "5.49.2",
+    "railway": "3.11.0"
+  }
+}
