@@ -337,7 +337,7 @@ class RestrictionEngineTest {
     fun partialPushupsCarryAcrossVideosUntilTheyCompleteAReward() {
         val four = applied(engine.recordPushupRepetitions(initial(), 4, now, zone))
         assertEquals(0, four.dailyCounter.earnedBudgetRounds)
-        assertEquals(4, four.dailyCounter.pushupRepetitionRemainder)
+        assertEquals(24, four.dailyCounter.exercisePointSixths)
         assertEquals(0, engine.budgetSnapshots(four).single().limitMinutes)
         assertEquals(0, engine.snapshot(four, ready, now).skipSnapshot.remaining)
         assertTrue(four.activityEvents.isEmpty())
@@ -345,7 +345,7 @@ class RestrictionEngineTest {
 
         val five = applied(engine.recordPushupRepetitions(four, 1, now + 1_000, zone))
         assertEquals(1, five.dailyCounter.earnedBudgetRounds)
-        assertEquals(0, five.dailyCounter.pushupRepetitionRemainder)
+        assertEquals(0, five.dailyCounter.exercisePointSixths)
         assertEquals(3, engine.budgetSnapshots(five).single().limitMinutes)
         assertEquals(1, engine.snapshot(five, ready, now + 1_000).skipSnapshot.remaining)
         assertEquals(3 * MINUTE_MS, five.activityEvents.single().valueMs)
@@ -380,13 +380,13 @@ class RestrictionEngineTest {
         val combined = applied(engine.recordPushupRepetitions(initial(), 4, now, zone))
         val combinedTen = applied(engine.recordPushupRepetitions(combined, 6, now + 1_000, zone))
         assertEquals(2, combinedTen.dailyCounter.earnedBudgetRounds)
-        assertEquals(0, combinedTen.dailyCounter.pushupRepetitionRemainder)
+        assertEquals(0, combinedTen.dailyCounter.exercisePointSixths)
         assertEquals(6, engine.budgetSnapshots(combinedTen).single().limitMinutes)
         assertEquals(6 * MINUTE_MS, combinedTen.activityEvents.single().valueMs)
 
         val twelve = applied(engine.recordPushupRepetitions(initial(), 12, now, zone))
         assertEquals(2, twelve.dailyCounter.earnedBudgetRounds)
-        assertEquals(2, twelve.dailyCounter.pushupRepetitionRemainder)
+        assertEquals(12, twelve.dailyCounter.exercisePointSixths)
         assertEquals(6, engine.budgetSnapshots(twelve).single().limitMinutes)
     }
 
@@ -411,7 +411,7 @@ class RestrictionEngineTest {
 
         assertEquals(3, after.dailyCounter.earnedBudgetRounds)
         assertEquals(0, after.dailyCounter.spendableBudgetRounds)
-        assertEquals(4, after.dailyCounter.pushupRepetitionRemainder)
+        assertEquals(24, after.dailyCounter.exercisePointSixths)
         assertTrue(after.dailyCounter.eveningResetApplied)
         assertEquals(0, after.dailyUsage.usedMs)
         assertNull(after.activeUnlock)
@@ -483,7 +483,7 @@ class RestrictionEngineTest {
 
         assertEquals(1, later.dailyCounter.earnedBudgetRounds)
         assertEquals(1, later.dailyCounter.spendableBudgetRounds)
-        assertEquals(0, later.dailyCounter.pushupRepetitionRemainder)
+        assertEquals(0, later.dailyCounter.exercisePointSixths)
         assertEquals(3, engine.budgetSnapshots(later).single().limitMinutes)
     }
 
@@ -581,6 +581,163 @@ class RestrictionEngineTest {
     }
 
     @Test
+    fun emergencyAccessDoesNotConsumeEarnedBudget() {
+        var state = initial()
+        repeat(5) {
+            state = applied(engine.earnPushupBudget(state, now, zone))
+        }
+        assertEquals(15 * MINUTE_MS, engine.budgetSnapshots(state).single().remainingMs)
+        assertEquals(0L, state.dailyUsage.usedMs)
+
+        val emergency = state.copy(
+            activeUnlock = UnlockSession(
+                id = "emergency",
+                source = UnlockSource.EMERGENCY,
+                grantedAtWallMs = now,
+                expiresAtWallMs = now + 15 * MINUTE_MS,
+            ),
+        )
+
+        val used = engine.consumeUsage(emergency, ready, now, now + 10 * MINUTE_MS, zone)
+
+        assertEquals(0L, used.dailyUsage.usedMs)
+        assertEquals(15 * MINUTE_MS, engine.budgetSnapshots(used).single().remainingMs)
+
+        val todayReport = used.usageReports.single { it.localDayKey == "2026-07-10" }
+        assertEquals(10 * MINUTE_MS, todayReport.protectedUsageMs)
+        val browserSessions = used.activityEvents.filter { it.type == ActivityEventType.BROWSER_SESSION }
+        assertEquals(10 * MINUTE_MS, browserSessions.sumOf { it.valueMs })
+    }
+
+    @Test
+    fun earnExerciseCreditMidWindowRemainsUnspentDuringEmergencyAccess() {
+        val baseState = initial()
+        assertEquals(0L, engine.budgetSnapshots(baseState).single().remainingMs)
+
+        val emergency = baseState.copy(
+            activeUnlock = UnlockSession(
+                id = "emergency",
+                source = UnlockSource.EMERGENCY,
+                grantedAtWallMs = now,
+                expiresAtWallMs = now + 15 * MINUTE_MS,
+            ),
+        )
+
+        val used1 = engine.consumeUsage(emergency, ready, now, now + 5 * MINUTE_MS, zone)
+        assertEquals(0L, used1.dailyUsage.usedMs)
+        assertEquals(5 * MINUTE_MS, used1.usageReports.single { it.localDayKey == "2026-07-10" }.protectedUsageMs)
+
+        val earnedMidWindow = applied(engine.earnPushupBudget(used1, now + 5 * MINUTE_MS, zone))
+        assertEquals(3 * MINUTE_MS, engine.budgetSnapshots(earnedMidWindow).single().remainingMs)
+        assertEquals(1L, earnedMidWindow.dailyCounter.spendableBudgetRounds)
+
+        val used2 = engine.consumeUsage(earnedMidWindow, ready, now + 5 * MINUTE_MS, now + 10 * MINUTE_MS, zone)
+
+        assertEquals(0L, used2.dailyUsage.usedMs)
+        assertEquals(3 * MINUTE_MS, engine.budgetSnapshots(used2).single().remainingMs)
+        assertEquals(10 * MINUTE_MS, used2.usageReports.single { it.localDayKey == "2026-07-10" }.protectedUsageMs)
+    }
+
+    @Test
+    fun emergencyUsageBoundaryEndingExactlyAtExpiryCrossingExpiryAndStartingAtExpiry() {
+        var state = initial()
+        repeat(5) {
+            state = applied(engine.earnPushupBudget(state, now, zone))
+        }
+        val expiry = now + 15 * MINUTE_MS
+        val emergency = state.copy(
+            activeUnlock = UnlockSession(
+                id = "emergency",
+                source = UnlockSource.EMERGENCY,
+                grantedAtWallMs = now,
+                expiresAtWallMs = expiry,
+            ),
+        )
+
+        // 1. Ending exactly at expiry [now, expiry)
+        val exactEnd = engine.consumeUsage(emergency, ready, now, expiry, zone)
+        assertEquals(0L, exactEnd.dailyUsage.usedMs)
+        assertEquals(15 * MINUTE_MS, engine.budgetSnapshots(exactEnd).single().remainingMs)
+        assertEquals(15 * MINUTE_MS, exactEnd.usageReports.single { it.localDayKey == "2026-07-10" }.protectedUsageMs)
+        assertEquals(expiry, exactEnd.runtimeMetadata.lastCommittedWallMs)
+
+        // 2. Crossing expiry: [now, expiry + 5m) => only 15m is accessible/free, 5m past expiry is unauthorized and neither charged nor reported
+        val crossing = engine.consumeUsage(emergency, ready, now, expiry + 5 * MINUTE_MS, zone)
+        assertEquals(0L, crossing.dailyUsage.usedMs)
+        assertEquals(15 * MINUTE_MS, engine.budgetSnapshots(crossing).single().remainingMs)
+        assertEquals(15 * MINUTE_MS, crossing.usageReports.single { it.localDayKey == "2026-07-10" }.protectedUsageMs)
+        assertEquals(expiry, crossing.runtimeMetadata.lastCommittedWallMs)
+        assertNull(crossing.activeUnlock)
+        assertEquals(GateMode.PAUSED, engine.underlyingMode(crossing, ready, expiry + 5 * MINUTE_MS))
+
+        // 3. Starting at expiry: [expiry, expiry + 5m) => unauthorized, zero accessible, returns unchanged
+        val startingAtExpiry = engine.consumeUsage(emergency, ready, expiry, expiry + 5 * MINUTE_MS, zone)
+        assertEquals(0L, startingAtExpiry.dailyUsage.usedMs)
+        assertEquals(15 * MINUTE_MS, engine.budgetSnapshots(startingAtExpiry).single().remainingMs)
+        assertTrue(startingAtExpiry.usageReports.isEmpty() || startingAtExpiry.usageReports.single().protectedUsageMs == 0L)
+    }
+
+    @Test
+    fun emergencyUsageSpanningEveningResetPreservesFreeAccessAndAppliesReset() {
+        val eveningReset = ZonedDateTime.of(2026, 7, 10, 20, 0, 0, 0, zone).toInstant().toEpochMilli()
+        val start = eveningReset - 5 * MINUTE_MS
+        val expiry = eveningReset + 10 * MINUTE_MS
+        val end = eveningReset + 5 * MINUTE_MS
+
+        var base = engine.normalize(PersistedState(), start, zone)
+        repeat(5) {
+            base = applied(engine.earnPushupBudget(base, start, zone))
+        }
+        assertEquals(15 * MINUTE_MS, engine.budgetSnapshots(base).single().remainingMs)
+
+        val emergency = base.copy(
+            activeUnlock = UnlockSession(
+                id = "emergency",
+                source = UnlockSource.EMERGENCY,
+                grantedAtWallMs = start,
+                expiresAtWallMs = expiry,
+            ),
+        )
+
+        val used = engine.consumeUsage(emergency, ready, start, end, zone)
+
+        // Across 20:00, evening reset cleared spendable budget to 0 rounds, but usedMs is 0 (zero charged)
+        assertEquals(0L, used.dailyUsage.usedMs)
+        assertEquals(0L, used.dailyCounter.spendableBudgetRounds)
+        assertTrue(used.dailyCounter.eveningResetApplied)
+        assertNotNull(used.activeUnlock)
+        assertEquals(UnlockSource.EMERGENCY, used.activeUnlock?.source)
+        assertEquals(10 * MINUTE_MS, used.usageReports.single { it.localDayKey == "2026-07-10" }.protectedUsageMs)
+    }
+
+    @Test
+    fun emergencyUsageSpanningDailyResetAttributesUsageToBothDaysWithoutCharge() {
+        val dailyReset = ZonedDateTime.of(2026, 7, 11, 4, 0, 0, 0, zone).toInstant().toEpochMilli()
+        val start = dailyReset - 5 * MINUTE_MS
+        val expiry = dailyReset + 10 * MINUTE_MS
+        val end = dailyReset + 5 * MINUTE_MS
+
+        val base = engine.normalize(PersistedState(), start, zone)
+        val emergency = base.copy(
+            activeUnlock = UnlockSession(
+                id = "emergency",
+                source = UnlockSource.EMERGENCY,
+                grantedAtWallMs = start,
+                expiresAtWallMs = expiry,
+            ),
+        )
+
+        val used = engine.consumeUsage(emergency, ready, start, end, zone)
+
+        assertEquals(0L, used.dailyUsage.usedMs)
+        assertEquals("2026-07-11", used.dailyUsage.key)
+        assertEquals(5 * MINUTE_MS, used.usageReports.single { it.localDayKey == "2026-07-10" }.protectedUsageMs)
+        assertEquals(5 * MINUTE_MS, used.usageReports.single { it.localDayKey == "2026-07-11" }.protectedUsageMs)
+        assertNotNull(used.activeUnlock)
+        assertEquals(UnlockSource.EMERGENCY, used.activeUnlock?.source)
+    }
+
+    @Test
     fun emergencyUsageIsReportedWithoutCreatingFutureBudgetDebt() {
         val earnedBase = applied(engine.earnPushupBudget(initial(), now, zone))
         val base = earnedBase.copy(
@@ -641,7 +798,7 @@ class RestrictionEngineTest {
             dailyCounter = DailyCounter(
                 "2026-07-10",
                 earnedBudgetRounds = 3,
-                pushupRepetitionRemainder = 4,
+                exercisePointSixths = 24,
                 spendableBudgetRounds = 3,
                 eveningResetApplied = true,
             ),
@@ -656,7 +813,7 @@ class RestrictionEngineTest {
         assertEquals(0, after.dailyCounter.earnedBudgetRounds)
         assertEquals(0, after.dailyCounter.spendableBudgetRounds)
         assertEquals(0, after.dailyCounter.emergencySkipsUsed)
-        assertEquals(0, after.dailyCounter.pushupRepetitionRemainder)
+        assertEquals(0, after.dailyCounter.exercisePointSixths)
         assertFalse(after.dailyCounter.eveningResetApplied)
         assertEquals(0, engine.snapshot(after, ready, beforeReset + 3_000).skipSnapshot.remaining)
     }
@@ -693,7 +850,7 @@ class RestrictionEngineTest {
         assertEquals("2026-07-10", after.dailyCounter.localDayKey)
         assertEquals(1, after.dailyCounter.earnedBudgetRounds)
         assertEquals(1, after.dailyCounter.spendableBudgetRounds)
-        assertEquals(4, after.dailyCounter.pushupRepetitionRemainder)
+        assertEquals(24, after.dailyCounter.exercisePointSixths)
         assertEquals(MINUTE_MS, after.dailyUsage.usedMs)
     }
 

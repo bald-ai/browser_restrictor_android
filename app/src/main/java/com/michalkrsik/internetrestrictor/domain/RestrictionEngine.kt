@@ -6,6 +6,12 @@ import java.time.ZoneId
 import java.time.temporal.TemporalAdjusters
 import kotlin.math.roundToInt
 
+data class UsageConsumptionResult(
+    val state: PersistedState,
+    val recordedMs: Long,
+    val chargedMs: Long,
+)
+
 class RestrictionEngine(
     private val idGenerator: IdGenerator = RandomIdGenerator,
 ) {
@@ -96,6 +102,30 @@ class RestrictionEngine(
                 pendingWait = null,
             )
             revisionRelevant = true
+        }
+
+        // Fold old per-exercise surplus into the common pool once, after applying resets.
+        val counter = state.dailyCounter
+        val legacySixths = counter.pushupRepetitionRemainder * 6 +
+            counter.plankSecondRemainder * 2 + counter.machineRepetitionRemainder * 3
+        if (legacySixths > 0) {
+            val total = counter.exercisePointSixths + legacySixths
+            val boosts = total / EXERCISE_POINT_SIXTHS_PER_BOOST
+            if (boosts <= MAX_SAFE_BUDGET_ROUNDS - counter.earnedBudgetRounds) {
+                val earned = counter.earnedBudgetRounds + boosts
+                state = state.copy(
+                    dailyCounter = counter.copy(
+                        exercisePointSixths = total % EXERCISE_POINT_SIXTHS_PER_BOOST,
+                        pushupRepetitionRemainder = 0,
+                        plankSecondRemainder = 0,
+                        machineRepetitionRemainder = 0,
+                        earnedBudgetRounds = earned,
+                        spendableBudgetRounds = counter.spendableBudgetRounds + boosts,
+                    ),
+                    usageReports = state.usageReports.withExerciseSets(keys.daily, earned),
+                )
+                revisionRelevant = true
+            }
         }
 
         state.activeUnlock?.let { unlock ->
@@ -276,9 +306,7 @@ class RestrictionEngine(
             supportedBrowserInstalled = runtime.supportedBrowserInstalled,
             activeUnlock = state.activeUnlock,
             earnedBudgetRoundsToday = state.dailyCounter.earnedBudgetRounds,
-            pushupRepetitionRemainderToday = state.dailyCounter.pushupRepetitionRemainder,
-            plankSecondRemainderToday = state.dailyCounter.plankSecondRemainder,
-            machineRepetitionRemainderToday = state.dailyCounter.machineRepetitionRemainder,
+            exercisePointSixthsToday = state.dailyCounter.exercisePointSixths,
             verifiedPushupsToday = state.dailyCounter.verifiedPushups,
             offSessionStartedAtWallMs = state.offUsageReminder.sessionStartedAtWallMs,
             usageReports = state.usageReports,
@@ -514,9 +542,9 @@ class RestrictionEngine(
         if (value <= 0) return rejected(state, "No countable ${policy.displayName.lowercase()} were measured")
         val accumulation = try {
             accumulateExerciseUnits(
-                previousRemainder = state.dailyCounter.remainderFor(exerciseId),
-                added = value,
-                unitsPerSet = policy.unitsPerSet,
+                previousRemainder = state.dailyCounter.exercisePointSixths,
+                added = Math.multiplyExact(value, exercisePointSixthsPerUnit(exerciseId)),
+                unitsPerSet = EXERCISE_POINT_SIXTHS_PER_BOOST,
             )
         } catch (_: ArithmeticException) {
             return rejected(state, "${policy.displayName} measurement is too large")
@@ -561,7 +589,8 @@ class RestrictionEngine(
         return CommandResult.Applied(
             state.copy(
                 stateRevision = nextRevision(state.stateRevision),
-                dailyCounter = state.dailyCounter.withRemainder(exerciseId, accumulation.remainder).copy(
+                dailyCounter = state.dailyCounter.copy(
+                    exercisePointSixths = accumulation.remainder,
                     earnedBudgetRounds = totalEarnedRounds,
                     spendableBudgetRounds = spendableRounds,
                     verifiedPushups = verifiedPushups,
@@ -589,68 +618,102 @@ class RestrictionEngine(
         )
     }
 
-    fun consumeUsage(
+    fun consumeUsageDetailed(
         input: PersistedState,
         runtime: RuntimeSignals,
         intervalStartWallMs: Long,
         intervalEndWallMs: Long,
         zoneId: ZoneId,
-    ): PersistedState {
-        if (intervalEndWallMs <= intervalStartWallMs) return input
+    ): UsageConsumptionResult {
+        if (intervalEndWallMs <= intervalStartWallMs) return UsageConsumptionResult(input, 0L, 0L)
         var state = normalize(input, intervalStartWallMs, zoneId)
-        val mode = underlyingMode(state, runtime, intervalStartWallMs)
-        if (mode !in accessGrantedModes) return state
+        val initialMode = underlyingMode(state, runtime, intervalStartWallMs)
+        if (initialMode !in accessGrantedModes) return UsageConsumptionResult(state, 0L, 0L)
 
         var cursor = intervalStartWallMs
+        var totalRecordedMs = 0L
+        var totalChargedMs = 0L
         val originalExhausted = budgetSnapshots(state).any { it.exhausted }
-        for (interval in PeriodCalculator.splitAtBudgetBoundaries(
-            intervalStartWallMs,
-            intervalEndWallMs,
-            zoneId,
-        )) {
-            state = normalize(state, interval.startMs, zoneId)
+        while (cursor < intervalEndWallMs) {
+            state = normalize(state, cursor, zoneId)
+            val mode = underlyingMode(state, runtime, cursor)
+            if (mode !in accessGrantedModes) break
+
+            val eveningReset = PeriodCalculator.eveningBudgetReset(cursor, zoneId)
+            val dailyReset = PeriodCalculator.nextDailyReset(cursor, zoneId)
+            val resetBoundary = if (cursor < eveningReset) minOf(eveningReset, dailyReset) else dailyReset
+            val unlockBoundary = state.activeUnlock?.expiresAtWallMs?.takeIf { it > cursor }
+            val nextBoundary = listOfNotNull(resetBoundary, unlockBoundary).minOrNull() ?: intervalEndWallMs
+            val segmentEnd = minOf(intervalEndWallMs, nextBoundary)
+            val segmentDuration = segmentEnd - cursor
+            if (segmentDuration <= 0) break
+
             val budgets = budgetSnapshots(state)
-            val overBudgetAccess = state.activeUnlock?.let {
-                it.source == UnlockSource.EMERGENCY &&
-                    it.expiresAtWallMs > interval.startMs
+            val isEmergency = state.activeUnlock?.let {
+                it.source == UnlockSource.EMERGENCY && it.expiresAtWallMs > cursor
             } == true
-            val accessibleMaximum = if (overBudgetAccess) {
-                interval.durationMs
+
+            val accessible: Long
+            val budgetCharged: Long
+
+            if (isEmergency) {
+                accessible = segmentDuration
+                budgetCharged = 0L
             } else {
-                budgets.filter { it.enabled }
+                val budgetRemaining = budgets.filter { it.enabled }
                     .minOfOrNull { it.remainingMs ?: Long.MAX_VALUE }
-                    ?: interval.durationMs
+                    ?: segmentDuration
+                accessible = minOf(segmentDuration, budgetRemaining).coerceAtLeast(0)
+                budgetCharged = accessible
             }
-            val accessible = minOf(interval.durationMs, accessibleMaximum).coerceAtLeast(0)
-            val budgetRemaining = budgets.filter { it.enabled }
-                .minOfOrNull { it.remainingMs ?: Long.MAX_VALUE }
-                ?: accessible
-            val budgetCharged = minOf(accessible, budgetRemaining).coerceAtLeast(0)
+
             if (accessible > 0) {
                 state = state.copy(
                     dailyUsage = state.dailyUsage.copy(
                         usedMs = Math.addExact(state.dailyUsage.usedMs, budgetCharged),
                     ),
                     runtimeMetadata = state.runtimeMetadata.copy(
-                        lastCommittedWallMs = interval.startMs + accessible,
+                        lastCommittedWallMs = cursor + accessible,
                     ),
                 )
                 state = addReportInterval(
                     input = state,
-                    intervalStartWallMs = interval.startMs,
-                    intervalEndWallMs = interval.startMs + accessible,
+                    intervalStartWallMs = cursor,
+                    intervalEndWallMs = cursor + accessible,
                     zoneId = zoneId,
                 )
-                cursor = interval.startMs + accessible
+                cursor += accessible
+                totalRecordedMs = Math.addExact(totalRecordedMs, accessible)
+                totalChargedMs = Math.addExact(totalChargedMs, budgetCharged)
             }
-            if (accessible < interval.durationMs) break
+
+            if (accessible < segmentDuration) break
         }
         val nowExhausted = budgetSnapshots(state).any { it.exhausted }
         if (!originalExhausted && nowExhausted) {
             state = state.copy(stateRevision = nextRevision(state.stateRevision))
         }
-        return state.copy(runtimeMetadata = state.runtimeMetadata.copy(lastCommittedWallMs = cursor))
+        val finalState = state.copy(runtimeMetadata = state.runtimeMetadata.copy(lastCommittedWallMs = cursor))
+        return UsageConsumptionResult(
+            state = finalState,
+            recordedMs = totalRecordedMs,
+            chargedMs = totalChargedMs,
+        )
     }
+
+    fun consumeUsage(
+        input: PersistedState,
+        runtime: RuntimeSignals,
+        intervalStartWallMs: Long,
+        intervalEndWallMs: Long,
+        zoneId: ZoneId,
+    ): PersistedState = consumeUsageDetailed(
+        input = input,
+        runtime = runtime,
+        intervalStartWallMs = intervalStartWallMs,
+        intervalEndWallMs = intervalEndWallMs,
+        zoneId = zoneId,
+    ).state
 
     fun clearReportHistory(input: PersistedState): PersistedState = input.copy(
         stateRevision = nextRevision(input.stateRevision),

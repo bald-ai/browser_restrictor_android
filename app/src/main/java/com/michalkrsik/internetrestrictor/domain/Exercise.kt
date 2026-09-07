@@ -96,16 +96,18 @@ fun accumulateExerciseUnits(
     )
 }
 
-fun DailyCounter.remainderFor(id: ExerciseId): Long = when (id) {
-    ExerciseId.PUSH_UP -> pushupRepetitionRemainder
-    ExerciseId.PLANK -> plankSecondRemainder
-    ExerciseId.OUTDOOR_LAT_PULLDOWN -> machineRepetitionRemainder
-    ExerciseId.SIT_UP, ExerciseId.UNSUPPORTED -> 0
+// Sixth-points keep both half-points (machine reps) and thirds (plank seconds) exact.
+const val EXERCISE_POINT_SIXTHS_PER_BOOST = 30L
+
+fun exercisePointSixthsPerUnit(id: ExerciseId): Long = when (id) {
+    ExerciseId.PUSH_UP -> 6L
+    ExerciseId.OUTDOOR_LAT_PULLDOWN -> 3L
+    ExerciseId.PLANK -> 2L
+    else -> error("Exercise does not earn points")
 }
 
-fun DailyCounter.withRemainder(id: ExerciseId, remainder: Long): DailyCounter = when (id) {
-    ExerciseId.PUSH_UP -> copy(pushupRepetitionRemainder = remainder)
-    ExerciseId.PLANK -> copy(plankSecondRemainder = remainder)
-    ExerciseId.OUTDOOR_LAT_PULLDOWN -> copy(machineRepetitionRemainder = remainder)
-    ExerciseId.SIT_UP, ExerciseId.UNSUPPORTED -> this
-}
+fun formatExercisePoints(sixths: Long): String =
+    java.math.BigDecimal.valueOf(sixths)
+        .divide(java.math.BigDecimal.valueOf(6), 2, java.math.RoundingMode.HALF_UP)
+        .stripTrailingZeros()
+        .toPlainString()

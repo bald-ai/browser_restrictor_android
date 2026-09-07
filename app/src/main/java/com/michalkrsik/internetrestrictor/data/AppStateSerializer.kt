@@ -161,6 +161,7 @@ object AppStateSerializer : Serializer<PersistedState> {
             }
             val counter = DailyCounter(
                 localDayKey = localDayKey,
+                exercisePointSixths = if (schema >= 11) source.readLong() else 0L,
                 earnedBudgetRounds = earnedBudgetRounds,
                 emergencySkipsUsed = emergencySkipsUsed,
                 pushupRepetitionRemainder = pushupRepetitionRemainder,
@@ -301,6 +302,7 @@ object AppStateSerializer : Serializer<PersistedState> {
             target.writeLong(machineRepetitionRemainder)
             target.writeInt(creditedExerciseVerificationIds.size)
             creditedExerciseVerificationIds.forEach(target::writeUTF)
+            target.writeLong(exercisePointSixths)
         }
         with(t.runtimeMetadata) {
             target.writeLong(lastCommittedWallMs)
@@ -371,11 +373,14 @@ object AppStateSerializer : Serializer<PersistedState> {
         }
         if (state.activeUnlock != null && state.pendingWait != null) invalid("Unlock and wait overlap")
         if (
+            state.dailyCounter.exercisePointSixths !in 0 until 30L ||
             state.dailyCounter.earnedBudgetRounds !in 0..MAX_SAFE_BUDGET_ROUNDS ||
             state.dailyCounter.spendableBudgetRounds !in 0..state.dailyCounter.earnedBudgetRounds ||
             state.dailyCounter.emergencySkipsUsed < 0 ||
             state.dailyCounter.pushupRepetitionRemainder !in 0 until PUSHUPS_PER_SET ||
-            state.dailyCounter.plankSecondRemainder !in 0 until PLANK_SECONDS_PER_SET ||
+            // Older installs can carry 15–17 seconds from the former 18-second set.
+            // Preserve these until the next verified plank folds them into credit.
+            state.dailyCounter.plankSecondRemainder !in 0 until maxOf(18L, PLANK_SECONDS_PER_SET) ||
             state.dailyCounter.machineRepetitionRemainder !in 0 until MACHINE_REPS_PER_SET ||
             state.dailyCounter.verifiedPushups < 0 ||
             state.dailyCounter.creditedExerciseVerificationIds.size >

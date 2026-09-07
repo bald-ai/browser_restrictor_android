@@ -15,10 +15,10 @@ This is a personal, user-controlled tool—not parental control, device manageme
 - A separate morning gate over the official YouTube app (`com.google.android.youtube`) until 4 exercise sets have accumulated in the logical day.
 - A fixed 12-second focused wait before every normal browser session.
 - Three customizable 1-to-120-minute wall-clock session presets, defaulting to 3, 5, and 10 minutes.
-- A rotatable front/back-camera exercise challenge on every gate, with no exercise picker. The verifier classifies push-ups, plank, or the outdoor seated lat-pulldown machine. 5 push-ups, 18 plank seconds, or 10 machine reps complete one set; each set adds 3 minutes to today's budget; incomplete surplus carries independently per exercise until the 04:00 local daily reset. A 30-second on-screen countdown bounds each recording. The first completed set of each local day also earns one emergency unlock. It returns to the originating supported browser after earning budget, without bypassing the normal wait, and its use is charged normally.
+- A rotatable front/back-camera exercise challenge on every gate, with no exercise picker. The verifier classifies push-ups, plank, or the outdoor seated lat-pulldown machine. Every 5 shared exercise points adds 3 minutes to today's budget: 1 push-up = 2 machine reps = 3 plank seconds = 1 point; fractional progress combines across exercises and carries until the 04:00 local daily reset. A 3-second preparation countdown precedes each recording, followed by a 30-second recording limit. The first completed set of each local day also earns one emergency unlock. It returns to the originating supported browser after earning budget, without bypassing the normal wait, and grants 15 elapsed minutes of free access without consuming earned budget.
 - A one-use verification receipt for each recording, persisted until 04:00, prevents one model result from being credited twice.
-- One earned emergency 15-minute access unlock per local day. Each day begins with none; the first completed exercise set earns it, and it can be used even when the daily budget is exhausted.
-- At 20:00 local time, accumulated spendable budget and normal browser access reset immediately. Exercise-set progress, per-exercise surplus, the earned emergency unlock, and today's report history survive; new evening sets earn fresh spendable time.
+- One earned emergency 15-minute access unlock per local day. Each day begins with none; the first completed exercise set earns it, granting 15 elapsed minutes of free access without consuming earned budget, even when the daily budget is exhausted.
+- At 20:00 local time, accumulated spendable budget and normal browser access reset immediately. Exercise-set progress, shared exercise points, the earned emergency unlock, and today's report history survive; new evening sets earn fresh spendable time.
 - An append-only push-up ledger counts every verified push-up repetition in Europe/Prague cycles running from the 9th at 00:00 to the next month's 9th. Plank and machine work never write fake push-ups into that ledger. The dashboard shows the current total and all completed cycle totals; completed cycles are never pruned by report cleanup.
 - Emergency unlocks are always enabled; there is no product switch that can disable them.
 - A zero-minute base daily budget with unlimited 3-minute earned increments and no weekly or monthly pool.
@@ -36,6 +36,8 @@ This is a personal, user-controlled tool—not parental control, device manageme
 ## Documentation
 
 See [DOCUMENTATION.md](DOCUMENTATION.md) for build and installation instructions,
-Railway hosting, verification checks, architecture, and future design proposals.
+Railway hosting, verification checks, and architecture.
+
+Personal notes and future ideas are kept in `Dev/`.
 
 Third-party licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

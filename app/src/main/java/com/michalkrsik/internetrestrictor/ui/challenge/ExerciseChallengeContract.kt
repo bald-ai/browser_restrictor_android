@@ -64,9 +64,9 @@ object ExerciseChallengeCatalog {
     const val RECORDING_LIMIT_SECONDS = 30
     const val CAMERA_INSTRUCTION =
         "Frame as much of your body as you can. Imperfect framing and form are okay. " +
-            "Tap Start and complete one exercise before the 30-second countdown ends."
-    const val REWARD_COPY = "Each set earns +3 minutes"
-    const val EQUIVALENCE_COPY = "5 push-ups · 18s plank · 10 machine reps"
+            "Tap Start, get ready during the 3-second countdown, then exercise during the 30-second recording."
+    const val REWARD_COPY = "Every 5 points earns +3 minutes"
+    const val EQUIVALENCE_COPY = "1 point = 1 push-up · 2 machine reps · 3s plank"
 
     fun find(id: ExerciseId): ExerciseChallengeSpec? = all.firstOrNull { it.id == id }
 

@@ -36,7 +36,7 @@ class ExerciseChallengeCatalogTest {
         val plank = requireNotNull(ExerciseChallengeCatalog.find(ExerciseId.PLANK))
         val machine = requireNotNull(ExerciseChallengeCatalog.find(ExerciseId.OUTDOOR_LAT_PULLDOWN))
 
-        assertEquals(18, plank.unitsPerSet)
+        assertEquals(15, plank.unitsPerSet)
         assertEquals(30, plank.recordingLimitSeconds)
         assertEquals(10, machine.unitsPerSet)
         assertEquals(30, machine.recordingLimitSeconds)

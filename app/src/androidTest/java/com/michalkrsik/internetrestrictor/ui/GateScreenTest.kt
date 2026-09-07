@@ -1,5 +1,7 @@
 package com.michalkrsik.internetrestrictor.ui
 
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -49,21 +51,19 @@ class GateScreenTest {
             RestrictorTheme(snapshot.settings.theme) { GateScreen(snapshot, actions) }
         }
 
-        composeRule.onNodeWithText("Pause before browsing.").assertIsDisplayed()
-        composeRule.onNodeWithText("3 min").assertIsDisplayed()
-        composeRule.onNodeWithText("5 min").assertIsDisplayed()
-        composeRule.onNodeWithText("10 min").assertIsDisplayed()
-        composeRule.onNodeWithText("Begin 3 minute session").assertIsDisplayed()
+        composeRule.onNodeWithText("MAKE IT\nINTENTIONAL.").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("3 minute session").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("5 minute session").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("10 minute session").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("CONTINUE FOR 5 MINUTES").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText(
-            "Every normal browser session starts with the same 12 sec focused wait.",
-        ).assertIsDisplayed()
-        composeRule.onNodeWithText("Start exercise").assertIsDisplayed()
-        composeRule.onNodeWithText("Each set earns +3 minutes").assertIsDisplayed()
-        composeRule.onNodeWithText("5 push-ups · 18s plank · 10 machine reps").assertIsDisplayed()
-        composeRule.onNodeWithText("0/5 push-ups carried").assertIsDisplayed()
-        composeRule.onNodeWithText("0/18s plank carried").assertIsDisplayed()
-        composeRule.onNodeWithText("0/10 machine reps carried").assertIsDisplayed()
-        composeRule.onNodeWithText("←  Leave browser").assertIsDisplayed()
+            "A 12-second pause before each session",
+        ).performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("START EXERCISE").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Earn 3 minutes with your next set").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("How exercise points work").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Exercise points toward a 3-minute boost").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Leave browser").performScrollTo().assertIsDisplayed()
         composeRule.onAllNodesWithText("Settings", substring = true).assertCountEquals(0)
     }
 
@@ -89,12 +89,10 @@ class GateScreenTest {
             RestrictorTheme(snapshot.settings.theme) { GateScreen(snapshot, actions) }
         }
 
-        composeRule.onNodeWithText("Browser time is used up.").assertIsDisplayed()
-        composeRule.onNodeWithText("Start exercise").assertIsDisplayed()
-        composeRule.onNodeWithText("4/5 push-ups carried").assertIsDisplayed()
-        composeRule.onNodeWithText("0/18s plank carried").assertIsDisplayed()
-        composeRule.onNodeWithText("0/10 machine reps carried").assertIsDisplayed()
-        composeRule.onNodeWithText("Try again").assertIsDisplayed()
+        composeRule.onNodeWithText("BROWSER TIME IS USED UP.").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("START EXERCISE").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Exercise points toward a 3-minute boost").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Try again").performScrollTo().assertIsDisplayed()
         composeRule.onAllNodesWithText("minute session", substring = true).assertCountEquals(0)
         composeRule.onAllNodesWithText("emergency skip", substring = true).assertCountEquals(0)
     }
@@ -121,10 +119,10 @@ class GateScreenTest {
             RestrictorTheme(snapshot.settings.theme) { GateScreen(snapshot, actions) }
         }
 
-        composeRule.onNodeWithText("Exercise before YouTube.").assertIsDisplayed()
-        composeRule.onNodeWithText("Start exercise").assertIsDisplayed()
-        composeRule.onNodeWithText("3/4 sets today · unlocks until 04:00").assertIsDisplayed()
-        composeRule.onNodeWithText("←  Leave YouTube").assertIsDisplayed()
+        composeRule.onNodeWithText("EXERCISE BEFORE YOUTUBE.").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Start exercise").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("3/4 sets today · unlocks until 04:00").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Leave YouTube").performScrollTo().assertIsDisplayed()
         composeRule.onAllNodesWithText("minute session", substring = true).assertCountEquals(0)
         composeRule.onAllNodesWithText("emergency skip", substring = true).assertCountEquals(0)
     }
@@ -147,7 +145,7 @@ class GateScreenTest {
             RestrictorTheme(snapshot.settings.theme) { GateScreen(snapshot, actions) }
         }
 
-        composeRule.onNodeWithText("Unlocking browser").assertIsDisplayed()
+        composeRule.onNodeWithText("UNLOCKING BROWSER").assertIsDisplayed()
         composeRule.onNodeWithText("5 min session").assertIsDisplayed()
         composeRule.onNodeWithText("12").assertIsDisplayed()
         composeRule.onNodeWithText("Daily budget").assertIsDisplayed()

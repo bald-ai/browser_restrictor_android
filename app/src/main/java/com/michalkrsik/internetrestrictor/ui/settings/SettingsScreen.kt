@@ -1,5 +1,16 @@
 package com.michalkrsik.internetrestrictor.ui.settings
 
+import com.michalkrsik.internetrestrictor.ui.theme.*
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.sp
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -39,6 +50,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.stateDescription
@@ -55,7 +67,10 @@ import com.michalkrsik.internetrestrictor.ui.challenge.ExerciseChallengeActivity
 import com.michalkrsik.internetrestrictor.ui.components.HealthCard
 import com.michalkrsik.internetrestrictor.ui.components.PermissionStateRows
 import com.michalkrsik.internetrestrictor.ui.theme.EditorialTheme
+import com.michalkrsik.internetrestrictor.ui.theme.PulsePanel
 import com.michalkrsik.internetrestrictor.ui.theme.PillShape
+import com.michalkrsik.internetrestrictor.ui.theme.pulseButtonColors
+import com.michalkrsik.internetrestrictor.ui.theme.PulseActionBorder
 import com.michalkrsik.internetrestrictor.ui.theme.editorialTitle
 
 @Composable
@@ -83,165 +98,76 @@ fun SettingsScreen(
     val sessionValues = parsedSessions.filterNotNull()
     val sessionsValid = sessionValues.size == 3
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 22.dp, vertical = 22.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
-    ) {
-        TextButton(onClick = onBack) {
-            Text("‹  Dashboard", color = EditorialTheme.colors.accent)
-        }
-        Text(
-            "SETTINGS",
-            style = MaterialTheme.typography.labelSmall,
-            color = EditorialTheme.colors.ink3,
-        )
-        Text(editorialTitle("Browser rules."), style = MaterialTheme.typography.headlineLarge)
-
-        SettingsCard("Appearance") {
-            ToggleRow(
-                title = "Dark theme",
-                supporting = "The app starts in dark theme by default.",
-                checked = snapshot.settings.theme == ThemePreference.DARK,
-                onCheckedChange = {
-                    onThemeChange(if (it) ThemePreference.DARK else ThemePreference.LIGHT)
-                },
-            )
-        }
-
-        SettingsCard("Session presets") {
-            Text(
-                "Choose the three session lengths shown on the browser gate. Each value can be from 1 minute to 2 hours.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                EditorialField(
-                    value = firstSession,
-                    onValueChange = { firstSession = it },
-                    label = { Text("Preset 1") },
-                    isError = parsedSessions[0] == null,
-                    supportingText = null,
-                    modifier = Modifier.weight(1f),
-                )
-                EditorialField(
-                    value = secondSession,
-                    onValueChange = { secondSession = it },
-                    label = { Text("Preset 2") },
-                    isError = parsedSessions[1] == null,
-                    supportingText = null,
-                    modifier = Modifier.weight(1f),
-                )
-                EditorialField(
-                    value = thirdSession,
-                    onValueChange = { thirdSession = it },
-                    label = { Text("Preset 3") },
-                    isError = parsedSessions[2] == null,
-                    supportingText = null,
-                    modifier = Modifier.weight(1f),
-                )
+    PulseScreen {
+        PulseBack(onClick = onBack)
+        Spacer(Modifier.height(23.dp))
+        Text("YOUR PREFERENCES", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, letterSpacing = 1.4.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(7.dp))
+        Text("BROWSER RULES.", style = MaterialTheme.typography.headlineLarge.copy(fontSize = 35.sp, lineHeight = 40.sp, letterSpacing = (-1).sp))
+        Spacer(Modifier.height(21.dp))
+        PulseControlGroup {
+            PulseSection("Session presets", "Minutes")
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PresetField(firstSession, { firstSession = it }, 1, parsedSessions[0] == null, Modifier.weight(1f), snapshot.settings.theme == ThemePreference.LIGHT)
+                PresetField(secondSession, { secondSession = it }, 2, parsedSessions[1] == null, Modifier.weight(1f), snapshot.settings.theme == ThemePreference.LIGHT)
+                PresetField(thirdSession, { thirdSession = it }, 3, parsedSessions[2] == null, Modifier.weight(1f), snapshot.settings.theme == ThemePreference.LIGHT)
             }
-            if (!sessionsValid) {
-                Text(
-                    "Use whole-minute values between 1 and 120.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
+            Spacer(Modifier.height(11.dp))
+            Text("Choose the lengths offered when you open a browser. From 1 to 120 minutes.", style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp, lineHeight = 17.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if(!sessionsValid) PulseText("Use whole-minute values between 1 and 120.", 10, color = MaterialTheme.colorScheme.error)
+        }
+        Spacer(Modifier.height(13.dp))
+        Row(Modifier.fillMaxWidth().padding(vertical = 15.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                PulseText("Dark appearance", 11, weight = FontWeight.Medium)
+                Spacer(Modifier.height(4.dp))
+                PulseText(if(snapshot.settings.theme == ThemePreference.DARK) "Dark appearance selected" else "Light appearance selected", 9, muted = true)
+            }
+            val dark = snapshot.settings.theme == ThemePreference.DARK
+            Box(Modifier.size(32.dp, 19.dp).background(if(dark) PulseYellow else androidx.compose.ui.graphics.Color(0xFF7D8D50), RoundedCornerShape(50)).toggleable(value = dark, role = Role.Switch, onValueChange = { onThemeChange(if(it) ThemePreference.DARK else ThemePreference.LIGHT) }).semantics { stateDescription = if(dark) "On" else "Off"; contentDescription = "Dark appearance" }, contentAlignment = if(dark) Alignment.CenterEnd else Alignment.CenterStart) {
+                Box(Modifier.padding(2.dp).size(15.dp).background(if(dark) androidx.compose.ui.graphics.Color.White else PaperLight, RoundedCornerShape(50)))
             }
         }
-
-        ExpandableSettingsSection(
-            title = "System access",
-            summary = buildString {
-                append(if (snapshot.accessibilityEnabled) "Accessibility on" else "Accessibility needs attention")
-                append(" · ")
-                append(if (snapshot.usageAccessGranted) "Usage Access on" else "Usage Access off")
-            },
-            expanded = systemAccessExpanded,
-            onToggle = { systemAccessExpanded = !systemAccessExpanded },
-        ) {
-            PermissionStateRows(
-                snapshot = snapshot,
-                onOpenAccessibility = onOpenAccessibility,
-                onOpenUsageAccess = onOpenUsageAccess,
-            )
-        }
-
-        if (snapshot.enforcementHealth !in permissionHealthStates) {
-            HealthCard(
-                health = snapshot.enforcementHealth,
-                usageAccessGranted = snapshot.usageAccessGranted,
-                onAction = onHealthAction,
-            )
-        }
-
-        ExpandableSettingsSection(
-            title = "Developer",
-            summary = "Diagnostics and maintenance",
-            expanded = developerExpanded,
-            onToggle = { developerExpanded = !developerExpanded },
-        ) {
-            Text(
-                "Cancels only the currently granted browser session. Usage totals, budgets, skips, reports, and settings stay unchanged.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            GhostButton(
-                onClick = onCancelActiveUnlock,
-                enabled = snapshot.activeUnlock != null,
-            ) {
-                Text(if (snapshot.activeUnlock != null) "Cancel active unlock" else "No active unlock")
+        HorizontalDivider(color = EditorialTheme.colors.hairline)
+        Row(Modifier.fillMaxWidth().clickable { systemAccessExpanded = true }.padding(vertical = 15.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                PulseText("Browser protection", 11, weight = FontWeight.Medium)
+                Spacer(Modifier.height(4.dp))
+                PulseText(if(snapshot.accessibilityEnabled) "All required access is enabled" else "Required access needs attention", 9, muted = true)
             }
-            HorizontalDivider(color = EditorialTheme.colors.hairlineSoft)
-            Text(
-                "Deletes the stored browser-time and exercise-set history used by reports. Today's active budget counters remain unchanged.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            TextButton(onClick = { showClearReportsDialog = true }) {
-                Text("Clear report history", color = EditorialTheme.colors.accent)
-            }
-            OutlinedButton(
-                onClick = onExportDiagnostics,
-                modifier = Modifier.fillMaxWidth().height(50.dp),
-                shape = PillShape,
-                border = BorderStroke(1.dp, EditorialTheme.colors.hairline),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
-            ) { Text("Export diagnostics") }
-            HorizontalDivider(color = EditorialTheme.colors.hairlineSoft)
-            Text(
-                "Exercise verifier model",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                ExerciseChallengeActivity.MODEL,
-                style = MaterialTheme.typography.labelMedium,
-                color = EditorialTheme.colors.accent,
-            )
+            PulseIcon("shield", 18, EditorialTheme.colors.accent)
         }
-
-        Button(
-            onClick = {
-                onSave(
-                    snapshot.settings.copy(
-                        delayEnabled = true,
-                        sessionMinutes = sessionValues,
-                    ),
-                )
-            },
-            enabled = sessionsValid,
-            modifier = Modifier.fillMaxWidth().height(54.dp),
-            shape = PillShape,
-        ) { Text("Save changes") }
-        Spacer(Modifier.height(12.dp))
+        HorizontalDivider(color = EditorialTheme.colors.hairline)
+        Row(Modifier.fillMaxWidth().padding(top = 30.dp, bottom = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            PulseText("How time works", 13, weight = FontWeight.SemiBold)
+            Box(Modifier.clickable { developerExpanded = true }.semantics { contentDescription = "More settings and diagnostics" }) { PulseIcon("help", 16, MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+        listOf("Earned time" to "3 min / set", "Focused pause" to "12 seconds", "Budget reset" to "Every day, 20:00").forEach { (label, detail) ->
+            Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween) { PulseText(label, 11, weight = FontWeight.Medium); PulseText(detail, 10, muted = true) }
+            HorizontalDivider(color = EditorialTheme.colors.hairline)
+        }
+        Text("Every 5 exercise points earns one set. Emergency access is earned with your first set of the day.", Modifier.padding(top = 11.dp), style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp, lineHeight = 17.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(20.dp))
+        PulsePrimary("Save changes", { onSave(snapshot.settings.copy(delayEnabled = true, sessionMinutes = sessionValues)) }, enabled = sessionsValid)
+        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.weight(1f))
+        PulseNav(settings = true, onToday = onBack, onSettings = {})
+    }
+    if(systemAccessExpanded || developerExpanded) {
+        AlertDialog(onDismissRequest = { systemAccessExpanded = false; developerExpanded = false }, title = { Text(if(systemAccessExpanded) "Browser protection" else "Diagnostics and maintenance") }, text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if(systemAccessExpanded) {
+                    PermissionStateRows(snapshot, onOpenAccessibility, onOpenUsageAccess)
+                    HealthCard(health = snapshot.enforcementHealth, usageAccessGranted = snapshot.usageAccessGranted, onAction = onHealthAction)
+                } else {
+                    GhostButton(onCancelActiveUnlock, enabled = snapshot.activeUnlock != null) { Text(if(snapshot.activeUnlock != null) "Cancel active unlock" else "No active unlock") }
+                    TextButton(onClick = { showClearReportsDialog = true }) { Text("Clear report history") }
+                    TextButton(onClick = onExportDiagnostics) { Text("Export diagnostics") }
+                    PulseText("Exercise verifier model", 11, muted = true)
+                    PulseText(ExerciseChallengeActivity.MODEL, 11)
+                }
+            }
+        }, confirmButton = { TextButton(onClick = { systemAccessExpanded = false; developerExpanded = false }) { Text("Done") } })
     }
 
     if (showClearReportsDialog) {
@@ -266,6 +192,15 @@ fun SettingsScreen(
 }
 
 @Composable
+private fun PresetField(value: String, onValueChange: (String) -> Unit, number: Int, isError: Boolean, modifier: Modifier, day: Boolean) {
+    Column(modifier) {
+        Text("PRESET $number", style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp, letterSpacing = .5.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(5.dp))
+        BasicTextField(value, onValueChange, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), cursorBrush = SolidColor(PulseYellow), textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 23.sp, textAlign = TextAlign.Center, color = if(day) PulseYellow else InkDark), modifier = Modifier.fillMaxWidth().height(46.dp).background(if(day) Paper2Dark else PaperDark, RoundedCornerShape(8.dp)).border(1.dp, if(isError) MaterialTheme.colorScheme.error else EditorialTheme.colors.hairline, RoundedCornerShape(8.dp)).semantics { contentDescription = "Session preset $number in minutes" }, decorationBox = { inner -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { inner() } })
+    }
+}
+
+@Composable
 private fun GhostButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -283,146 +218,7 @@ private fun GhostButton(
     )
 }
 
-@Composable
-private fun EditorialField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    label: @Composable () -> Unit,
-    isError: Boolean,
-    supportingText: @Composable (() -> Unit)?,
-    modifier: Modifier = Modifier,
-) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        label = label,
-        singleLine = true,
-        isError = isError,
-        supportingText = supportingText,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-        shape = RoundedCornerShape(12.dp),
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = EditorialTheme.colors.accent,
-            unfocusedBorderColor = EditorialTheme.colors.hairline,
-            cursorColor = EditorialTheme.colors.accent,
-            focusedLabelColor = EditorialTheme.colors.accentInk,
-        ),
-        modifier = modifier.fillMaxWidth(),
-    )
-}
-
-@Composable
-private fun SettingsCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxWidth()) {
-        HorizontalDivider(color = EditorialTheme.colors.hairline)
-        Column(
-            Modifier.padding(top = 16.dp, bottom = 4.dp),
-            verticalArrangement = Arrangement.spacedBy(15.dp),
-        ) {
-            Text(title, style = MaterialTheme.typography.headlineSmall)
-            content()
-        }
-    }
-}
-
-@Composable
-private fun ExpandableSettingsSection(
-    title: String,
-    summary: String,
-    expanded: Boolean,
-    onToggle: () -> Unit,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    Column(Modifier.fillMaxWidth()) {
-        HorizontalDivider(color = EditorialTheme.colors.hairline)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(
-                    interactionSource = interactionSource,
-                    indication = null,
-                    onClick = onToggle,
-                )
-                .semantics {
-                    role = Role.Button
-                    stateDescription = if (expanded) "Expanded" else "Collapsed"
-                }
-                .padding(vertical = 14.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    summary,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Text(
-                if (expanded) "Hide" else "Show",
-                modifier = Modifier
-                    .padding(start = 12.dp)
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                style = MaterialTheme.typography.labelMedium,
-                color = EditorialTheme.colors.accent,
-            )
-        }
-        if (expanded) {
-            Column(
-                modifier = Modifier.padding(bottom = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(15.dp),
-                content = content,
-            )
-        }
-    }
-}
-
-@Composable
-private fun ToggleRow(
-    title: String,
-    supporting: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            Text(
-                supporting,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = MaterialTheme.colorScheme.surface,
-                checkedTrackColor = EditorialTheme.colors.go,
-                checkedBorderColor = EditorialTheme.colors.go,
-                uncheckedThumbColor = MaterialTheme.colorScheme.surface,
-                uncheckedTrackColor = EditorialTheme.colors.hairline,
-                uncheckedBorderColor = EditorialTheme.colors.hairline,
-            ),
-        )
-    }
-}
-
 private fun parseSessionMinutes(raw: String): Long? {
     if (raw.isBlank() || raw.any { !it.isDigit() }) return null
     return raw.toLongOrNull()?.takeIf { it in MIN_SESSION_MINUTES..MAX_SESSION_MINUTES }
 }
-
-private val permissionHealthStates = setOf(
-    ProtectionHealth.READY,
-    ProtectionHealth.READY_LIMITED_RECOVERY,
-    ProtectionHealth.ACCESSIBILITY_REQUIRED,
-    ProtectionHealth.USAGE_ACCESS_RECOMMENDED,
-    ProtectionHealth.SERVICE_DISCONNECTED,
-)

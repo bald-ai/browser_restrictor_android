@@ -28,30 +28,27 @@ class DashboardFormattingTest {
     @Test
     fun exerciseResultUsesDetectedMetricSetsAndCarry() {
         assertEquals(
-            "Plank detected · 20 seconds · 1 set earned · 2 seconds carried",
+            "Plank detected · 20 seconds · +3 min",
             formatExerciseResult(
                 exerciseId = ExerciseId.PLANK,
                 measuredValue = 20,
                 completedSets = 1,
-                remainder = 2,
             ),
         )
         assertEquals(
-            "Machine detected · 10 repetitions · 1 set earned · 0 repetitions carried",
+            "Machine detected · 10 repetitions · +3 min",
             formatExerciseResult(
                 exerciseId = ExerciseId.OUTDOOR_LAT_PULLDOWN,
                 measuredValue = 10,
                 completedSets = 1,
-                remainder = 0,
             ),
         )
         assertEquals(
-            "Push-ups detected · 6 repetitions · 1 set earned · 1 repetition carried",
+            "Push-ups detected · 6 repetitions · +3 min",
             formatExerciseResult(
                 exerciseId = ExerciseId.PUSH_UP,
                 measuredValue = 6,
                 completedSets = 1,
-                remainder = 1,
             ),
         )
     }

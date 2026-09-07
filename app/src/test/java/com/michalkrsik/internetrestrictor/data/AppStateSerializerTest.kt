@@ -42,6 +42,7 @@ class AppStateSerializerTest {
                 pushupRepetitionRemainder = 4,
                 spendableBudgetRounds = 1,
                 eveningResetApplied = true,
+                exercisePointSixths = 7,
                 plankSecondRemainder = 6,
                 machineRepetitionRemainder = 3,
                 verifiedPushups = 14,
@@ -69,6 +70,24 @@ class AppStateSerializerTest {
         AppStateSerializer.writeTo(state, output)
         val restored = AppStateSerializer.readFrom(ByteArrayInputStream(output.toByteArray()))
         assertEquals(state, restored)
+    }
+
+    @Test
+    fun legacyPlankSurplusSurvivesTheLowerSetThreshold() = runTest {
+        val state = PersistedState(
+            dailyCounter = DailyCounter(plankSecondRemainder = 17),
+        )
+        val output = ByteArrayOutputStream()
+        AppStateSerializer.writeTo(state, output)
+        val restored = AppStateSerializer.readFrom(ByteArrayInputStream(output.toByteArray()))
+        assertEquals(state, restored)
+        assertEquals(
+            com.michalkrsik.internetrestrictor.domain.ExerciseAccumulation(1, 3),
+            com.michalkrsik.internetrestrictor.domain.accumulateExerciseUnits(
+                restored.dailyCounter.plankSecondRemainder, 1,
+                com.michalkrsik.internetrestrictor.domain.PLANK_SECONDS_PER_SET,
+            ),
+        )
     }
 
     @Test
@@ -116,7 +135,7 @@ class AppStateSerializerTest {
 
         val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
 
-        assertEquals(10, migrated.schemaVersion)
+        assertEquals(11, migrated.schemaVersion)
         assertEquals(77, migrated.stateRevision)
         assertEquals(true, migrated.settings.enforcementEnabled)
         assertEquals(null, migrated.settings.pauseUntilWallMs)
@@ -236,7 +255,7 @@ class AppStateSerializerTest {
 
         val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
 
-        assertEquals(10, migrated.schemaVersion)
+        assertEquals(11, migrated.schemaVersion)
         assertEquals(123_000, migrated.dailyUsage.usedMs)
         assertEquals(2, migrated.dailyCounter.earnedBudgetRounds)
         assertEquals(1, migrated.dailyCounter.emergencySkipsUsed)
@@ -290,7 +309,7 @@ class AppStateSerializerTest {
         val now = ZonedDateTime.of(2026, 8, 18, 12, 0, 0, 0, zone).toInstant().toEpochMilli()
         val normalized = RestrictionEngine().normalize(migrated, now, zone)
 
-        assertEquals(10, normalized.schemaVersion)
+        assertEquals(11, normalized.schemaVersion)
         assertEquals(true, normalized.settings.enforcementEnabled)
         assertEquals(null, normalized.settings.pauseUntilWallMs)
         assertEquals(true, normalized.settings.emergencySkipsEnabled)
@@ -341,7 +360,7 @@ class AppStateSerializerTest {
 
         val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
 
-        assertEquals(10, migrated.schemaVersion)
+        assertEquals(11, migrated.schemaVersion)
         assertEquals(2, migrated.dailyCounter.earnedBudgetRounds)
         assertEquals(0, migrated.dailyCounter.pushupRepetitionRemainder)
         assertEquals(2, migrated.usageReports.single().exerciseSets)
@@ -390,7 +409,7 @@ class AppStateSerializerTest {
 
         val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
 
-        assertEquals(10, migrated.schemaVersion)
+        assertEquals(11, migrated.schemaVersion)
         assertEquals(3, migrated.dailyCounter.earnedBudgetRounds)
         assertEquals(3, migrated.dailyCounter.spendableBudgetRounds)
         assertEquals(4, migrated.dailyCounter.pushupRepetitionRemainder)
@@ -442,7 +461,7 @@ class AppStateSerializerTest {
 
         val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
 
-        assertEquals(10, migrated.schemaVersion)
+        assertEquals(11, migrated.schemaVersion)
         assertEquals(30_000, migrated.dailyUsage.usedMs)
         assertEquals(3, migrated.dailyCounter.earnedBudgetRounds)
         assertEquals(1, migrated.dailyCounter.spendableBudgetRounds)
@@ -503,7 +522,7 @@ class AppStateSerializerTest {
 
         val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
 
-        assertEquals(10, migrated.schemaVersion)
+        assertEquals(11, migrated.schemaVersion)
         assertEquals(3, migrated.dailyCounter.earnedBudgetRounds)
         assertEquals(1, migrated.dailyCounter.spendableBudgetRounds)
         assertEquals(4, migrated.dailyCounter.pushupRepetitionRemainder)
@@ -512,6 +531,73 @@ class AppStateSerializerTest {
         assertEquals(0, migrated.dailyCounter.plankSecondRemainder)
         assertEquals(0, migrated.dailyCounter.machineRepetitionRemainder)
         assertEquals(emptyList<String>(), migrated.dailyCounter.creditedExerciseVerificationIds)
+        assertEquals(3, migrated.usageReports.single().exerciseSets)
+        assertEquals(listOf(MonthlyPushupCycle("2026-07-09", 81)), migrated.monthlyPushupCycles)
+    }
+
+    @Test
+    fun schemaV10PreservesLegacyProgressForSharedPointsMigration() = runTest {
+        val bytes = ByteArrayOutputStream().also { output ->
+            DataOutputStream(output).use { target ->
+                target.writeInt(0x49525354)
+                target.writeInt(10)
+                target.writeLong(96)
+                target.writeBoolean(true)
+                target.writeBoolean(false)
+                target.writeBoolean(true)
+                target.writeBoolean(true)
+                target.writeLong(1)
+                target.writeInt(ThemePreference.DARK.ordinal)
+                target.writeBoolean(true)
+                target.writeInt(3)
+                listOf(3L, 5L, 10L).forEach(target::writeLong)
+                target.writeUTF("2026-08-21")
+                target.writeLong(30_000)
+                target.writeBoolean(false)
+                target.writeBoolean(false)
+                target.writeUTF("2026-08-21")
+                target.writeLong(3)
+                target.writeLong(0)
+                target.writeLong(4)
+                target.writeLong(1)
+                target.writeBoolean(true)
+                target.writeLong(19) // Verified push-ups
+                target.writeLong(9) // Legacy plank seconds
+                target.writeLong(4) // Legacy machine reps
+                target.writeInt(1)
+                target.writeUTF("already-credited")
+                target.writeLong(120_000)
+                target.writeUTF("epoch-v9")
+                target.writeLong(100_000)
+                target.writeInt(0)
+                target.writeInt(1)
+                target.writeUTF("2026-08-21")
+                target.writeLong(30_000)
+                target.writeLong(0)
+                target.writeLong(3)
+                repeat(2) { target.writeLong(0) }
+                target.writeBoolean(false)
+                repeat(2) { target.writeLong(0) }
+                target.writeBoolean(false)
+                target.writeInt(0)
+                target.writeInt(1)
+                target.writeUTF("2026-07-09")
+                target.writeLong(81)
+            }
+        }.toByteArray()
+
+        val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
+
+        assertEquals(11, migrated.schemaVersion)
+        assertEquals(3, migrated.dailyCounter.earnedBudgetRounds)
+        assertEquals(1, migrated.dailyCounter.spendableBudgetRounds)
+        assertEquals(4, migrated.dailyCounter.pushupRepetitionRemainder)
+        assertEquals(true, migrated.dailyCounter.eveningResetApplied)
+        assertEquals(19, migrated.dailyCounter.verifiedPushups)
+        assertEquals(9, migrated.dailyCounter.plankSecondRemainder)
+        assertEquals(4, migrated.dailyCounter.machineRepetitionRemainder)
+        assertEquals(listOf("already-credited"), migrated.dailyCounter.creditedExerciseVerificationIds)
+        assertEquals(0, migrated.dailyCounter.exercisePointSixths)
         assertEquals(3, migrated.usageReports.single().exerciseSets)
         assertEquals(listOf(MonthlyPushupCycle("2026-07-09", 81)), migrated.monthlyPushupCycles)
     }

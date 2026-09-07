@@ -35,7 +35,7 @@ fun protectedTargetForPackage(packageName: String?): ProtectedTarget? = when {
 
 fun isProtectedTargetPackage(packageName: String?): Boolean =
     protectedTargetForPackage(packageName) != null
-const val RESTRICTOR_SCHEMA_VERSION = 10
+const val RESTRICTOR_SCHEMA_VERSION = 11
 const val MINUTE_MS = 60_000L
 const val HOUR_MS = 60L * MINUTE_MS
 const val DAY_MS = 24L * HOUR_MS
@@ -44,7 +44,7 @@ const val EMERGENCY_UNLOCK_MS = 15L * MINUTE_MS
 const val DAILY_BASE_BUDGET_MINUTES = 0L
 const val EXERCISE_SET_REWARD_MINUTES = 3L
 const val PUSHUPS_PER_SET = 5L
-const val PLANK_SECONDS_PER_SET = 18L
+const val PLANK_SECONDS_PER_SET = 15L
 const val MACHINE_REPS_PER_SET = 10L
 const val YOUTUBE_UNLOCK_SETS = 4L
 const val MAX_DAILY_CREDITED_EXERCISE_VERIFICATIONS = 256
@@ -160,6 +160,8 @@ data class DailyCounter(
     val localDayKey: String = "",
     val earnedBudgetRounds: Long = 0,
     val emergencySkipsUsed: Long = 0,
+    // Legacy per-exercise progress, consumed once by normalization.
+    val exercisePointSixths: Long = 0,
     val pushupRepetitionRemainder: Long = 0,
     val spendableBudgetRounds: Long = 0,
     val eveningResetApplied: Boolean = false,
@@ -264,9 +266,7 @@ data class StateSnapshot(
     val supportedBrowserInstalled: Boolean,
     val activeUnlock: UnlockSession?,
     val earnedBudgetRoundsToday: Long,
-    val pushupRepetitionRemainderToday: Long,
-    val plankSecondRemainderToday: Long,
-    val machineRepetitionRemainderToday: Long,
+    val exercisePointSixthsToday: Long,
     val verifiedPushupsToday: Long,
     val offSessionStartedAtWallMs: Long,
     val usageReports: List<DailyUsageReport>,

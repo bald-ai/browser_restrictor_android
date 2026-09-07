@@ -90,7 +90,7 @@ const definitions = Object.freeze({
     metric: ExerciseMetric.HOLD_SECONDS,
     resultField: "hold_seconds",
     schemaName: "plank_hold",
-    unitsPerSet: 18,
+    unitsPerSet: 15,
     systemPrompt: plankPrompt,
     userPrompt: "Measure the plank hold in the preceding video.",
     pending: Object.freeze([]),

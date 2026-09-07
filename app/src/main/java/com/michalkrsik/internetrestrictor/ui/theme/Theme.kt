@@ -9,59 +9,64 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.dp
 import com.michalkrsik.internetrestrictor.R
 import com.michalkrsik.internetrestrictor.domain.ThemePreference
 
-// Warm paper, hairlines, editorial serif, one vermillion accent.
-val PaperLight = Color(0xFFF5F2EA)
-val Paper2Light = Color(0xFFECE8DC)
-val CardLight = Color(0xFFFBFAF5)
-val InkLight = Color(0xFF171310)
-val Ink2Light = Color(0xFF6B6355)
-val Ink3Light = Color(0xFFA79E8D)
+// Pulse Day and Night share citrus accents, charcoal controls, and athletic typography.
+val PulseYellow = Color(0xFFD6F66A)
+val PulseCharcoal = Color(0xFF20261B)
+val PulseDisplay = FontFamily(Font(R.font.pulse_heading, FontWeight.ExtraBold, FontStyle.Italic))
+val PulseNumber = FontFamily(Font(R.font.pulse_number))
+val PaperLight = Color(0xFFE6EDAC)
+val Paper2Light = Color(0xFFD8E391)
+val CardLight = Color(0xFFDCE69B)
+val InkLight = Color(0xFF20261B)
+val Ink2Light = Color(0xFF515D35)
+val Ink3Light = Color(0xFF59663B)
 
-val PaperDark = Color(0xFF14110B)
-val Paper2Dark = Color(0xFF1B1710)
-val CardDark = Color(0xFF1E1913)
-val InkDark = Color(0xFFF0EBDF)
-val Ink2Dark = Color(0xFFA79F8E)
-val Ink3Dark = Color(0xFF645D4E)
+val PaperDark = Color(0xFF22251F)
+val Paper2Dark = Color(0xFF303927)
+val CardDark = Color(0xFF2B3026)
+val InkDark = Color(0xFFF4F5EC)
+val Ink2Dark = Color(0xFFBAC5A5)
+val Ink3Dark = Color(0xFFA1AA96)
 
-val AccentLight = Color(0xFFD9481C)
-val AccentInkLight = Color(0xFFB93A14)
-val AccentDark = Color(0xFFFF5A26)
-val AccentInkDark = Color(0xFFFF7A4D)
+val AccentLight = Color(0xFF3B5519)
+val AccentInkLight = Color(0xFF334D1D)
+val AccentDark = Color(0xFFD6F66A)
+val AccentInkDark = Color(0xFFD6F66A)
 
-val GoLight = Color(0xFF2E7D4F)
-val WarnLight = Color(0xFFC07A1E)
-val LowLight = Color(0xFFC23B2E)
-val GoDark = Color(0xFF4DB284)
-val WarnDark = Color(0xFFE0A33E)
-val LowDark = Color(0xFFF0563F)
+val GoLight = Color(0xFF3B5519)
+val WarnLight = Color(0xFF805014)
+val LowLight = Color(0xFFA32F23)
+val GoDark = Color(0xFFD6F66A)
+val WarnDark = Color(0xFFEFC66C)
+val LowDark = Color(0xFFFF9580)
 
 val InstrumentSerif = FontFamily(
     Font(R.font.instrument_serif_regular, FontWeight.Normal),
     Font(R.font.instrument_serif_italic, FontWeight.Normal, FontStyle.Italic),
 )
 
+@OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
 val Manrope = FontFamily(
-    Font(R.font.manrope_variable, FontWeight.Normal),
-    Font(R.font.manrope_variable, FontWeight.Medium),
-    Font(R.font.manrope_variable, FontWeight.SemiBold),
-    Font(R.font.manrope_variable, FontWeight.Bold),
-    Font(R.font.manrope_variable, FontWeight.ExtraBold),
+    Font(R.font.pulse_body, FontWeight.Normal, variationSettings = FontVariation.Settings(FontVariation.weight(400))),
+    Font(R.font.pulse_body, FontWeight.Medium, variationSettings = FontVariation.Settings(FontVariation.weight(500))),
+    Font(R.font.pulse_body, FontWeight.SemiBold, variationSettings = FontVariation.Settings(FontVariation.weight(600))),
+    Font(R.font.pulse_body, FontWeight.Bold, variationSettings = FontVariation.Settings(FontVariation.weight(700))),
+    Font(R.font.pulse_body, FontWeight.ExtraBold, variationSettings = FontVariation.Settings(FontVariation.weight(800))),
 )
 
-val PillShape = RoundedCornerShape(percent = 50)
+// Kept under the existing name so every app action adopts the same Pulse geometry.
+val PillShape = RoundedCornerShape(9.dp)
 
 @Immutable
 class EditorialColors(
@@ -82,8 +87,8 @@ private val EditorialLight = EditorialColors(
     warn = WarnLight,
     low = LowLight,
     ink3 = Ink3Light,
-    hairline = InkLight.copy(alpha = 0.13f),
-    hairlineSoft = InkLight.copy(alpha = 0.07f),
+    hairline = Color(0xFFADB979),
+    hairlineSoft = Color(0xFF9EAC6B),
 )
 
 private val EditorialDark = EditorialColors(
@@ -93,8 +98,8 @@ private val EditorialDark = EditorialColors(
     warn = WarnDark,
     low = LowDark,
     ink3 = Ink3Dark,
-    hairline = InkDark.copy(alpha = 0.15f),
-    hairlineSoft = InkDark.copy(alpha = 0.07f),
+    hairline = Color(0xFF404737),
+    hairlineSoft = Color(0xFF404737),
 )
 
 val LocalEditorialColors = staticCompositionLocalOf { EditorialLight }
@@ -106,32 +111,18 @@ object EditorialTheme {
 }
 
 val SerifNote = TextStyle(
-    fontFamily = InstrumentSerif,
-    fontStyle = FontStyle.Italic,
+    fontFamily = Manrope,
     fontWeight = FontWeight.Normal,
-    fontSize = 15.sp,
-    lineHeight = 22.sp,
+    fontSize = 14.sp,
+    lineHeight = 21.sp,
 )
 
-/** Styles a screen headline with the last word in italic vermillion, like the desktop gate. */
+/** Preserve screen copy and accessibility labels while the theme supplies Pulse typography. */
 @Composable
-fun editorialTitle(text: String): AnnotatedString {
-    val accent = EditorialTheme.colors.accent
-    val split = text.lastIndexOf(' ')
-    return buildAnnotatedString {
-        if (split <= 0 || split == text.length - 1) {
-            append(text)
-        } else {
-            append(text.substring(0, split + 1))
-            withStyle(SpanStyle(color = accent, fontStyle = FontStyle.Italic)) {
-                append(text.substring(split + 1))
-            }
-        }
-    }
-}
+fun editorialTitle(text: String): AnnotatedString = AnnotatedString(text)
 
 private val LightColors = lightColorScheme(
-    primary = InkLight,
+    primary = AccentLight,
     onPrimary = PaperLight,
     secondary = AccentLight,
     onSecondary = PaperLight,
@@ -145,12 +136,16 @@ private val LightColors = lightColorScheme(
     surfaceVariant = Paper2Light,
     onSurfaceVariant = Ink2Light,
     outline = Ink3Light,
+    outlineVariant = Color(0xFFADB979),
+    surfaceContainer = CardLight,
+    surfaceContainerHigh = CardLight,
+    surfaceContainerHighest = Paper2Light,
     surfaceTint = Color.Transparent,
 )
 
 private val DarkColors = darkColorScheme(
-    primary = InkDark,
-    onPrimary = PaperDark,
+    primary = PulseYellow,
+    onPrimary = PulseCharcoal,
     secondary = AccentDark,
     onSecondary = PaperDark,
     tertiary = AccentInkDark,
@@ -163,33 +158,41 @@ private val DarkColors = darkColorScheme(
     surfaceVariant = Paper2Dark,
     onSurfaceVariant = Ink2Dark,
     outline = Ink3Dark,
+    outlineVariant = Color(0xFF404737),
+    surfaceContainer = CardDark,
+    surfaceContainerHigh = CardDark,
+    surfaceContainerHighest = Paper2Dark,
     surfaceTint = Color.Transparent,
 )
 
 private val RestrictorTypography = androidx.compose.material3.Typography(
     displayLarge = TextStyle(
-        fontFamily = InstrumentSerif,
-        fontWeight = FontWeight.Normal,
+        fontFamily = PulseDisplay,
+        fontWeight = FontWeight.ExtraBold,
+        fontStyle = FontStyle.Italic,
         fontSize = 64.sp,
         lineHeight = 66.sp,
         letterSpacing = (-1.5).sp,
     ),
     headlineLarge = TextStyle(
-        fontFamily = InstrumentSerif,
-        fontWeight = FontWeight.Normal,
+        fontFamily = PulseDisplay,
+        fontWeight = FontWeight.ExtraBold,
+        fontStyle = FontStyle.Italic,
         fontSize = 38.sp,
         lineHeight = 42.sp,
         letterSpacing = (-0.5).sp,
     ),
     headlineMedium = TextStyle(
-        fontFamily = InstrumentSerif,
-        fontWeight = FontWeight.Normal,
+        fontFamily = PulseDisplay,
+        fontWeight = FontWeight.ExtraBold,
+        fontStyle = FontStyle.Italic,
         fontSize = 30.sp,
         lineHeight = 34.sp,
     ),
     headlineSmall = TextStyle(
-        fontFamily = InstrumentSerif,
-        fontWeight = FontWeight.Normal,
+        fontFamily = PulseDisplay,
+        fontWeight = FontWeight.ExtraBold,
+        fontStyle = FontStyle.Italic,
         fontSize = 26.sp,
         lineHeight = 30.sp,
     ),
@@ -203,8 +206,8 @@ private val RestrictorTypography = androidx.compose.material3.Typography(
     labelSmall = TextStyle(
         fontFamily = Manrope,
         fontWeight = FontWeight.Bold,
-        fontSize = 10.5.sp,
-        letterSpacing = 1.5.sp,
+        fontSize = 11.sp,
+        letterSpacing = 1.sp,
     ),
 )
 

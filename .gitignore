@@ -12,7 +12,8 @@
 !/README.md
 !/THIRD_PARTY_NOTICES.md
 !/DOCUMENTATION.md
-/Dev/
 
 .DS_Store
 node_modules/
+
+!/validation_artifacts/pulse/README.md

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -33,6 +34,8 @@ import com.michalkrsik.internetrestrictor.ui.components.PauseEmblem
 import com.michalkrsik.internetrestrictor.ui.components.PermissionStateRows
 import com.michalkrsik.internetrestrictor.ui.theme.EditorialTheme
 import com.michalkrsik.internetrestrictor.ui.theme.PillShape
+import com.michalkrsik.internetrestrictor.ui.theme.pulseButtonColors
+import com.michalkrsik.internetrestrictor.ui.theme.PulseActionBorder
 import com.michalkrsik.internetrestrictor.ui.theme.editorialTitle
 
 @Composable
@@ -90,6 +93,8 @@ fun OnboardingScreen(
                 ) { Text("Back") }
             }
             Button(
+            colors = pulseButtonColors(),
+            border = PulseActionBorder,
                 onClick = { if (page < 4) page++ else onComplete() },
                 enabled = page != 2 || snapshot.accessibilityEnabled,
                 modifier = Modifier.weight(1f).height(52.dp),
@@ -132,12 +137,12 @@ private fun DefaultsStep() {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         InfoCard("Daily budget", "Every local day starts at zero minutes. Spendable budget resets again at 20:00.")
-        InfoCard("Earn more", "Each completed set earns +3 minutes. 5 push-ups, 18s plank, or 10 machine reps make a set. Surplus carries across videos until 04:00.")
+        InfoCard("Earn more", "Every 5 points earns +3 minutes. 1 push-up, 2 machine reps, or 3s plank earns 1 point. Mix exercises; partial points carry until 04:00.")
         InfoCard("Monthly history", "Every verified push-up is counted in permanent 9th-to-9th monthly history. Plank and machine work stay off that ledger.")
         InfoCard("Sessions", "Choose 3, 5, or 10 minutes by default. You can customize all three presets in Settings. Every normal opening has one fixed 12-second focused wait.")
         InfoCard(
             "Emergency unlock",
-            "Each day starts with none. Your first completed exercise set earns one 15-minute emergency unlock for that day.",
+            "Each day starts with none. Your first completed exercise set earns one 15-minute emergency unlock for that day. It starts immediately and won’t use earned time.",
         )
     }
 }
@@ -157,8 +162,10 @@ private fun AccessibilityStep(
         )
         DisclosureCard()
         Button(
+            colors = pulseButtonColors(),
+            border = PulseActionBorder,
             onClick = onOpenAccessibility,
-            modifier = Modifier.fillMaxWidth().height(52.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
             shape = PillShape,
         ) { Text(if (enabled) "Accessibility enabled ✓" else "Open Accessibility settings") }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -215,8 +222,10 @@ private fun UsageStep(granted: Boolean, onOpenUsageAccess: () -> Unit) {
             "The Accessibility service remains the source for focus and overlays. Ambiguous gaps are left uncounted rather than guessed.",
         )
         Button(
+            colors = pulseButtonColors(),
+            border = PulseActionBorder,
             onClick = onOpenUsageAccess,
-            modifier = Modifier.fillMaxWidth().height(52.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
             shape = PillShape,
         ) { Text(if (granted) "Usage Access granted ✓" else "Open Usage Access settings") }
         Text(
@@ -251,9 +260,11 @@ private fun ReadyStep(
             onOpenUsageAccess = onOpenUsageAccess,
         )
         Button(
+            colors = pulseButtonColors(),
+            border = PulseActionBorder,
             onClick = onTestBrowser,
             enabled = snapshot.supportedBrowserInstalled,
-            modifier = Modifier.fillMaxWidth().height(52.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
             shape = PillShape,
         ) { Text("Test browser gate") }
         InfoCard(

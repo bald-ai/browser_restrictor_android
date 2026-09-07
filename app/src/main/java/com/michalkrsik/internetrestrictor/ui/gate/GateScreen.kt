@@ -1,5 +1,8 @@
 package com.michalkrsik.internetrestrictor.ui.gate
 
+import com.michalkrsik.internetrestrictor.ui.theme.*
+import androidx.compose.foundation.layout.width
+import com.michalkrsik.internetrestrictor.ui.components.ExercisePointsProgress
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -14,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -57,10 +61,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.michalkrsik.internetrestrictor.domain.GateMode
-import com.michalkrsik.internetrestrictor.domain.MACHINE_REPS_PER_SET
 import com.michalkrsik.internetrestrictor.domain.MINUTE_MS
-import com.michalkrsik.internetrestrictor.domain.PLANK_SECONDS_PER_SET
-import com.michalkrsik.internetrestrictor.domain.PUSHUPS_PER_SET
 import com.michalkrsik.internetrestrictor.domain.StateSnapshot
 import com.michalkrsik.internetrestrictor.domain.WaitCalculator
 import com.michalkrsik.internetrestrictor.domain.YOUTUBE_UNLOCK_SETS
@@ -70,6 +71,10 @@ import com.michalkrsik.internetrestrictor.ui.components.formatCompactTime
 import com.michalkrsik.internetrestrictor.ui.components.friendlyLabel
 import com.michalkrsik.internetrestrictor.ui.theme.EditorialTheme
 import com.michalkrsik.internetrestrictor.ui.theme.PillShape
+import com.michalkrsik.internetrestrictor.ui.theme.PulsePanel
+import com.michalkrsik.internetrestrictor.ui.theme.pulseButtonColors
+import com.michalkrsik.internetrestrictor.ui.theme.PulseActionBorder
+import com.michalkrsik.internetrestrictor.ui.theme.PulseCharcoal
 import com.michalkrsik.internetrestrictor.ui.theme.SerifNote
 import com.michalkrsik.internetrestrictor.ui.theme.editorialTitle
 
@@ -84,122 +89,38 @@ data class GateActions(
 @Composable
 fun GateScreen(snapshot: StateSnapshot, actions: GateActions) {
     if (snapshot.canonicalMode == GateMode.WAITING) {
-        WaitingGate(snapshot = snapshot, onCancel = actions.onLeaveBrowser)
+        WaitingGate(snapshot, actions.onLeaveBrowser)
         return
     }
-
-    var selectedMinutes by rememberSaveable(
-        snapshot.gateSessionId,
-        snapshot.settings.sessionMinutes,
-    ) { mutableLongStateOf(snapshot.settings.sessionMinutes.first()) }
+    var selectedMinutes by rememberSaveable(snapshot.gateSessionId, snapshot.settings.sessionMinutes) { mutableLongStateOf(snapshot.settings.sessionMinutes[1]) }
     var actionInFlight by remember { mutableStateOf(false) }
     LaunchedEffect(snapshot.stateRevision, snapshot.canonicalMode) { actionInFlight = false }
-
-    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 22.dp, vertical = 10.dp),
-        ) {
-            Row(modifier = Modifier.fillMaxWidth()) {
-                TextButton(onClick = actions.onLeaveBrowser) {
-                    Text(
-                        if (snapshot.canonicalMode == GateMode.YOUTUBE_LOCKED) {
-                            "←  Leave YouTube"
-                        } else {
-                            "←  Leave browser"
-                        },
-                        style = MaterialTheme.typography.labelLarge,
-                        color = EditorialTheme.colors.accent,
-                    )
-                }
-            }
-            Spacer(Modifier.height(26.dp))
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                PauseEmblem()
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = eyebrow(snapshot.canonicalMode),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = EditorialTheme.colors.ink3,
-                )
-                Text(
-                    text = editorialTitle(headline(snapshot.canonicalMode)),
-                    style = MaterialTheme.typography.headlineLarge,
-                    textAlign = TextAlign.Center,
-                )
-                Text(
-                    text = supportingCopy(snapshot),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                when (snapshot.canonicalMode) {
-                    GateMode.PAUSED -> PausedControls(
-                        snapshot = snapshot,
-                        selectedMinutes = selectedMinutes,
-                        onSelect = { selectedMinutes = it },
-                        actionInFlight = actionInFlight,
-                        onStart = {
-                            actionInFlight = true
-                            actions.onStartSession(selectedMinutes)
-                        },
-                        onSkip = {
-                            actionInFlight = true
-                            actions.onEmergencySkip()
-                        },
-                        onExerciseChallenge = {
-                            actionInFlight = true
-                            actions.onExerciseChallenge()
-                        },
-                    )
-                    GateMode.OUT_OF_TIME, GateMode.OUT_OF_TIME_LATCHED -> OutOfTimeControls(
-                        snapshot = snapshot,
-                        actionInFlight = actionInFlight,
-                        onExerciseChallenge = {
-                            actionInFlight = true
-                            actions.onExerciseChallenge()
-                        },
-                        onSkip = {
-                            actionInFlight = true
-                            actions.onEmergencySkip()
-                        },
-                        onTryAgain = {
-                            actionInFlight = true
-                            actions.onTryAgain()
-                        },
-                    )
-                    GateMode.YOUTUBE_LOCKED -> YouTubeLockedControls(
-                        snapshot = snapshot,
-                        actionInFlight = actionInFlight,
-                        onExerciseChallenge = {
-                            actionInFlight = true
-                            actions.onExerciseChallenge()
-                        },
-                    )
-                    else -> Unit
-                }
-                snapshot.lastErrorMessage?.let {
-                    Text(
-                        text = it,
-                        modifier = Modifier.padding(vertical = 8.dp),
-                        style = SerifNote,
-                        textAlign = TextAlign.Center,
-                        color = EditorialTheme.colors.accentInk,
-                    )
-                }
-            }
+    PulseScreen {
+        PulseBack(if(snapshot.canonicalMode == GateMode.YOUTUBE_LOCKED) "Leave YouTube" else "Leave browser", actions.onLeaveBrowser)
+        Column(Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            PauseEmblem()
+            Spacer(Modifier.height(18.dp))
+            Text(eyebrow(snapshot.canonicalMode), style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, letterSpacing = 1.2.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(13.dp))
+            Text(headline(snapshot.canonicalMode).uppercase(), textAlign = TextAlign.Center, style = MaterialTheme.typography.headlineLarge.copy(fontSize = 41.sp, lineHeight = 42.sp, letterSpacing = (-1).sp))
+            Spacer(Modifier.height(10.dp))
+            Text(supportingCopy(snapshot), textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 21.sp))
         }
+        when(snapshot.canonicalMode) {
+            GateMode.PAUSED -> PausedControls(snapshot, selectedMinutes, { selectedMinutes = it }, actionInFlight,
+                { actionInFlight = true; actions.onStartSession(selectedMinutes) },
+                { actionInFlight = true; actions.onEmergencySkip() },
+                { actionInFlight = true; actions.onExerciseChallenge() })
+            GateMode.OUT_OF_TIME, GateMode.OUT_OF_TIME_LATCHED -> OutOfTimeControls(snapshot, actionInFlight,
+                { actionInFlight = true; actions.onExerciseChallenge() },
+                { actionInFlight = true; actions.onEmergencySkip() },
+                { actionInFlight = true; actions.onTryAgain() })
+            GateMode.YOUTUBE_LOCKED -> YouTubeLockedControls(snapshot, actionInFlight, { actionInFlight = true; actions.onExerciseChallenge() })
+            else -> Unit
+        }
+        snapshot.lastErrorMessage?.let { PulseText(it, 12, Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.error) }
+        Spacer(Modifier.weight(1f))
+        PulseText("Your attention belongs to you.", 9, Modifier.align(Alignment.CenterHorizontally).padding(top = 22.dp), muted = true)
     }
 }
 
@@ -214,9 +135,11 @@ private fun YouTubeLockedControls(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Button(
+            colors = pulseButtonColors(),
+            border = PulseActionBorder,
             onClick = onExerciseChallenge,
             enabled = !actionInFlight,
-            modifier = Modifier.fillMaxWidth().height(58.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 72.dp),
             shape = PillShape,
         ) {
             Text("Start exercise", style = MaterialTheme.typography.labelLarge)
@@ -229,14 +152,7 @@ private fun YouTubeLockedControls(
             modifier = Modifier.fillMaxWidth(),
         )
         Text(
-            "Each set earns +3 minutes",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Text(
-            "5 push-ups · 18s plank · 10 machine reps",
+            "Every 5 points earns +3 minutes",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -256,39 +172,31 @@ private fun PausedControls(
     onSkip: () -> Unit,
     onExerciseChallenge: () -> Unit,
 ) {
-    val waitMs = WaitCalculator.requiredFocusMs(selectedMinutes)
-    Column(
-        Modifier.padding(vertical = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
-    ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            snapshot.settings.sessionMinutes.forEach { minutes ->
-                DurationCard(
-                    minutes = minutes,
-                    selected = minutes == selectedMinutes,
-                    onClick = { onSelect(minutes) },
-                    modifier = Modifier.weight(1f),
-                )
+    val remaining = ((snapshot.budgetSnapshots.firstOrNull { it.enabled }?.remainingMs ?: 0L) + 59_999) / 60_000
+    Column {
+        PulseControlGroup {
+            PulseSection("Session length", "$remaining min available")
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                snapshot.settings.sessionMinutes.forEach { minutes -> DurationCard(minutes, minutes == selectedMinutes, { onSelect(minutes) }, Modifier.weight(1f)) }
+            }
+            Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(4.dp).background(PulseYellow, RoundedCornerShape(50)))
+                Spacer(Modifier.width(5.dp))
+                PulseText("A 12-second pause before each session", 9, muted = true)
             }
         }
-        Text(
-            "Every normal browser session starts with the same ${WaitCalculator.formatWait(waitMs)} focused wait.",
-            style = MaterialTheme.typography.bodySmall,
-            color = EditorialTheme.colors.ink3,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Button(
-            onClick = onStart,
-            enabled = !actionInFlight,
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-            shape = PillShape,
-        ) {
-            Text("Begin $selectedMinutes minute session", style = MaterialTheme.typography.labelLarge)
+        Spacer(Modifier.height(5.dp))
+        PulseCarryOver(snapshot)
+        Spacer(Modifier.height(18.dp))
+        PulsePrimary("Start exercise", onExerciseChallenge, exercise = true, subtitle = "Earn 3 minutes with your next set", enabled = !actionInFlight)
+        Spacer(Modifier.height(10.dp))
+        OutlinedButton(onClick = onStart, enabled = !actionInFlight, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(7.dp), border = BorderStroke(1.dp, EditorialTheme.colors.hairline), colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)) {
+            Text("CONTINUE FOR $selectedMinutes MINUTES", style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp, letterSpacing = .5.sp))
+            Spacer(Modifier.width(8.dp))
+            PulseIcon("arrow", 17)
         }
-        ExerciseButton(snapshot, actionInFlight, onExerciseChallenge)
+        Spacer(Modifier.height(5.dp))
         SkipButton(snapshot, actionInFlight, onSkip)
-        Budgets(snapshot)
     }
 }
 
@@ -429,84 +337,23 @@ private fun OutOfTimeControls(
 
 @Composable
 private fun ExerciseButton(snapshot: StateSnapshot, actionInFlight: Boolean, onClick: () -> Unit) {
-    OutlinedButton(
-        onClick = onClick,
-        enabled = !actionInFlight,
-        modifier = Modifier.fillMaxWidth(),
-        shape = PillShape,
-        border = BorderStroke(1.dp, EditorialTheme.colors.hairline),
-        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
-    ) {
-        Column(
-            modifier = Modifier.padding(vertical = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Text("Start exercise", fontWeight = FontWeight.Bold)
-            Text(
-                "Each set earns +3 minutes",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                "5 push-ups · 18s plank · 10 machine reps",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            CarryOverRows(snapshot)
-        }
+    Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        PulseCarryOver(snapshot)
+        PulsePrimary("Start exercise", onClick, exercise = true, subtitle = "Earn 3 minutes with your next set", enabled = !actionInFlight)
     }
 }
 
 @Composable
-internal fun CarryOverRows(snapshot: StateSnapshot) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        Text(
-            "${snapshot.pushupRepetitionRemainderToday}/$PUSHUPS_PER_SET push-ups carried",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            "${snapshot.plankSecondRemainderToday}/${PLANK_SECONDS_PER_SET}s plank carried",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            "${snapshot.machineRepetitionRemainderToday}/$MACHINE_REPS_PER_SET machine reps carried",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
+internal fun CarryOverRows(snapshot: StateSnapshot) { PulseCarryOver(snapshot) }
 
 @Composable
 private fun SkipButton(snapshot: StateSnapshot, actionInFlight: Boolean, onClick: () -> Unit) {
-    if (!snapshot.skipSnapshot.eligible) return
-    val actual = snapshot.skipSnapshot.grantDurationMs
-    val label = if (actual < MINUTE_MS) "<1 min" else "${actual / MINUTE_MS} min"
-    TextButton(
-        onClick = onClick,
-        enabled = !actionInFlight,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                "Use emergency skip · ${snapshot.skipSnapshot.remaining} left today",
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = EditorialTheme.colors.accent,
-            )
-            Text(
-                "Opens a browser for $label",
-                style = MaterialTheme.typography.bodySmall,
-                color = EditorialTheme.colors.ink3,
-            )
-        }
+    TextButton(onClick = onClick, enabled = snapshot.skipSnapshot.eligible && !actionInFlight, modifier = Modifier.fillMaxWidth()) {
+        PulseText("Emergency unlock", 11, muted = true)
+        Spacer(Modifier.width(7.dp))
+        PulseText("${snapshot.skipSnapshot.remaining} available · 15 min", 9, muted = true)
     }
+    HorizontalDivider(color = EditorialTheme.colors.hairline)
 }
 
 @Composable
@@ -533,45 +380,11 @@ private fun DurationCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val shape = RoundedCornerShape(16.dp)
-    val numberColor = if (selected) MaterialTheme.colorScheme.onPrimary
-    else MaterialTheme.colorScheme.onSurface
-    val unitColor = if (selected) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.65f)
-    else EditorialTheme.colors.ink3
-    Column(
-        modifier = modifier
-            .clip(shape)
-            .background(
-                if (selected) MaterialTheme.colorScheme.primary
-                else androidx.compose.ui.graphics.Color.Transparent,
-            )
-            .border(
-                width = 1.dp,
-                color = if (selected) MaterialTheme.colorScheme.primary
-                else EditorialTheme.colors.hairline,
-                shape = shape,
-            )
-            .clickable(role = Role.RadioButton, onClick = onClick)
-            .semantics {
-                role = Role.RadioButton
-                this.selected = selected
-                contentDescription = "$minutes minute session"
-            }
-            .padding(vertical = 14.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(
-            text = buildAnnotatedString {
-                withStyle(SpanStyle(fontSize = 20.sp, fontWeight = FontWeight.SemiBold)) {
-                    append("$minutes")
-                }
-                withStyle(SpanStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium, color = unitColor)) {
-                    append(" min")
-                }
-            },
-            style = MaterialTheme.typography.labelLarge,
-            color = numberColor,
-        )
+    val shape = RoundedCornerShape(13.dp)
+    val color = if(selected) PulseCharcoal else MaterialTheme.colorScheme.onSurfaceVariant
+    Column(modifier.height(75.dp).clip(shape).background(if(selected) PulseYellow else CardDark).border(1.dp, if(selected) PulseYellow else EditorialTheme.colors.hairline, shape).clickable(role = Role.RadioButton, onClick = onClick).semantics { this.selected = selected; contentDescription = "$minutes minute session" }, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        PulseText("$minutes", 24, weight = FontWeight.Medium, color = color)
+        PulseText("minutes", 10, color = color)
     }
 }
 
@@ -585,7 +398,7 @@ private fun SectionLabel(text: String) {
 }
 
 private fun eyebrow(mode: GateMode): String = when (mode) {
-    GateMode.PAUSED -> "TAKE A MOMENT"
+    GateMode.PAUSED -> "A MOMENT BEFORE YOU BROWSE"
     GateMode.WAITING -> "ALMOST THERE"
     GateMode.OUT_OF_TIME, GateMode.OUT_OF_TIME_LATCHED -> "BUDGET USED"
     GateMode.YOUTUBE_LOCKED -> "MORNING GATE"
@@ -593,7 +406,7 @@ private fun eyebrow(mode: GateMode): String = when (mode) {
 }
 
 private fun headline(mode: GateMode): String = when (mode) {
-    GateMode.PAUSED -> "Pause before browsing."
+    GateMode.PAUSED -> "MAKE IT\nINTENTIONAL."
     GateMode.WAITING -> "Hang on a moment."
     GateMode.OUT_OF_TIME, GateMode.OUT_OF_TIME_LATCHED -> "Browser time is used up."
     GateMode.YOUTUBE_LOCKED -> "Exercise before YouTube."
@@ -601,7 +414,7 @@ private fun headline(mode: GateMode): String = when (mode) {
 }
 
 private fun supportingCopy(snapshot: StateSnapshot): String = when (snapshot.canonicalMode) {
-    GateMode.PAUSED -> "Choose how long you need."
+    GateMode.PAUSED -> "Choose how long you need.\nThe rest of your day is yours."
     GateMode.WAITING -> {
         val minutes = (snapshot.waitSnapshot?.selectedDurationMs ?: 0) / MINUTE_MS
         "Your $minutes min session is opening soon."

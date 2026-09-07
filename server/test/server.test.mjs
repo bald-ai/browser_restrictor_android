@@ -185,7 +185,7 @@ test("catalog marks credited exercises ready and keeps sit-ups disabled", () => 
   assert.equal(exerciseIsReady(getExerciseDefinition("plank")), true);
   assert.equal(exerciseIsReady(getExerciseDefinition("outdoor_lat_pulldown")), true);
   assert.equal(exerciseIsReady(getExerciseDefinition("sit_up")), false);
-  assert.equal(getExerciseDefinition("plank").unitsPerSet, 18);
+  assert.equal(getExerciseDefinition("plank").unitsPerSet, 15);
   assert.equal(getExerciseDefinition("outdoor_lat_pulldown").unitsPerSet, 10);
   assert.deepEqual(
     publicExerciseCatalog().map(({ id, metric, ready, units_per_set }) => ({
@@ -196,7 +196,7 @@ test("catalog marks credited exercises ready and keeps sit-ups disabled", () => 
     })),
     [
       { id: "push_up", metric: "repetitions", ready: true, units_per_set: 5 },
-      { id: "plank", metric: "hold_seconds", ready: true, units_per_set: 18 },
+      { id: "plank", metric: "hold_seconds", ready: true, units_per_set: 15 },
       { id: "outdoor_lat_pulldown", metric: "repetitions", ready: true, units_per_set: 10 },
       { id: "sit_up", metric: "repetitions", ready: false, units_per_set: null },
     ],
@@ -215,7 +215,7 @@ test("health exposes readiness without prompts or success flags", async () => {
         id: "plank",
         display_name: "Plank",
         metric: "hold_seconds",
-        units_per_set: 18,
+        units_per_set: 15,
         ready: true,
         pending: [],
       },

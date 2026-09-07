@@ -1,8 +1,17 @@
 package com.michalkrsik.internetrestrictor.ui
 
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import com.michalkrsik.internetrestrictor.domain.ThemePreference
+import com.michalkrsik.internetrestrictor.domain.RestrictorSettings
+import org.junit.Assert.assertEquals
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -46,14 +55,33 @@ class SettingsScreenTest {
         composeRule.onAllNodesWithText("Require wait before browser access").assertCountEquals(0)
         composeRule.onAllNodesWithText("Clear report history").assertCountEquals(0)
         composeRule.onAllNodesWithText("Accessibility").assertCountEquals(0)
-        composeRule.onAllNodesWithText("Show").assertCountEquals(2)
-
-        composeRule.onNodeWithText("System access").performScrollTo().performClick()
+        composeRule.onNodeWithText("Browser protection").performScrollTo().performClick()
         composeRule.onNodeWithText("Accessibility").performScrollTo().assertIsDisplayed()
-        composeRule.onAllNodesWithText("Hide").assertCountEquals(1)
-
-        composeRule.onNodeWithText("Developer").performScrollTo().performClick()
+        composeRule.onNodeWithText("Done").performClick()
+        composeRule.onNodeWithContentDescription("More settings and diagnostics").performScrollTo().performClick()
         composeRule.onNodeWithText("Clear report history").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Export diagnostics").performScrollTo().assertIsDisplayed()
     }
+    @Test
+    fun presetsValidateAndSaveWhileAppearanceChangesImmediately() {
+        val engine = RestrictionEngine()
+        val now = 1_787_072_400_000L
+        val zone = ZoneId.of("UTC")
+        val snapshot = engine.snapshot(engine.normalize(PersistedState(), now, zone), RuntimeSignals(accessibilityEnabled = true, serviceConnected = true, storageReady = true), now, zone)
+        var appearance by mutableStateOf(ThemePreference.LIGHT)
+        var saved: RestrictorSettings? = null
+        composeRule.setContent {
+            RestrictorTheme(appearance) {
+                SettingsScreen(snapshot.copy(settings = snapshot.settings.copy(theme = appearance)), {}, { appearance = it }, { saved = it }, {}, {}, {}, {}, {}, {})
+            }
+        }
+        composeRule.onNodeWithContentDescription("Session preset 1 in minutes").performTextReplacement("0")
+        composeRule.onNodeWithText("SAVE CHANGES").performScrollTo().assertIsNotEnabled()
+        composeRule.onNodeWithContentDescription("Session preset 1 in minutes").performScrollTo().performTextReplacement("7")
+        composeRule.onNodeWithContentDescription("Dark appearance").performScrollTo().performClick()
+        composeRule.runOnIdle { assertEquals(ThemePreference.DARK, appearance) }
+        composeRule.onNodeWithText("SAVE CHANGES").performScrollTo().performClick()
+        composeRule.runOnIdle { assertEquals(listOf(7L,5L,10L), saved?.sessionMinutes); assertEquals(ThemePreference.DARK, saved?.theme) }
+    }
+
 }

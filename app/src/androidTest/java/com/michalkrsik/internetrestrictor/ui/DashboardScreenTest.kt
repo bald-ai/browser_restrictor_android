@@ -6,6 +6,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
 import com.michalkrsik.internetrestrictor.domain.CommandResult
 import com.michalkrsik.internetrestrictor.domain.PersistedState
@@ -47,17 +48,15 @@ class DashboardScreenTest {
             }
         }
 
-        composeRule.onNodeWithText("Your week.").assertIsDisplayed()
-        composeRule.onNodeWithText("4/5 push-ups").assertIsDisplayed()
-        composeRule.onNodeWithText("0/18s plank").assertIsDisplayed()
-        composeRule.onNodeWithText("0/10 machine reps").assertIsDisplayed()
+        composeRule.onNodeWithText("MAKE TIME.").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Exercise points toward a 3-minute boost").assertIsDisplayed()
         composeRule.onNodeWithText("EXPIRES IN").assertIsDisplayed()
-        composeRule.onNodeWithText("MONDAY – SUNDAY").assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Open settings").assertIsDisplayed()
-
-        composeRule.onNodeWithText("Day").performClick()
-        composeRule.onNodeWithText("Today.").assertIsDisplayed()
-        composeRule.onNodeWithText("browser time today").assertIsDisplayed()
-        composeRule.onAllNodesWithText("1 set").assertCountEquals(2)
+        composeRule.onNodeWithText("This week").performScrollTo().performClick()
+        composeRule.onNodeWithText("MONDAY – SUNDAY").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("browser time today").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Exercise set").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Done").performClick()
+        composeRule.onNodeWithText("PUSH-UPS").performScrollTo().performClick()
+        composeRule.onNodeWithText("PREVIOUS CYCLES").performScrollTo().assertIsDisplayed()
     }
 }

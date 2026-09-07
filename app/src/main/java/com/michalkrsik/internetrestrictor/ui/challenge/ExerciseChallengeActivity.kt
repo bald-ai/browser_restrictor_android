@@ -1,5 +1,7 @@
 package com.michalkrsik.internetrestrictor.ui.challenge
 
+import com.michalkrsik.internetrestrictor.ui.components.ExercisePointsProgress
+import com.michalkrsik.internetrestrictor.domain.formatExercisePoints
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -34,6 +36,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -67,13 +70,13 @@ import com.michalkrsik.internetrestrictor.domain.EXERCISE_SET_REWARD_MINUTES
 import com.michalkrsik.internetrestrictor.domain.ExerciseId
 import com.michalkrsik.internetrestrictor.domain.ExercisePolicies
 import com.michalkrsik.internetrestrictor.domain.SUPPORTED_BROWSERS
-import com.michalkrsik.internetrestrictor.domain.StateSnapshot
 import com.michalkrsik.internetrestrictor.domain.YOUTUBE_PACKAGE_NAME
 import com.michalkrsik.internetrestrictor.domain.YOUTUBE_UNLOCK_SETS
-import com.michalkrsik.internetrestrictor.domain.accumulateExerciseUnits
 import com.michalkrsik.internetrestrictor.domain.isProtectedTargetPackage
 import com.michalkrsik.internetrestrictor.ui.theme.EditorialTheme
 import com.michalkrsik.internetrestrictor.ui.theme.PillShape
+import com.michalkrsik.internetrestrictor.ui.theme.pulseButtonColors
+import com.michalkrsik.internetrestrictor.ui.theme.PulseActionBorder
 import com.michalkrsik.internetrestrictor.ui.theme.RestrictorTheme
 import java.io.BufferedReader
 import java.io.File
@@ -100,6 +103,8 @@ class ExerciseChallengeActivity : ComponentActivity() {
     private var recordingSecondsRemaining by mutableIntStateOf(
         ExerciseChallengeCatalog.RECORDING_LIMIT_SECONDS,
     )
+    private var countdownSecondsRemaining by mutableIntStateOf(3)
+    private var countdownDeadlineMs = 0L
     private var lensFacing by mutableIntStateOf(CameraSelector.LENS_FACING_FRONT)
     private var hasFrontCamera by mutableStateOf(false)
     private var hasBackCamera by mutableStateOf(false)
@@ -124,6 +129,27 @@ class ExerciseChallengeActivity : ComponentActivity() {
             ).div(1_000L).toInt()
             handler.postDelayed(this, 500L)
         }
+    }
+
+    private val countdownTicker = object : Runnable {
+        override fun run() {
+            if (phase != ChallengePhase.COUNTDOWN) return
+            val remaining = countdownDeadlineMs - SystemClock.elapsedRealtime()
+            if (remaining <= 0) {
+                startRecording()
+            } else {
+                countdownSecondsRemaining = ((remaining + 999) / 1_000).toInt()
+                handler.postDelayed(this, minOf(remaining, 100L))
+            }
+        }
+    }
+
+    private fun startCountdown() {
+        if (videoCapture == null || phase !in setOf(ChallengePhase.READY, ChallengePhase.RETRY)) return
+        phase = ChallengePhase.COUNTDOWN
+        countdownSecondsRemaining = 3
+        countdownDeadlineMs = SystemClock.elapsedRealtime() + 3_000L
+        handler.post(countdownTicker)
     }
 
     private val recordingTimeout = Runnable {
@@ -159,11 +185,17 @@ class ExerciseChallengeActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        handler.removeCallbacks(countdownTicker)
+        if (phase == ChallengePhase.COUNTDOWN) {
+            phase = ChallengePhase.READY
+            status = "Ready when you are."
+        }
         ExerciseChallengeVisibility.onActivityStopped()
         super.onStop()
     }
 
     override fun onDestroy() {
+        handler.removeCallbacks(countdownTicker)
         handler.removeCallbacks(recordingTicker)
         handler.removeCallbacks(recordingTimeout)
         handler.removeCallbacks(resultReturn)
@@ -218,13 +250,6 @@ class ExerciseChallengeActivity : ComponentActivity() {
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center,
             )
-            Text(
-                text = ExerciseChallengeCatalog.EQUIVALENCE_COPY,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Center,
-            )
             InstructionText()
             CameraPreview(Modifier.fillMaxWidth().weight(1f))
             ChallengeStatus()
@@ -257,13 +282,6 @@ class ExerciseChallengeActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxWidth(),
                     textAlign = TextAlign.Center,
                 )
-                Text(
-                    text = ExerciseChallengeCatalog.EQUIVALENCE_COPY,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.fillMaxWidth(),
-                    textAlign = TextAlign.Center,
-                )
                 InstructionText()
                 Spacer(Modifier.weight(1f))
                 ChallengeStatus()
@@ -290,6 +308,7 @@ class ExerciseChallengeActivity : ComponentActivity() {
                 onClick = ::flipCamera,
                 enabled = hasFrontCamera && hasBackCamera &&
                     phase !in setOf(
+                        ChallengePhase.COUNTDOWN,
                         ChallengePhase.RECORDING,
                         ChallengePhase.CHECKING,
                         ChallengePhase.RESULT,
@@ -311,6 +330,8 @@ class ExerciseChallengeActivity : ComponentActivity() {
 
     @Composable
     private fun InstructionText() {
+        val snapshot by appContainer.repository.snapshot.collectAsState()
+        ExercisePointsProgress(snapshot.exercisePointSixthsToday)
         Text(
             text = ExerciseChallengeCatalog.CAMERA_INSTRUCTION,
             style = MaterialTheme.typography.bodyMedium,
@@ -337,7 +358,9 @@ class ExerciseChallengeActivity : ComponentActivity() {
     @Composable
     private fun ChallengeStatus() {
         Text(
-            text = if (phase == ChallengePhase.RECORDING) {
+            text = if (phase == ChallengePhase.COUNTDOWN) {
+                "Get ready · $countdownSecondsRemaining"
+            } else if (phase == ChallengePhase.RECORDING) {
                 "Recording · ${recordingSecondsRemaining}s remaining"
             } else {
                 status
@@ -356,17 +379,20 @@ class ExerciseChallengeActivity : ComponentActivity() {
     @Composable
     private fun PrimaryActionButton() {
         Button(
+            colors = pulseButtonColors(),
+            border = PulseActionBorder,
             onClick = ::primaryAction,
             enabled = phase in setOf(
                 ChallengePhase.READY,
                 ChallengePhase.RECORDING,
                 ChallengePhase.RETRY,
             ),
-            modifier = Modifier.fillMaxWidth().height(56.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp),
             shape = PillShape,
         ) {
             Text(
                 when (phase) {
+                    ChallengePhase.COUNTDOWN -> "Starting in $countdownSecondsRemaining…"
                     ChallengePhase.READY -> "Start exercise"
                     ChallengePhase.RECORDING -> "Finish recording"
                     ChallengePhase.CHECKING -> "Checking video…"
@@ -381,7 +407,7 @@ class ExerciseChallengeActivity : ComponentActivity() {
 
     private fun primaryAction() {
         when (phase) {
-            ChallengePhase.READY, ChallengePhase.RETRY -> startRecording()
+            ChallengePhase.READY, ChallengePhase.RETRY -> startCountdown()
             ChallengePhase.RECORDING -> stopRecording("Finishing recording…")
             else -> Unit
         }
@@ -451,7 +477,7 @@ class ExerciseChallengeActivity : ComponentActivity() {
     }
 
     private fun flipCamera() {
-        if (phase in setOf(ChallengePhase.RECORDING, ChallengePhase.CHECKING)) return
+        if (phase in setOf(ChallengePhase.COUNTDOWN, ChallengePhase.RECORDING, ChallengePhase.CHECKING)) return
         val provider = cameraProvider ?: return
         val target = if (lensFacing == CameraSelector.LENS_FACING_FRONT) {
             CameraSelector.LENS_FACING_BACK
@@ -564,24 +590,20 @@ class ExerciseChallengeActivity : ComponentActivity() {
                         return@onSuccess
                     }
                     val updated = appContainer.repository.snapshot.value
-                    val priorRemainder = previousRemainderFor(previous, updated, verdict.exerciseId)
-                    val newlyEarnedRounds = accumulateExerciseUnits(
-                        previousRemainder = priorRemainder,
-                        added = verdict.value.toLong(),
-                        unitsPerSet = policy.unitsPerSet,
-                    ).completedSets
+                    val sameDay = previous.todayUsageReport.localDayKey == updated.todayUsageReport.localDayKey
+                    val newlyEarnedRounds = updated.earnedBudgetRoundsToday -
+                        (if (sameDay) previous.earnedBudgetRoundsToday else 0L)
                     val earnedMinutes = newlyEarnedRounds * EXERCISE_SET_REWARD_MINUTES
-                    val carried = updated.remainderFor(verdict.exerciseId)
+                    val carried = updated.exercisePointSixthsToday
                     appContainer.eventLog.record(
                         "${policy.displayName} video measured ${verdict.value}; " +
                             "$earnedMinutes daily budget minutes earned; " +
-                            "$carried ${policy.remainderNounPlural} carried",
+                            "${formatExercisePoints(carried)} of 5 points carried",
                     )
                     val baseResultMessage = formatExerciseResult(
                         exerciseId = verdict.exerciseId,
                         measuredValue = verdict.value,
                         completedSets = newlyEarnedRounds,
-                        remainder = carried,
                     )
                     val returningToYoutube =
                         intent.getStringExtra(EXTRA_RETURN_PACKAGE) == YOUTUBE_PACKAGE_NAME
@@ -690,6 +712,7 @@ class ExerciseChallengeActivity : ComponentActivity() {
     private enum class ChallengePhase {
         PREPARING,
         READY,
+        COUNTDOWN,
         RECORDING,
         CHECKING,
         RESULT,
@@ -712,7 +735,6 @@ internal fun formatExerciseResult(
     exerciseId: ExerciseId,
     measuredValue: Int,
     completedSets: Long,
-    remainder: Long,
 ): String {
     val policy = ExercisePolicies.find(exerciseId)
     val detected = "${policy?.resultLabel ?: "Exercise"} detected"
@@ -721,11 +743,7 @@ internal fun formatExerciseResult(
     } else {
         "$measuredValue ${if (measuredValue == 1) "repetition" else "repetitions"}"
     }
-    val setWord = if (completedSets == 1L) "set" else "sets"
-    val carriedNoun = policy?.let {
-        if (remainder == 1L) it.remainderNounSingular else it.remainderNounPlural
-    } ?: if (remainder == 1L) "unit" else "units"
-    return "$detected · $measurementText · $completedSets $setWord earned · $remainder $carriedNoun carried"
+    return "$detected · $measurementText · +${completedSets * EXERCISE_SET_REWARD_MINUTES} min"
 }
 
 internal fun shouldReturnAfterExerciseResult(
@@ -733,22 +751,6 @@ internal fun shouldReturnAfterExerciseResult(
     youtubeUnlocked: Boolean,
     newlyEarnedRounds: Long,
 ): Boolean = newlyEarnedRounds > 0 && (!returningToYoutube || youtubeUnlocked)
-
-internal fun StateSnapshot.remainderFor(id: ExerciseId): Long = when (id) {
-    ExerciseId.PUSH_UP -> pushupRepetitionRemainderToday
-    ExerciseId.PLANK -> plankSecondRemainderToday
-    ExerciseId.OUTDOOR_LAT_PULLDOWN -> machineRepetitionRemainderToday
-    ExerciseId.SIT_UP, ExerciseId.UNSUPPORTED -> 0
-}
-
-private fun previousRemainderFor(
-    previous: StateSnapshot,
-    updated: StateSnapshot,
-    exerciseId: ExerciseId,
-): Long {
-    val sameDay = previous.todayUsageReport.localDayKey == updated.todayUsageReport.localDayKey
-    return if (sameDay) previous.remainderFor(exerciseId) else 0L
-}
 
 internal object ExerciseChallengeVisibility {
     val active = MutableStateFlow(false)

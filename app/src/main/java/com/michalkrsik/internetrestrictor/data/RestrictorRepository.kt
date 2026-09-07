@@ -17,6 +17,7 @@ import com.michalkrsik.internetrestrictor.domain.RuntimeSignals
 import com.michalkrsik.internetrestrictor.domain.StateSnapshot
 import com.michalkrsik.internetrestrictor.domain.ThemePreference
 import com.michalkrsik.internetrestrictor.domain.TimeSource
+import com.michalkrsik.internetrestrictor.domain.UnlockSource
 import java.io.File
 import kotlin.math.abs
 import kotlinx.coroutines.CompletableDeferred
@@ -30,7 +31,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 class RestrictorRepository(
-    context: Context,
+    context: Context? = null,
     private val timeSource: TimeSource,
     private val applicationScope: CoroutineScope,
     private val engine: RestrictionEngine = RestrictionEngine(),
@@ -41,7 +42,10 @@ class RestrictorRepository(
     private val dataStore = dataStoreOverride ?: DataStoreFactory.create(
         serializer = AppStateSerializer,
         scope = applicationScope,
-        produceFile = { File(context.filesDir, "datastore/restrictor_state.bin") },
+        produceFile = {
+            val ctx = requireNotNull(context) { "Context required when dataStoreOverride is null" }
+            File(ctx.filesDir, "datastore/restrictor_state.bin")
+        },
     )
     private val mutationMutex = Mutex()
     private val loaded = CompletableDeferred<Unit>()
@@ -53,6 +57,8 @@ class RestrictorRepository(
     private var lastTickWallMs: Long? = null
     private var bufferedUsageStartWallMs: Long? = null
     private var bufferedUsageEndWallMs: Long? = null
+    private var accumulatedRecordedMs: Long = 0L
+    private var accumulatedChargedMs: Long = 0L
 
     private val _snapshot = MutableStateFlow(
         engine.snapshot(
@@ -428,16 +434,28 @@ class RestrictorRepository(
         lastTickWallMs = wallTimeMs
         if (previousElapsed == null || previousWall == null) {
             val normalized = engine.normalize(persistedState, wallTimeMs, timeSource.zoneId())
-            if (normalized != persistedState && persistLocked(normalized)) persistedState = normalized
+            if (normalized != persistedState) {
+                val before = persistedState
+                if (persistLocked(normalized)) {
+                    persistedState = normalized
+                    recordTransition(before, normalized)
+                }
+            }
             manageGateTokensLocked()
             return
         }
 
         val rawDelta = elapsedRealtimeMs - previousElapsed
         if (rawDelta <= 0) {
-            if (forceUsageFlush) flushUsageBufferLocked()
+            if (forceUsageFlush) flushUsageBufferLocked(forceSummaryFlush = true)
             val normalized = engine.normalize(persistedState, wallTimeMs, timeSource.zoneId())
-            if (normalized != persistedState && persistLocked(normalized)) persistedState = normalized
+            if (normalized != persistedState) {
+                val before = persistedState
+                if (persistLocked(normalized)) {
+                    persistedState = normalized
+                    recordTransition(before, normalized)
+                }
+            }
             manageGateTokensLocked()
             return
         }
@@ -456,7 +474,7 @@ class RestrictorRepository(
 
         when (mode) {
             GateMode.WAITING -> {
-                flushUsageBufferLocked()
+                flushUsageBufferLocked(forceSummaryFlush = true)
                 val result = engine.advanceWait(
                     input = persistedState,
                     runtime = runtime,
@@ -470,7 +488,13 @@ class RestrictorRepository(
                     is CommandResult.NormalCompletionWon -> result.state
                     is CommandResult.Rejected -> result.state
                 }
-                if (next != persistedState && persistLocked(next)) persistedState = next
+                if (next != persistedState) {
+                    val before = persistedState
+                    if (persistLocked(next)) {
+                        persistedState = next
+                        recordTransition(before, next)
+                    }
+                }
             }
             GateMode.ACCESS_GRANTED_NORMAL,
             GateMode.ACCESS_GRANTED_EMERGENCY,
@@ -488,34 +512,63 @@ class RestrictorRepository(
                 val tightRemaining = engine.budgetSnapshots(persistedState)
                     .filter { it.enabled }
                     .minOfOrNull { it.remainingMs ?: Long.MAX_VALUE }
-                val boundaryReached = tightRemaining != null && bufferedDuration >= tightRemaining
+                val isEmergency = persistedState.activeUnlock?.source == UnlockSource.EMERGENCY
+                val boundaryReached = !isEmergency && tightRemaining != null && bufferedDuration >= tightRemaining
                 val unlockReached = persistedState.activeUnlock?.expiresAtWallMs?.let { it <= wallTimeMs } == true
                 if (forceUsageFlush || bufferedDuration >= USAGE_HEARTBEAT_MS || boundaryReached || unlockReached) {
-                    flushUsageBufferLocked()
+                    flushUsageBufferLocked(forceSummaryFlush = forceUsageFlush || boundaryReached || unlockReached)
                 }
             }
-            else -> flushUsageBufferLocked()
+            else -> flushUsageBufferLocked(forceSummaryFlush = true)
         }
 
         val normalized = engine.normalize(persistedState, wallTimeMs, timeSource.zoneId())
-        if (normalized != persistedState && persistLocked(normalized)) persistedState = normalized
+        if (normalized != persistedState) {
+            val before = persistedState
+            if (persistLocked(normalized)) {
+                persistedState = normalized
+                recordTransition(before, normalized)
+            }
+        }
+
         manageGateTokensLocked()
     }
 
-    private suspend fun flushUsageBufferLocked() {
+    private suspend fun flushUsageBufferLocked(forceSummaryFlush: Boolean = false) {
         val start = bufferedUsageStartWallMs
         val end = bufferedUsageEndWallMs
         bufferedUsageStartWallMs = null
         bufferedUsageEndWallMs = null
-        if (start == null || end == null || end <= start) return
-        val next = engine.consumeUsage(persistedState, runtime, start, end, timeSource.zoneId())
-        if (next != persistedState && persistLocked(next)) {
-            val becameExhausted = !engine.budgetSnapshots(persistedState).any { it.exhausted } &&
-                engine.budgetSnapshots(next).any { it.exhausted }
-            persistedState = next
-            diagnosticSink("Usage interval committed: ${end - start}ms")
-            if (becameExhausted) diagnosticSink("Browser budget exhausted")
+        var previousWasEmergency = false
+        if (start != null && end != null && end > start) {
+            val before = persistedState
+            val wasEmergency = before.activeUnlock?.source == UnlockSource.EMERGENCY
+            previousWasEmergency = wasEmergency
+            val consumption = engine.consumeUsageDetailed(before, runtime, start, end, timeSource.zoneId())
+            val next = consumption.state
+            if (next != before && persistLocked(next)) {
+                val becameExhausted = !engine.budgetSnapshots(before).any { it.exhausted } &&
+                    engine.budgetSnapshots(next).any { it.exhausted }
+                accumulatedRecordedMs = Math.addExact(accumulatedRecordedMs, consumption.recordedMs)
+                accumulatedChargedMs = Math.addExact(accumulatedChargedMs, consumption.chargedMs)
+                recordTransition(before, next)
+                if (becameExhausted) {
+                    flushUsageSummaryLocked(wasEmergency)
+                    diagnosticSink("Browser budget exhausted")
+                }
+            }
         }
+        if (forceSummaryFlush || accumulatedRecordedMs >= USAGE_SUMMARY_INTERVAL_MS) {
+            flushUsageSummaryLocked(previousWasEmergency || persistedState.activeUnlock?.source == UnlockSource.EMERGENCY)
+        }
+    }
+
+    private fun flushUsageSummaryLocked(emergencyActive: Boolean) {
+        if (accumulatedRecordedMs <= 0) return
+        val emergencyContext = if (emergencyActive) " (emergency active)" else ""
+        diagnosticSink("Usage committed: recorded=${accumulatedRecordedMs}ms, charged=${accumulatedChargedMs}ms$emergencyContext (spendable=${persistedState.dailyCounter.spendableBudgetRounds} sets, used=${persistedState.dailyUsage.usedMs}ms)")
+        accumulatedRecordedMs = 0L
+        accumulatedChargedMs = 0L
     }
 
     private suspend fun bumpRevisionLocked() {
@@ -596,22 +649,44 @@ class RestrictorRepository(
         lastTickWallMs = null
         bufferedUsageStartWallMs = null
         bufferedUsageEndWallMs = null
+        accumulatedRecordedMs = 0L
+        accumulatedChargedMs = 0L
     }
 
     private fun recordTransition(before: PersistedState, after: PersistedState) {
-        when {
-            before.pendingWait == null && after.pendingWait != null -> diagnosticSink("Focused wait started")
-            before.activeUnlock == null && after.activeUnlock?.source?.name == "NORMAL" ->
-                diagnosticSink("Normal unlock granted")
-            before.activeUnlock == null && after.activeUnlock?.source?.name == "EMERGENCY" ->
-                diagnosticSink("Emergency skip granted")
-            before.dailyCounter.earnedBudgetRounds < after.dailyCounter.earnedBudgetRounds ->
-                diagnosticSink("Exercise sets added budget for today")
+        if (before.pendingWait == null && after.pendingWait != null) {
+            diagnosticSink("Focused wait started")
+        }
+        if (before.activeUnlock == null && after.activeUnlock?.source == UnlockSource.NORMAL) {
+            diagnosticSink("Normal unlock granted")
+        }
+        if (before.activeUnlock?.source != UnlockSource.EMERGENCY && after.activeUnlock?.source == UnlockSource.EMERGENCY) {
+            diagnosticSink("Emergency access granted (15m free window, spendable=${after.dailyCounter.spendableBudgetRounds} sets, used=${after.dailyUsage.usedMs}ms)")
+        }
+        if (before.activeUnlock?.source == UnlockSource.EMERGENCY && after.activeUnlock == null) {
+            diagnosticSink("Emergency access expired (spendable=${after.dailyCounter.spendableBudgetRounds} sets, used=${after.dailyUsage.usedMs}ms)")
+        }
+        if (before.activeUnlock?.source == UnlockSource.NORMAL && after.activeUnlock == null) {
+            diagnosticSink("Normal unlock expired (spendable=${after.dailyCounter.spendableBudgetRounds} sets, used=${after.dailyUsage.usedMs}ms)")
+        }
+        if (!before.dailyCounter.eveningResetApplied && after.dailyCounter.eveningResetApplied) {
+            diagnosticSink("Evening 20:00 reset applied (spendable reset from ${before.dailyCounter.spendableBudgetRounds} to 0, usedMs reset from ${before.dailyUsage.usedMs} to 0)")
+        }
+        if (before.dailyCounter.localDayKey.isNotBlank() && before.dailyCounter.localDayKey != after.dailyCounter.localDayKey) {
+            diagnosticSink("Daily 04:00 reset applied for day ${after.dailyCounter.localDayKey} (previous earned=${before.dailyCounter.earnedBudgetRounds}, usedMs=${before.dailyUsage.usedMs})")
+        }
+        if (before.dailyCounter.earnedBudgetRounds < after.dailyCounter.earnedBudgetRounds) {
+            diagnosticSink("Exercise sets added budget for today")
+        }
+        if (before.dailyCounter.exercisePointSixths != after.dailyCounter.exercisePointSixths ||
             before.dailyCounter.pushupRepetitionRemainder != after.dailyCounter.pushupRepetitionRemainder ||
-                before.dailyCounter.plankSecondRemainder != after.dailyCounter.plankSecondRemainder ||
-                before.dailyCounter.machineRepetitionRemainder != after.dailyCounter.machineRepetitionRemainder ->
-                diagnosticSink("Partial exercise progress saved for today")
-            before.settings != after.settings -> diagnosticSink("Settings changed")
+            before.dailyCounter.plankSecondRemainder != after.dailyCounter.plankSecondRemainder ||
+            before.dailyCounter.machineRepetitionRemainder != after.dailyCounter.machineRepetitionRemainder
+        ) {
+            diagnosticSink("Partial exercise progress saved for today")
+        }
+        if (before.settings != after.settings) {
+            diagnosticSink("Settings changed")
         }
     }
 
@@ -643,6 +718,7 @@ class RestrictorRepository(
 
     private companion object {
         const val USAGE_HEARTBEAT_MS = 1_000L
+        const val USAGE_SUMMARY_INTERVAL_MS = 60_000L
         const val MAX_UNRECONCILED_INTERVAL_MS = 5_000L
         const val CLOCK_DRIFT_TOLERANCE_MS = 2_000L
         val nonGateModes = setOf(
