@@ -5,9 +5,9 @@ import java.time.LocalDate
 import java.time.ZoneId
 
 object MonthlyPushupCalculator {
-    val zoneId: ZoneId = ZoneId.of("Europe/Prague")
+    val zoneId: ZoneId get() = ZoneId.systemDefault()
 
-    fun cycleStartDate(wallMs: Long): LocalDate {
+    fun cycleStartDate(wallMs: Long, zoneId: ZoneId = this.zoneId): LocalDate {
         val date = Instant.ofEpochMilli(wallMs).atZone(zoneId).toLocalDate()
         return if (date.dayOfMonth >= CYCLE_START_DAY) {
             date.withDayOfMonth(CYCLE_START_DAY)
@@ -16,12 +16,12 @@ object MonthlyPushupCalculator {
         }
     }
 
-    fun cycleStartKey(wallMs: Long): String = cycleStartDate(wallMs).toString()
+    fun cycleStartKey(wallMs: Long, zoneId: ZoneId = this.zoneId): String = cycleStartDate(wallMs, zoneId).toString()
 
     fun nextCycleStart(startDate: String): String =
         LocalDate.parse(startDate).plusMonths(1).withDayOfMonth(CYCLE_START_DAY).toString()
 
-    fun cycleEndWallMs(startDate: String): Long = LocalDate.parse(nextCycleStart(startDate))
+    fun cycleEndWallMs(startDate: String, zoneId: ZoneId = this.zoneId): Long = LocalDate.parse(nextCycleStart(startDate))
         .atStartOfDay(zoneId)
         .toInstant()
         .toEpochMilli()
@@ -29,8 +29,9 @@ object MonthlyPushupCalculator {
     fun ensureCurrentCycle(
         cycles: List<MonthlyPushupCycle>,
         nowWallMs: Long,
+        zoneId: ZoneId = this.zoneId,
     ): List<MonthlyPushupCycle> {
-        val currentKey = cycleStartKey(nowWallMs)
+        val currentKey = cycleStartKey(nowWallMs, zoneId)
         if (cycles.any { it.cycleStartDate == currentKey }) return cycles.sortedBy { it.cycleStartDate }
 
         val result = cycles.associateBy { it.cycleStartDate }.toMutableMap()
@@ -51,10 +52,11 @@ object MonthlyPushupCalculator {
         cycles: List<MonthlyPushupCycle>,
         repetitions: Long,
         nowWallMs: Long,
+        zoneId: ZoneId = this.zoneId,
     ): List<MonthlyPushupCycle> {
         require(repetitions > 0)
-        val currentKey = cycleStartKey(nowWallMs)
-        return ensureCurrentCycle(cycles, nowWallMs).map { cycle ->
+        val currentKey = cycleStartKey(nowWallMs, zoneId)
+        return ensureCurrentCycle(cycles, nowWallMs, zoneId).map { cycle ->
             if (cycle.cycleStartDate == currentKey) {
                 cycle.copy(totalPushups = Math.addExact(cycle.totalPushups, repetitions))
             } else {

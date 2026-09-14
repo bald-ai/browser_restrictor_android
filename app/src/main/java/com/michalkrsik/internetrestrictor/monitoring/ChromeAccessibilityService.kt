@@ -1,5 +1,6 @@
 package com.michalkrsik.internetrestrictor.monitoring
 
+import com.michalkrsik.internetrestrictor.ui.challenge.ChallengeVisibility
 import android.accessibilityservice.AccessibilityService
 import android.app.KeyguardManager
 import android.content.BroadcastReceiver
@@ -22,6 +23,8 @@ import com.michalkrsik.internetrestrictor.overlay.GateOverlayController
 import com.michalkrsik.internetrestrictor.overlay.OverlayCoordinator
 import com.michalkrsik.internetrestrictor.ui.challenge.ExerciseChallengeActivity
 import com.michalkrsik.internetrestrictor.ui.challenge.ExerciseChallengeVisibility
+import com.michalkrsik.internetrestrictor.ui.sprint.SprintChallengeActivity
+import com.michalkrsik.internetrestrictor.ui.sprint.SprintChallengeVisibility
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -78,6 +81,7 @@ class ChromeAccessibilityService : AccessibilityService() {
             repository = repository,
             scope = serviceScope,
             onExerciseChallenge = ::openExerciseChallenge,
+            onSprintChallenge = ::openSprintChallenge,
             onLeaveBrowser = ::leaveBrowser,
             onFocusChanged = ::onGateFocusChanged,
             onAttachFailure = ::onOverlayAttachFailure,
@@ -171,8 +175,10 @@ class ChromeAccessibilityService : AccessibilityService() {
             combine(
                 repository.snapshot,
                 ExerciseChallengeVisibility.active,
-            ) { snapshot, challengeActive -> snapshot to challengeActive }
-                .collect { (snapshot, challengeActive) ->
+                SprintChallengeVisibility.active,
+            ) { snapshot, exerciseActive, sprintActive ->
+                snapshot to (exerciseActive || sprintActive)
+            }.collect { (snapshot, challengeActive) ->
                 overlayCoordinator.render(targetFor(snapshot, challengeActive))
             }
         }
@@ -240,33 +246,41 @@ class ChromeAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun openExerciseChallenge() {
-        eventLog.record("Exercise challenge requested")
-        ExerciseChallengeVisibility.prepareLaunch()
-        val intent = Intent(this, ExerciseChallengeActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            foregroundMonitor.lastProtectedPackageName?.let { packageName ->
-                putExtra(ExerciseChallengeActivity.EXTRA_RETURN_PACKAGE, packageName)
-            }
+    private fun openExerciseChallenge() = launchChallenge(
+        ExerciseChallengeActivity::class.java, ExerciseChallengeVisibility, "Exercise",
+    )
+
+    private fun openSprintChallenge() = launchChallenge(
+        SprintChallengeActivity::class.java, SprintChallengeVisibility, "Sprint",
+    )
+
+    private fun launchChallenge(
+        activity: Class<out android.app.Activity>,
+        visibility: ChallengeVisibility,
+        label: String,
+    ) {
+        eventLog.record("$label challenge requested")
+        visibility.prepareLaunch()
+        val intent = Intent(this, activity).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            foregroundMonitor.lastProtectedPackageName?.let { putExtra("return_package", it) }
         }
         try {
-            // Submit the Activity launch while the user-interactive gate is still attached.
-            // Some Android builds silently reject a later background launch after the
-            // Accessibility overlay has already been removed.
+            // Launch while the interactive gate is still attached for Android background-launch rules.
             startActivity(intent)
             overlayCoordinator.render(OverlayCoordinator.Target.CHALLENGE)
             challengeLaunchWatchdogJob?.cancel()
             challengeLaunchWatchdogJob = serviceScope.launch {
                 delay(CHALLENGE_LAUNCH_TIMEOUT_MS)
-                if (!ExerciseChallengeVisibility.activityStarted.value) {
-                    eventLog.record("Exercise challenge did not become visible; gate restored")
-                    ExerciseChallengeVisibility.cancelLaunch()
+                if (!visibility.activityStarted.value) {
+                    eventLog.record("$label challenge did not become visible; gate restored")
+                    visibility.cancelLaunch()
                     renderCurrentOverlayState()
                 }
             }
         } catch (error: Exception) {
-            eventLog.record("Exercise challenge launch failed: ${error.javaClass.simpleName}")
-            ExerciseChallengeVisibility.cancelLaunch()
+            eventLog.record("$label challenge launch failed: ${error.javaClass.simpleName}")
+            visibility.cancelLaunch()
             renderCurrentOverlayState()
         }
     }
@@ -376,7 +390,7 @@ class ChromeAccessibilityService : AccessibilityService() {
 
     private fun renderCurrentOverlayState() {
         if (!::overlayCoordinator.isInitialized) return
-        val challengeActive = ExerciseChallengeVisibility.active.value
+        val challengeActive = ExerciseChallengeVisibility.active.value || SprintChallengeVisibility.active.value
         overlayCoordinator.render(targetFor(repository.snapshot.value, challengeActive))
     }
 

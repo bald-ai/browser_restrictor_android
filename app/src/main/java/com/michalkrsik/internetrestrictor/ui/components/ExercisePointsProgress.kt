@@ -4,7 +4,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Surface
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.TextButton
@@ -42,25 +43,38 @@ fun ExercisePointsProgress(sixths: Long, modifier: Modifier = Modifier) {
     val ticks = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)
     val fill = MaterialTheme.colorScheme.primary
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
-    if (showInfo) {
-        AlertDialog(
-            onDismissRequest = { showInfo = false },
-            title = { Text("Exercise points") },
-            text = {
-                Text("1 point equals:\n\n1 push-up\n2 machine reps\n3 seconds of plank\n\nMix exercises to earn 5 points for +3 minutes. Partial points carry over until 04:00.")
-            },
-            confirmButton = { TextButton(onClick = { showInfo = false }) { Text("Got it") } },
-        )
-    }
     Column(modifier = modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("POINTS", style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp), color = muted)
-                IconButton(onClick = { showInfo = true }, modifier = Modifier.size(36.dp)) {
+                IconButton(onClick = { showInfo = !showInfo }, modifier = Modifier.size(36.dp)) {
                     Icon(Icons.Outlined.Info, contentDescription = "How exercise points work", modifier = Modifier.size(16.dp), tint = muted)
                 }
             }
             Text("+3 min", style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp), color = muted)
+        }
+        if (showInfo) {
+            // This component also runs in an accessibility overlay. A platform dialog
+            // needs an Activity window token and would crash the blocking service.
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text("Exercise points", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "1 point equals:\n\n1 push-up\n2 machine reps\n3 seconds of plank\n\nMix exercises to earn 5 points for +3 minutes. Partial points carry over until 04:00.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    TextButton(onClick = { showInfo = false }, modifier = Modifier.align(Alignment.End)) {
+                        Text("Got it")
+                    }
+                }
+            }
         }
         Canvas(
             Modifier.fillMaxWidth().height(26.dp).padding(horizontal = 6.dp)

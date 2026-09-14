@@ -35,7 +35,7 @@ fun protectedTargetForPackage(packageName: String?): ProtectedTarget? = when {
 
 fun isProtectedTargetPackage(packageName: String?): Boolean =
     protectedTargetForPackage(packageName) != null
-const val RESTRICTOR_SCHEMA_VERSION = 11
+const val RESTRICTOR_SCHEMA_VERSION = 12
 const val MINUTE_MS = 60_000L
 const val HOUR_MS = 60L * MINUTE_MS
 const val DAY_MS = 24L * HOUR_MS
@@ -43,9 +43,12 @@ const val PENDING_WAIT_EXPIRY_MS = DAY_MS
 const val EMERGENCY_UNLOCK_MS = 15L * MINUTE_MS
 const val DAILY_BASE_BUDGET_MINUTES = 0L
 const val EXERCISE_SET_REWARD_MINUTES = 3L
-const val PUSHUPS_PER_SET = 5L
-const val PLANK_SECONDS_PER_SET = 15L
-const val MACHINE_REPS_PER_SET = 10L
+val PUSHUPS_PER_SET get() = ExercisePolicies.find(ExerciseId.PUSH_UP)!!.unitsPerSet
+val PLANK_SECONDS_PER_SET get() = ExercisePolicies.find(ExerciseId.PLANK)!!.unitsPerSet
+val MACHINE_REPS_PER_SET get() = ExercisePolicies.find(ExerciseId.OUTDOOR_LAT_PULLDOWN)!!.unitsPerSet
+const val SPRINT_INTENDED_METERS = 150L
+const val SPRINT_SET_QUALIFYING_METERS = 120L
+const val MIN_SPRINT_AVERAGE_SPEED_KMH = 15.0
 const val YOUTUBE_UNLOCK_SETS = 4L
 const val MAX_DAILY_CREDITED_EXERCISE_VERIFICATIONS = 256
 const val EMERGENCY_SKIP_DAILY_LIMIT = 1L
@@ -77,7 +80,6 @@ enum class GateMode {
     WAITING,
     ACCESS_GRANTED_NORMAL,
     ACCESS_GRANTED_EMERGENCY,
-    ACCESS_GRANTED_NO_DELAY,
     ACCESS_GRANTED_CURRENT_VISIT,
     OUT_OF_TIME,
     OUT_OF_TIME_LATCHED,
@@ -169,6 +171,7 @@ data class DailyCounter(
     val machineRepetitionRemainder: Long = 0,
     val verifiedPushups: Long = 0,
     val creditedExerciseVerificationIds: List<String> = emptyList(),
+    val sprintMetersRemainder: Long = 0,
 )
 
 data class MonthlyPushupCycle(
@@ -268,6 +271,7 @@ data class StateSnapshot(
     val earnedBudgetRoundsToday: Long,
     val exercisePointSixthsToday: Long,
     val verifiedPushupsToday: Long,
+    val sprintMetersRemainder: Long,
     val offSessionStartedAtWallMs: Long,
     val usageReports: List<DailyUsageReport>,
     val todayUsageReport: DailyUsageReport,
@@ -280,26 +284,34 @@ data class StateSnapshot(
     val isLoaded: Boolean,
     val lastErrorMessage: String? = null,
 ) {
-    val usesFullGate: Boolean
-        get() = canonicalMode in setOf(
-            GateMode.PAUSED,
-            GateMode.WAITING,
-            GateMode.OUT_OF_TIME,
-            GateMode.OUT_OF_TIME_LATCHED,
-            GateMode.YOUTUBE_LOCKED,
-        )
+    val usesFullGate: Boolean get() = canonicalMode.traits.overlay == ModeOverlay.GATE
+    val usesBadge: Boolean get() = canonicalMode.traits.overlay == ModeOverlay.BADGE
+}
 
-    val usesBadge: Boolean
-        get() = canonicalMode in setOf(
-            GateMode.ACCESS_GRANTED_NORMAL,
-            GateMode.ACCESS_GRANTED_EMERGENCY,
-            GateMode.ACCESS_GRANTED_NO_DELAY,
-            GateMode.ACCESS_GRANTED_CURRENT_VISIT,
-        )
+enum class ModeOverlay { NONE, GATE, BADGE }
+data class ModeTraits(
+    val overlay: ModeOverlay = ModeOverlay.NONE,
+    val recordsUsage: Boolean = false,
+    val chargesBudget: Boolean = false,
+    val grantsAccess: Boolean = false,
+    val gateSession: Boolean = false,
+)
+
+val GateMode.traits: ModeTraits get() = when (this) {
+    GateMode.PAUSED, GateMode.WAITING, GateMode.OUT_OF_TIME,
+    GateMode.OUT_OF_TIME_LATCHED, GateMode.YOUTUBE_LOCKED ->
+        ModeTraits(overlay = ModeOverlay.GATE, gateSession = true)
+    GateMode.ACCESS_GRANTED_NORMAL ->
+        ModeTraits(ModeOverlay.BADGE, recordsUsage = true, chargesBudget = true, grantsAccess = true)
+    GateMode.ACCESS_GRANTED_EMERGENCY ->
+        ModeTraits(ModeOverlay.BADGE, recordsUsage = true, grantsAccess = true)
+    GateMode.ACCESS_GRANTED_CURRENT_VISIT -> ModeTraits(ModeOverlay.BADGE, grantsAccess = true)
+    GateMode.YOUTUBE_ACCESS_GRANTED, GateMode.ENFORCEMENT_DISABLED -> ModeTraits(grantsAccess = true)
+    GateMode.SERVICE_UNAVAILABLE, GateMode.BROWSER_BACKGROUND, GateMode.STORAGE_ERROR -> ModeTraits()
 }
 
 sealed interface CommandResult {
-    data class Applied(val state: PersistedState) : CommandResult
+    data class Applied(val state: PersistedState, val reward: RewardCommit? = null) : CommandResult
     data class Rejected(val state: PersistedState, val reason: String) : CommandResult
     data class NormalCompletionWon(val state: PersistedState) : CommandResult
 }
@@ -310,4 +322,13 @@ fun interface IdGenerator {
 
 object RandomIdGenerator : IdGenerator {
     override fun nextId(): String = UUID.randomUUID().toString()
+}
+
+/** The award produced by this receipt, independent of subsequent day resets or other rewards. */
+data class RewardCommit(val awardedSets: Long, val remainder: Long, val dayKey: String)
+
+sealed interface RewardSaveResult {
+    data class Saved(val commit: RewardCommit) : RewardSaveResult
+    data class Rejected(val reason: String) : RewardSaveResult
+    data object StorageFailure : RewardSaveResult
 }

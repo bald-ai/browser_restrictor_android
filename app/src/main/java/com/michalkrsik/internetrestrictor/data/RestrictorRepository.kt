@@ -8,16 +8,20 @@ import com.michalkrsik.internetrestrictor.domain.ExerciseId
 import com.michalkrsik.internetrestrictor.domain.ForegroundClass
 import com.michalkrsik.internetrestrictor.domain.GateMode
 import com.michalkrsik.internetrestrictor.domain.IdGenerator
+import com.michalkrsik.internetrestrictor.domain.PeriodCalculator
 import com.michalkrsik.internetrestrictor.domain.PersistedState
 import com.michalkrsik.internetrestrictor.domain.ProtectedTarget
 import com.michalkrsik.internetrestrictor.domain.RandomIdGenerator
 import com.michalkrsik.internetrestrictor.domain.RestrictionEngine
 import com.michalkrsik.internetrestrictor.domain.RestrictorSettings
+import com.michalkrsik.internetrestrictor.domain.RewardCommit
+import com.michalkrsik.internetrestrictor.domain.RewardSaveResult
 import com.michalkrsik.internetrestrictor.domain.RuntimeSignals
 import com.michalkrsik.internetrestrictor.domain.StateSnapshot
 import com.michalkrsik.internetrestrictor.domain.ThemePreference
 import com.michalkrsik.internetrestrictor.domain.TimeSource
 import com.michalkrsik.internetrestrictor.domain.UnlockSource
+import com.michalkrsik.internetrestrictor.domain.traits
 import java.io.File
 import kotlin.math.abs
 import kotlinx.coroutines.CompletableDeferred
@@ -36,9 +40,12 @@ class RestrictorRepository(
     private val applicationScope: CoroutineScope,
     private val engine: RestrictionEngine = RestrictionEngine(),
     private val idGenerator: IdGenerator = RandomIdGenerator,
-    private val diagnosticSink: (String) -> Unit = {},
+    diagnosticSink: (String) -> Unit = {},
     dataStoreOverride: DataStore<PersistedState>? = null,
 ) {
+    private val diagnosticSink: (String) -> Unit = { event ->
+        try { diagnosticSink(event) } catch (_: Exception) { /* Best effort diagnostics. */ }
+    }
     private val dataStore = dataStoreOverride ?: DataStoreFactory.create(
         serializer = AppStateSerializer,
         scope = applicationScope,
@@ -235,13 +242,13 @@ class RestrictorRepository(
             verificationId = idGenerator.nextId(),
             exerciseId = ExerciseId.PUSH_UP,
             value = repetitions,
-        )
+        ) is RewardSaveResult.Saved
 
     suspend fun recordVerifiedExercise(
         verificationId: String,
         exerciseId: ExerciseId,
         value: Int,
-    ): Boolean = command(clearOutOfTimeLatch = true) {
+    ): RewardSaveResult = rewardCommand {
         engine.recordVerifiedExercise(
             input = persistedState,
             verificationId = verificationId,
@@ -250,6 +257,34 @@ class RestrictorRepository(
             nowWallMs = timeSource.wallTimeMs(),
             zoneId = timeSource.zoneId(),
         )
+    }
+
+    suspend fun recordSprintRecording(
+        recordingId: String,
+        qualifyingMeters: Long,
+        manualCompletionAward: Boolean = false,
+    ): RewardSaveResult = rewardCommand {
+        engine.recordSprintRecording(
+            input = persistedState,
+            recordingId = recordingId,
+            qualifyingMeters = qualifyingMeters,
+            manualCompletionAward = manualCompletionAward,
+            nowWallMs = timeSource.wallTimeMs(),
+            zoneId = timeSource.zoneId(),
+        )
+    }
+
+    private suspend fun rewardCommand(transition: () -> CommandResult): RewardSaveResult {
+        var commit: RewardCommit? = null
+        var rejection: String? = null
+        val saved = command(clearOutOfTimeLatch = true) {
+            transition().also {
+                if (it is CommandResult.Applied) commit = it.reward
+                if (it is CommandResult.Rejected) rejection = it.reason
+            }
+        }
+        return if (saved) RewardSaveResult.Saved(checkNotNull(commit))
+        else rejection?.let(RewardSaveResult::Rejected) ?: RewardSaveResult.StorageFailure
     }
 
     suspend fun tryAgain(
@@ -464,16 +499,14 @@ class RestrictorRepository(
             diagnosticSink("Long accounting gap left uncounted: ${rawDelta}ms")
         }
         val wallDelta = wallTimeMs - previousWall
-        val intervalStart = if (abs(wallDelta - rawDelta) <= CLOCK_DRIFT_TOLERANCE_MS) {
-            previousWall
-        } else {
-            previousWall
-        }
+        val clockChanged = abs(wallDelta - rawDelta) > CLOCK_DRIFT_TOLERANCE_MS
+        if (clockChanged) flushUsageBufferLocked(forceSummaryFlush = true)
+        val intervalStart = previousWall
         val intervalEnd = Math.addExact(intervalStart, elapsedDelta)
         val mode = engine.underlyingMode(persistedState, runtime, intervalStart)
 
-        when (mode) {
-            GateMode.WAITING -> {
+        when {
+            mode == GateMode.WAITING -> {
                 flushUsageBufferLocked(forceSummaryFlush = true)
                 val result = engine.advanceWait(
                     input = persistedState,
@@ -496,10 +529,7 @@ class RestrictorRepository(
                     }
                 }
             }
-            GateMode.ACCESS_GRANTED_NORMAL,
-            GateMode.ACCESS_GRANTED_EMERGENCY,
-            GateMode.ACCESS_GRANTED_NO_DELAY,
-            -> {
+            mode.traits.recordsUsage -> {
                 val cappedEnd = persistedState.activeUnlock?.expiresAtWallMs
                     ?.coerceAtMost(intervalEnd)
                     ?.coerceAtLeast(intervalStart)
@@ -522,6 +552,12 @@ class RestrictorRepository(
             else -> flushUsageBufferLocked(forceSummaryFlush = true)
         }
 
+        // Flush the old period before normalize can reset its counters or unlock.
+        val zone = timeSource.zoneId()
+        val periodChanged = PeriodCalculator.keysAt(previousWall, zone) != PeriodCalculator.keysAt(wallTimeMs, zone)
+        val eveningReset = PeriodCalculator.eveningBudgetReset(previousWall, zone)
+        val eveningCrossed = previousWall < eveningReset && eveningReset <= wallTimeMs
+        if (clockChanged || periodChanged || eveningCrossed) flushUsageBufferLocked(forceSummaryFlush = true)
         val normalized = engine.normalize(persistedState, wallTimeMs, timeSource.zoneId())
         if (normalized != persistedState) {
             val before = persistedState
@@ -607,7 +643,7 @@ class RestrictorRepository(
                 outOfTimeLatchToken = null,
                 latchedBlockers = emptySet(),
             )
-            if (underlying in nonGateModes) {
+            if (!underlying.traits.gateSession) {
                 runtime = runtime.copy(gateSessionId = null, gateFocused = false)
             } else if (runtime.gateSessionId == null) {
                 runtime = runtime.copy(gateSessionId = idGenerator.nextId())
@@ -618,7 +654,7 @@ class RestrictorRepository(
             if (runtime.gateSessionId == null) runtime = runtime.copy(gateSessionId = idGenerator.nextId())
             return
         }
-        if (underlying in nonGateModes) {
+        if (!underlying.traits.gateSession) {
             runtime = runtime.copy(gateSessionId = null, gateFocused = false)
             return
         }
@@ -721,15 +757,6 @@ class RestrictorRepository(
         const val USAGE_SUMMARY_INTERVAL_MS = 60_000L
         const val MAX_UNRECONCILED_INTERVAL_MS = 5_000L
         const val CLOCK_DRIFT_TOLERANCE_MS = 2_000L
-        val nonGateModes = setOf(
-            GateMode.ACCESS_GRANTED_NORMAL,
-            GateMode.ACCESS_GRANTED_EMERGENCY,
-            GateMode.ACCESS_GRANTED_NO_DELAY,
-            GateMode.YOUTUBE_ACCESS_GRANTED,
-            GateMode.BROWSER_BACKGROUND,
-            GateMode.SERVICE_UNAVAILABLE,
-            GateMode.STORAGE_ERROR,
-        )
     }
 }
 

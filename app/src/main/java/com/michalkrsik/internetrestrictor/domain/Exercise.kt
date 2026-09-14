@@ -29,10 +29,14 @@ data class ExercisePolicy(
     val displayName: String,
     val resultLabel: String,
     val metric: ExerciseMetric,
-    val unitsPerSet: Long,
+    val pointSixthsPerUnit: Long,
     val remainderNounSingular: String,
     val remainderNounPlural: String,
 ) {
+    init { require(pointSixthsPerUnit > 0) }
+
+    val unitsPerSet: Long get() = EXERCISE_POINT_SIXTHS_PER_BOOST / pointSixthsPerUnit
+
     val credited: Boolean
         get() = unitsPerSet > 0 && metric != ExerciseMetric.NONE
 }
@@ -44,7 +48,7 @@ object ExercisePolicies {
             displayName = "Push-ups",
             resultLabel = "Push-ups",
             metric = ExerciseMetric.REPETITIONS,
-            unitsPerSet = PUSHUPS_PER_SET,
+            pointSixthsPerUnit = 6L,
             remainderNounSingular = "repetition",
             remainderNounPlural = "repetitions",
         ),
@@ -53,7 +57,7 @@ object ExercisePolicies {
             displayName = "Plank",
             resultLabel = "Plank",
             metric = ExerciseMetric.HOLD_SECONDS,
-            unitsPerSet = PLANK_SECONDS_PER_SET,
+            pointSixthsPerUnit = 2L,
             remainderNounSingular = "second",
             remainderNounPlural = "seconds",
         ),
@@ -62,7 +66,7 @@ object ExercisePolicies {
             displayName = "Outdoor lat pull-down",
             resultLabel = "Machine",
             metric = ExerciseMetric.REPETITIONS,
-            unitsPerSet = MACHINE_REPS_PER_SET,
+            pointSixthsPerUnit = 3L,
             remainderNounSingular = "repetition",
             remainderNounPlural = "repetitions",
         ),
@@ -70,11 +74,10 @@ object ExercisePolicies {
 
     fun find(id: ExerciseId): ExercisePolicy? = credited.firstOrNull { it.id == id }
 
-    fun requiresMetric(id: ExerciseId): ExerciseMetric = when (id) {
-        ExerciseId.PUSH_UP, ExerciseId.OUTDOOR_LAT_PULLDOWN, ExerciseId.SIT_UP ->
-            ExerciseMetric.REPETITIONS
-        ExerciseId.PLANK -> ExerciseMetric.HOLD_SECONDS
+    fun requiresMetric(id: ExerciseId): ExerciseMetric = find(id)?.metric ?: when (id) {
+        ExerciseId.SIT_UP -> ExerciseMetric.REPETITIONS
         ExerciseId.UNSUPPORTED -> ExerciseMetric.NONE
+        else -> error("Missing exercise policy for $id")
     }
 }
 
@@ -99,12 +102,8 @@ fun accumulateExerciseUnits(
 // Sixth-points keep both half-points (machine reps) and thirds (plank seconds) exact.
 const val EXERCISE_POINT_SIXTHS_PER_BOOST = 30L
 
-fun exercisePointSixthsPerUnit(id: ExerciseId): Long = when (id) {
-    ExerciseId.PUSH_UP -> 6L
-    ExerciseId.OUTDOOR_LAT_PULLDOWN -> 3L
-    ExerciseId.PLANK -> 2L
-    else -> error("Exercise does not earn points")
-}
+fun exercisePointSixthsPerUnit(id: ExerciseId): Long =
+    requireNotNull(ExercisePolicies.find(id)) { "Exercise does not earn points" }.pointSixthsPerUnit
 
 fun formatExercisePoints(sixths: Long): String =
     java.math.BigDecimal.valueOf(sixths)

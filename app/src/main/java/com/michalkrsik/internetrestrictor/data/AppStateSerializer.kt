@@ -10,7 +10,6 @@ import com.michalkrsik.internetrestrictor.domain.DailyUsageReport
 import com.michalkrsik.internetrestrictor.domain.DEFAULT_SESSION_MINUTES
 import com.michalkrsik.internetrestrictor.domain.EMERGENCY_SKIP_DAILY_LIMIT
 import com.michalkrsik.internetrestrictor.domain.ForegroundClass
-import com.michalkrsik.internetrestrictor.domain.MACHINE_REPS_PER_SET
 import com.michalkrsik.internetrestrictor.domain.MAX_DAILY_CREDITED_EXERCISE_VERIFICATIONS
 import com.michalkrsik.internetrestrictor.domain.MAX_SESSION_MINUTES
 import com.michalkrsik.internetrestrictor.domain.MAX_SAFE_BUDGET_ROUNDS
@@ -19,12 +18,12 @@ import com.michalkrsik.internetrestrictor.domain.MonthlyPushupCycle
 import com.michalkrsik.internetrestrictor.domain.PendingWait
 import com.michalkrsik.internetrestrictor.domain.OffUsageReminderState
 import com.michalkrsik.internetrestrictor.domain.PersistedState
-import com.michalkrsik.internetrestrictor.domain.PLANK_SECONDS_PER_SET
-import com.michalkrsik.internetrestrictor.domain.PUSHUPS_PER_SET
+import com.michalkrsik.internetrestrictor.domain.EXERCISE_POINT_SIXTHS_PER_BOOST
 import com.michalkrsik.internetrestrictor.domain.RESTRICTOR_SCHEMA_VERSION
 import com.michalkrsik.internetrestrictor.domain.RestrictionEngine
 import com.michalkrsik.internetrestrictor.domain.RestrictorSettings
 import com.michalkrsik.internetrestrictor.domain.RuntimeMetadata
+import com.michalkrsik.internetrestrictor.domain.SPRINT_SET_QUALIFYING_METERS
 import com.michalkrsik.internetrestrictor.domain.ThemePreference
 import com.michalkrsik.internetrestrictor.domain.UnlockSession
 import com.michalkrsik.internetrestrictor.domain.UnlockSource
@@ -152,7 +151,7 @@ object AppStateSerializer : Serializer<PersistedState> {
                 creditedExerciseVerificationIds = List(creditedVerificationCount) { source.readUTF() }
             } else {
                 verifiedPushups = Math.addExact(
-                    Math.multiplyExact(earnedBudgetRounds, PUSHUPS_PER_SET),
+                    Math.multiplyExact(earnedBudgetRounds, 5L), // Historical schemas used five push-ups per set.
                     pushupRepetitionRemainder,
                 )
                 plankSecondRemainder = 0L
@@ -171,6 +170,7 @@ object AppStateSerializer : Serializer<PersistedState> {
                 machineRepetitionRemainder = machineRepetitionRemainder,
                 verifiedPushups = verifiedPushups,
                 creditedExerciseVerificationIds = creditedExerciseVerificationIds,
+                sprintMetersRemainder = if (schema >= 12) source.readLong() else 0L,
             )
             val metadata = RuntimeMetadata(
                 lastCommittedWallMs = source.readLong(),
@@ -179,7 +179,7 @@ object AppStateSerializer : Serializer<PersistedState> {
                 lastKnownForegroundClass = source.readEnum<ForegroundClass>(),
             )
             val reports = if (schema >= 2) {
-                List(source.readInt()) {
+                List(source.readBoundedCount("usage reports", RestrictionEngine.MAX_REPORT_DAYS)) {
                     val localDayKey = source.readUTF()
                     val protectedUsageMs = source.readLong()
                     source.readLong() // Retired protection-off usage is deliberately discarded.
@@ -212,7 +212,7 @@ object AppStateSerializer : Serializer<PersistedState> {
                 source.readBoolean()
             } else false
             val activityEvents = if (schema >= 6) {
-                List(source.readInt()) {
+                List(source.readBoundedCount("activity events", RestrictionEngine.MAX_ACTIVITY_EVENTS)) {
                     ActivityEvent(
                         id = source.readUTF(),
                         localDayKey = source.readUTF(),
@@ -224,7 +224,7 @@ object AppStateSerializer : Serializer<PersistedState> {
                 }
             } else emptyList()
             val monthlyPushupCycles = if (schema >= 9) {
-                List(source.readInt()) {
+                List(source.readBoundedCount("monthly cycles", 10_000)) {
                     MonthlyPushupCycle(
                         cycleStartDate = source.readUTF(),
                         totalPushups = source.readLong(),
@@ -303,6 +303,7 @@ object AppStateSerializer : Serializer<PersistedState> {
             target.writeInt(creditedExerciseVerificationIds.size)
             creditedExerciseVerificationIds.forEach(target::writeUTF)
             target.writeLong(exercisePointSixths)
+            target.writeLong(sprintMetersRemainder)
         }
         with(t.runtimeMetadata) {
             target.writeLong(lastCommittedWallMs)
@@ -373,15 +374,17 @@ object AppStateSerializer : Serializer<PersistedState> {
         }
         if (state.activeUnlock != null && state.pendingWait != null) invalid("Unlock and wait overlap")
         if (
-            state.dailyCounter.exercisePointSixths !in 0 until 30L ||
+            state.dailyCounter.exercisePointSixths !in 0 until EXERCISE_POINT_SIXTHS_PER_BOOST ||
             state.dailyCounter.earnedBudgetRounds !in 0..MAX_SAFE_BUDGET_ROUNDS ||
             state.dailyCounter.spendableBudgetRounds !in 0..state.dailyCounter.earnedBudgetRounds ||
             state.dailyCounter.emergencySkipsUsed < 0 ||
-            state.dailyCounter.pushupRepetitionRemainder !in 0 until PUSHUPS_PER_SET ||
+            // These three retired fields retain their historical schema bounds.
+            state.dailyCounter.pushupRepetitionRemainder !in 0 until 5L ||
             // Older installs can carry 15–17 seconds from the former 18-second set.
             // Preserve these until the next verified plank folds them into credit.
-            state.dailyCounter.plankSecondRemainder !in 0 until maxOf(18L, PLANK_SECONDS_PER_SET) ||
-            state.dailyCounter.machineRepetitionRemainder !in 0 until MACHINE_REPS_PER_SET ||
+            state.dailyCounter.plankSecondRemainder !in 0 until 18L ||
+            state.dailyCounter.machineRepetitionRemainder !in 0 until 10L ||
+            state.dailyCounter.sprintMetersRemainder !in 0 until SPRINT_SET_QUALIFYING_METERS ||
             state.dailyCounter.verifiedPushups < 0 ||
             state.dailyCounter.creditedExerciseVerificationIds.size >
             MAX_DAILY_CREDITED_EXERCISE_VERIFICATIONS ||
@@ -413,6 +416,7 @@ object AppStateSerializer : Serializer<PersistedState> {
                 invalid("Invalid activity event")
             }
         }
+        if (state.monthlyPushupCycles.size > 10_000) invalid("Too many monthly cycles")
         var previousCycleStart: String? = null
         state.monthlyPushupCycles.forEach { cycle ->
             val parsedStart = runCatching { java.time.LocalDate.parse(cycle.cycleStartDate) }.getOrNull()
@@ -450,4 +454,8 @@ object AppStateSerializer : Serializer<PersistedState> {
         if (ordinal !in values.indices) throw CorruptionException("Invalid enum value")
         return values[ordinal]
     }
+}
+
+private fun DataInputStream.readBoundedCount(label: String, maximum: Int): Int = readInt().also {
+    if (it !in 0..maximum) throw CorruptionException("Invalid $label count")
 }

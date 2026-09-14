@@ -9,6 +9,17 @@ class ExerciseChallengeVisibilityTest {
     @After
     fun reset() {
         ExerciseChallengeVisibility.cancelLaunch()
+        com.michalkrsik.internetrestrictor.ui.sprint.SprintChallengeVisibility.cancelLaunch()
+    }
+
+    @Test
+    fun stoppingOneChallengeDoesNotClearTheOtherChallenge() {
+        val sprint = com.michalkrsik.internetrestrictor.ui.sprint.SprintChallengeVisibility
+        ExerciseChallengeVisibility.onActivityStarted()
+        sprint.onActivityStarted()
+        ExerciseChallengeVisibility.onActivityStopped()
+        assertTrue(sprint.active.value)
+        assertTrue(sprint.activityStarted.value)
     }
 
     @Test

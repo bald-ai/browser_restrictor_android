@@ -84,6 +84,7 @@ data class GateActions(
     val onExerciseChallenge: () -> Unit,
     val onTryAgain: () -> Unit,
     val onLeaveBrowser: () -> Unit,
+    val onSprintChallenge: () -> Unit = {},
 )
 
 @Composable
@@ -110,12 +111,16 @@ fun GateScreen(snapshot: StateSnapshot, actions: GateActions) {
             GateMode.PAUSED -> PausedControls(snapshot, selectedMinutes, { selectedMinutes = it }, actionInFlight,
                 { actionInFlight = true; actions.onStartSession(selectedMinutes) },
                 { actionInFlight = true; actions.onEmergencySkip() },
-                { actionInFlight = true; actions.onExerciseChallenge() })
+                { actionInFlight = true; actions.onExerciseChallenge() },
+                { actionInFlight = true; actions.onSprintChallenge() })
             GateMode.OUT_OF_TIME, GateMode.OUT_OF_TIME_LATCHED -> OutOfTimeControls(snapshot, actionInFlight,
                 { actionInFlight = true; actions.onExerciseChallenge() },
                 { actionInFlight = true; actions.onEmergencySkip() },
-                { actionInFlight = true; actions.onTryAgain() })
-            GateMode.YOUTUBE_LOCKED -> YouTubeLockedControls(snapshot, actionInFlight, { actionInFlight = true; actions.onExerciseChallenge() })
+                { actionInFlight = true; actions.onTryAgain() },
+                { actionInFlight = true; actions.onSprintChallenge() })
+            GateMode.YOUTUBE_LOCKED -> YouTubeLockedControls(snapshot, actionInFlight,
+                { actionInFlight = true; actions.onExerciseChallenge() },
+                { actionInFlight = true; actions.onSprintChallenge() })
             else -> Unit
         }
         snapshot.lastErrorMessage?.let { PulseText(it, 12, Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.error) }
@@ -129,6 +134,7 @@ private fun YouTubeLockedControls(
     snapshot: StateSnapshot,
     actionInFlight: Boolean,
     onExerciseChallenge: () -> Unit,
+    onSprintChallenge: () -> Unit = {},
 ) {
     Column(
         Modifier.padding(vertical = 20.dp),
@@ -139,10 +145,20 @@ private fun YouTubeLockedControls(
             border = PulseActionBorder,
             onClick = onExerciseChallenge,
             enabled = !actionInFlight,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 72.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp),
             shape = PillShape,
         ) {
             Text("Start exercise", style = MaterialTheme.typography.labelLarge)
+        }
+        Button(
+            colors = pulseButtonColors(),
+            border = PulseActionBorder,
+            onClick = onSprintChallenge,
+            enabled = !actionInFlight,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp),
+            shape = PillShape,
+        ) {
+            Text("Start sprint", style = MaterialTheme.typography.labelLarge)
         }
         Text(
             "${snapshot.earnedBudgetRoundsToday}/$YOUTUBE_UNLOCK_SETS sets today · unlocks until 04:00",
@@ -152,7 +168,7 @@ private fun YouTubeLockedControls(
             modifier = Modifier.fillMaxWidth(),
         )
         Text(
-            "Every 5 points earns +3 minutes",
+            "Every set earns +3 minutes",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -171,6 +187,7 @@ private fun PausedControls(
     onStart: () -> Unit,
     onSkip: () -> Unit,
     onExerciseChallenge: () -> Unit,
+    onSprintChallenge: () -> Unit = {},
 ) {
     val remaining = ((snapshot.budgetSnapshots.firstOrNull { it.enabled }?.remainingMs ?: 0L) + 59_999) / 60_000
     Column {
@@ -189,6 +206,8 @@ private fun PausedControls(
         PulseCarryOver(snapshot)
         Spacer(Modifier.height(18.dp))
         PulsePrimary("Start exercise", onExerciseChallenge, exercise = true, subtitle = "Earn 3 minutes with your next set", enabled = !actionInFlight)
+        Spacer(Modifier.height(8.dp))
+        PulsePrimary("Start sprint", onSprintChallenge, exercise = true, subtitle = "Earn 3 minutes with a 120m sprint", enabled = !actionInFlight)
         Spacer(Modifier.height(10.dp))
         OutlinedButton(onClick = onStart, enabled = !actionInFlight, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(7.dp), border = BorderStroke(1.dp, EditorialTheme.colors.hairline), colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)) {
             Text("CONTINUE FOR $selectedMinutes MINUTES", style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp, letterSpacing = .5.sp))
@@ -316,13 +335,14 @@ private fun OutOfTimeControls(
     onExerciseChallenge: () -> Unit,
     onSkip: () -> Unit,
     onTryAgain: () -> Unit,
+    onSprintChallenge: () -> Unit = {},
 ) {
     Column(
         Modifier.padding(vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         Budgets(snapshot)
-        ExerciseButton(snapshot, actionInFlight, onExerciseChallenge)
+        ExerciseAndSprintButtons(snapshot, actionInFlight, onExerciseChallenge, onSprintChallenge)
         SkipButton(snapshot, actionInFlight, onSkip)
         Button(
             onClick = onTryAgain,
@@ -336,10 +356,16 @@ private fun OutOfTimeControls(
 }
 
 @Composable
-private fun ExerciseButton(snapshot: StateSnapshot, actionInFlight: Boolean, onClick: () -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+private fun ExerciseAndSprintButtons(
+    snapshot: StateSnapshot,
+    actionInFlight: Boolean,
+    onExerciseChallenge: () -> Unit,
+    onSprintChallenge: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         PulseCarryOver(snapshot)
-        PulsePrimary("Start exercise", onClick, exercise = true, subtitle = "Earn 3 minutes with your next set", enabled = !actionInFlight)
+        PulsePrimary("Start exercise", onExerciseChallenge, exercise = true, subtitle = "Earn 3 minutes with your next set", enabled = !actionInFlight)
+        PulsePrimary("Start sprint", onSprintChallenge, exercise = true, subtitle = "Earn 3 minutes with a 120m sprint", enabled = !actionInFlight)
     }
 }
 

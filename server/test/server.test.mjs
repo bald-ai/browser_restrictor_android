@@ -240,3 +240,92 @@ test("legacy endpoint still rejects a non-push-up exercise_id before model proce
     });
   });
 });
+
+test("non-ASCII bearer header returns 401 and leaves the server healthy", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/v1/exercise-verify`, {
+      method: "POST", headers: { Authorization: "Bearer test-secreé" },
+    });
+    assert.equal(response.status, 401);
+    assert.equal((await fetch(`${baseUrl}/health`)).status, 200);
+  });
+});
+
+test("plank prompt has one playback-time convention", () => {
+  assert.doesNotMatch(classifierPrompt, /original-time seconds/);
+  assert.match(classifierPrompt, /Measure densified playback seconds/);
+});
+
+test("measurements cannot exceed a generous physical ceiling for their clip", async () => {
+  const { boundMeasurement } = await import("../src/server.mjs");
+  assert.equal(boundMeasurement(60, "repetitions", 30), 60);
+  assert.equal(boundMeasurement(30, "hold_seconds", 30), 30);
+  assert.throws(() => boundMeasurement(1000, "repetitions", 30));
+  assert.throws(() => boundMeasurement(31, "hold_seconds", 30));
+});
+
+test("process abort kills preprocessing promptly", async () => {
+  const { runProcess } = await import("../src/server.mjs");
+  const controller = new AbortController();
+  const job = runProcess(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], 60_000, controller.signal);
+  controller.abort(new Error("test disconnected"));
+  await assert.rejects(job, /test disconnected/);
+});
+
+test("disconnect cancels each processing stage and releases busy without a rejected request clearing it", async () => {
+  for (const stage of ["inspectVideo", "prepareVideo", "callOpenRouter"]) {
+    let entered;
+    const started = new Promise(resolve => { entered = resolve; });
+    let aborted;
+    const cancelled = new Promise(resolve => { aborted = resolve; });
+    const processing = {
+      inspectVideo: async () => ({ duration: 30 }),
+      prepareVideo: async () => {},
+      callOpenRouter: async () => ({ verdict: { exercise_id: "push_up", metric: "repetitions", value: 5, reason: "test" }, diagnostics: {} }),
+    };
+    processing[stage] = async (...args) => {
+      const signal = args.at(-1);
+      entered();
+      return await new Promise((resolve, reject) => {
+        const cancel = () => { aborted(); reject(signal.reason); };
+        signal.addEventListener("abort", cancel, { once: true });
+        if (signal.aborted) cancel();
+      });
+    };
+    const server = createServer({ apiKey: "test", sharedSecret: "test-secret", processing });
+    await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const controller = new AbortController();
+    const form = new FormData();
+    form.set("video", new Blob(["test clip"], { type: "video/mp4" }), "clip.mp4");
+    const job = fetch(`${base}/v1/exercise-verify`, {
+      method: "POST", headers: { Authorization: "Bearer test-secret" }, body: form, signal: controller.signal,
+    }).catch(error => error);
+    try {
+      await started;
+      for (let i = 0; i < 2; i++) {
+        const busy = await fetch(`${base}/v1/exercise-verify`, { method: "POST", headers: { Authorization: "Bearer test-secret" } });
+        assert.equal(busy.status, 503, stage);
+        assert.equal(busy.headers.get("retry-after"), "5");
+        await busy.arrayBuffer();
+      }
+      controller.abort();
+      await job;
+      await cancelled;
+      // Cleanup may finish after abort acknowledgement; poll only until the slot is released.
+      let status;
+      for (let i = 0; i < 50; i++) {
+        const response = await fetch(`${base}/v1/exercise-verify`, { method: "POST", headers: { Authorization: "Bearer test-secret" } });
+        status = response.status;
+        await response.arrayBuffer();
+        if (status !== 503) break;
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      assert.equal(status, 400, stage);
+    } finally {
+      controller.abort();
+      server.closeAllConnections();
+      await new Promise(resolve => server.close(resolve));
+    }
+  }
+});

@@ -269,6 +269,5 @@ private fun badgeDescription(snapshot: StateSnapshot, expanded: Boolean): String
 
 private fun nonSessionStatus(snapshot: StateSnapshot): String = when (snapshot.canonicalMode) {
     GateMode.ACCESS_GRANTED_CURRENT_VISIT -> "This visit"
-    GateMode.ACCESS_GRANTED_NO_DELAY -> "No delay"
     else -> "Browser available"
 }

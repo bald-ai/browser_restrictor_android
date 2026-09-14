@@ -10,6 +10,72 @@ import org.junit.Test
 
 class RestrictorRepositoryPolicyTest {
     @Test
+    fun clockJumpCannotInflateBufferedUsage() = kotlinx.coroutines.runBlocking {
+        val zone = java.time.ZoneId.of("UTC")
+        val now = java.time.ZonedDateTime.of(2026, 7, 10, 12, 0, 0, 0, zone).toInstant().toEpochMilli()
+        val time = com.michalkrsik.internetrestrictor.domain.FakeTimeSource(now, 1_000L, zone)
+        val engine = com.michalkrsik.internetrestrictor.domain.RestrictionEngine()
+        val earned = (engine.recordSprintRecording(PersistedState(), "budget", 600L, false, now, zone)
+            as com.michalkrsik.internetrestrictor.domain.CommandResult.Applied).state
+        val initial = earned.copy(activeUnlock = com.michalkrsik.internetrestrictor.domain.UnlockSession(
+            "normal", com.michalkrsik.internetrestrictor.domain.UnlockSource.NORMAL, now, now + 600_000L))
+        val repo = RestrictorRepository(timeSource = time,
+            applicationScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined),
+            dataStoreOverride = FailingRewardStore(initial))
+        repo.awaitLoaded()
+        repo.updateDeviceAccess(true, true, true, true)
+        repo.updateServiceRuntime(foregroundClass = ForegroundClass.BROWSER,
+            activeTarget = com.michalkrsik.internetrestrictor.domain.ProtectedTarget.BROWSER_POOL,
+            screenInteractive = true, keyguardUnlocked = true, serviceConnected = true)
+        time.advance(250L)
+        repo.tick(time.elapsedMs, time.wallMs)
+        time.advance(250L)
+        time.wallMs += 60_000L
+        repo.tick(time.elapsedMs, time.wallMs)
+        time.advance(250L)
+        repo.flushAccounting()
+        assertEquals(750L, repo.snapshot.value.todayUsageReport.protectedUsageMs)
+        assertEquals(750L, repo.snapshot.value.budgetSnapshots.single().usedMs)
+    }
+
+    @Test
+    fun rewardRetryPreservesReceiptAndReturnsAwardAcrossDailyReset() = kotlinx.coroutines.runBlocking {
+        val zone = java.time.ZoneId.of("UTC")
+        val before = java.time.ZonedDateTime.of(2026, 7, 10, 3, 59, 59, 0, zone).toInstant().toEpochMilli()
+        val time = com.michalkrsik.internetrestrictor.domain.FakeTimeSource(before, 1_000L, zone)
+        val engine = com.michalkrsik.internetrestrictor.domain.RestrictionEngine()
+        val initial = (engine.recordSprintRecording(PersistedState(), "previous", 600L, false, before, zone)
+            as com.michalkrsik.internetrestrictor.domain.CommandResult.Applied).state
+        val store = FailingRewardStore(initial)
+        val repo = RestrictorRepository(timeSource = time,
+            applicationScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined),
+            dataStoreOverride = store, diagnosticSink = { throw java.io.IOException("Log disk full") })
+        repo.awaitLoaded()
+        store.fail = true
+        val failed = repo.recordSprintRecording("retry-receipt", 150L)
+        assertEquals(com.michalkrsik.internetrestrictor.domain.RewardSaveResult.StorageFailure, failed)
+        assertEquals(5L, repo.snapshot.value.earnedBudgetRoundsToday)
+        store.fail = false
+        time.advance(2_000L)
+        val saved = repo.recordSprintRecording("retry-receipt", 150L)
+            as com.michalkrsik.internetrestrictor.domain.RewardSaveResult.Saved
+        assertEquals(1L, saved.commit.awardedSets)
+        assertEquals(30L, saved.commit.remainder)
+        assertEquals("2026-07-10", saved.commit.dayKey)
+        org.junit.Assert.assertTrue(repo.recordSprintRecording("retry-receipt", 150L)
+            is com.michalkrsik.internetrestrictor.domain.RewardSaveResult.Rejected)
+        assertEquals(1L, repo.snapshot.value.earnedBudgetRoundsToday)
+        store.fail = true
+        assertEquals(com.michalkrsik.internetrestrictor.domain.RewardSaveResult.StorageFailure,
+            repo.recordVerifiedExercise("video-retry", com.michalkrsik.internetrestrictor.domain.ExerciseId.PUSH_UP, 7))
+        store.fail = false
+        val video = repo.recordVerifiedExercise("video-retry", com.michalkrsik.internetrestrictor.domain.ExerciseId.PUSH_UP, 7)
+            as com.michalkrsik.internetrestrictor.domain.RewardSaveResult.Saved
+        assertEquals(1L, video.commit.awardedSets)
+        assertEquals(12L, video.commit.remainder)
+    }
+
+    @Test
     fun disconnectPreservesLastConfirmedBrowserForeground() {
         assertEquals(
             ForegroundClass.BROWSER,
@@ -695,6 +761,84 @@ class RestrictorRepositoryPolicyTest {
         assertEquals(1_000L, repository.snapshot.value.todayUsageReport.protectedUsageMs)
         assertEquals(0L, repository.snapshot.value.budgetSnapshots.single().usedMs)
     }
+
+    @Test
+    fun subsecondUsageSurvivesEveningReset() = kotlinx.coroutines.runBlocking {
+        val zone = java.time.ZoneId.of("UTC")
+        val resetWallMs = java.time.ZonedDateTime.of(2026, 7, 10, 20, 0, 0, 0, zone).toInstant().toEpochMilli()
+        val startWallMs = resetWallMs - 500L
+        val timeSource = com.michalkrsik.internetrestrictor.domain.FakeTimeSource(wallMs = startWallMs, elapsedMs = 1_000_000L, zone = zone)
+        val testScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined)
+        val diagnostics = mutableListOf<String>()
+
+        val initial = PersistedState(
+            dailyCounter = com.michalkrsik.internetrestrictor.domain.DailyCounter(
+                localDayKey = "2026-07-10",
+                earnedBudgetRounds = 5,
+                spendableBudgetRounds = 5,
+            ),
+            dailyUsage = com.michalkrsik.internetrestrictor.domain.UsagePeriodState(
+                period = com.michalkrsik.internetrestrictor.domain.BudgetPeriod.DAILY,
+                key = "2026-07-10",
+                usedMs = 60_000L,
+            ),
+            activeUnlock = com.michalkrsik.internetrestrictor.domain.UnlockSession(
+                id = "normal-unlock",
+                source = com.michalkrsik.internetrestrictor.domain.UnlockSource.NORMAL,
+                grantedAtWallMs = startWallMs,
+                expiresAtWallMs = startWallMs + 60_000L,
+            ),
+        )
+
+        val repository = RestrictorRepository(
+            timeSource = timeSource,
+            applicationScope = testScope,
+            diagnosticSink = { diagnostics += it },
+            dataStoreOverride = InMemoryDataStore(initial),
+        )
+        repository.awaitLoaded()
+        repository.updateDeviceAccess(
+            accessibilityEnabled = true,
+            usageAccessGranted = true,
+            supportedBrowserInstalled = true,
+            advancedProtectionEnabled = true,
+        )
+        repository.updateServiceRuntime(
+            serviceConnected = true,
+            foregroundClass = ForegroundClass.BROWSER,
+            activeTarget = com.michalkrsik.internetrestrictor.domain.ProtectedTarget.BROWSER_POOL,
+            screenInteractive = true,
+            keyguardUnlocked = true,
+        )
+
+        repository.tick(timeSource.elapsedRealtimeMs(), timeSource.wallTimeMs())
+
+        // Two ticks shorter than the usage heartbeat must flush at the reset.
+        timeSource.advance(250L)
+        repository.tick(timeSource.elapsedRealtimeMs(), timeSource.wallTimeMs())
+        timeSource.advance(250L)
+        repository.tick(timeSource.elapsedRealtimeMs(), timeSource.wallTimeMs())
+
+        val postReset = repository.snapshot.value
+        // Evening reset was applied: spendable rounds reset to 0, usedMs reset to 0
+        org.junit.Assert.assertTrue(diagnostics.any { it.contains("Evening 20:00 reset applied") })
+        assertEquals(0L, postReset.budgetSnapshots.single().limitMinutes)
+        assertEquals(0L, postReset.budgetSnapshots.single().usedMs)
+        // Pre-reset charged time was 500ms. Only pre-reset 500ms is recorded in report
+        assertEquals(500L, postReset.todayUsageReport.protectedUsageMs)
+        assertNull(postReset.activeUnlock)
+        assertEquals(com.michalkrsik.internetrestrictor.domain.GateMode.OUT_OF_TIME, postReset.canonicalMode)
+
+        // Next tick: gate is OUT_OF_TIME, forcing summary flush of pre-reset usage
+        timeSource.advance(1_000L)
+        repository.tick(timeSource.elapsedRealtimeMs(), timeSource.wallTimeMs())
+
+        // Pre-reset charged time was 500ms. The diagnostic summary must record charged=500ms, not 0ms!
+        val summary = diagnostics.filter { it.contains("Usage committed:") }.last()
+        org.junit.Assert.assertTrue(summary.contains("recorded=500ms, charged=500ms"))
+        assertEquals(500L, repository.snapshot.value.todayUsageReport.protectedUsageMs)
+        assertEquals(0L, repository.snapshot.value.budgetSnapshots.single().usedMs)
+    }
 }
 
 private class InMemoryDataStore(initial: PersistedState) : androidx.datastore.core.DataStore<PersistedState> {
@@ -704,5 +848,15 @@ private class InMemoryDataStore(initial: PersistedState) : androidx.datastore.co
         val next = transform(flow.value)
         flow.value = next
         return next
+    }
+}
+
+private class FailingRewardStore(initial: PersistedState) : androidx.datastore.core.DataStore<PersistedState> {
+    private val state = kotlinx.coroutines.flow.MutableStateFlow(initial)
+    var fail = false
+    override val data: kotlinx.coroutines.flow.Flow<PersistedState> = state
+    override suspend fun updateData(transform: suspend (PersistedState) -> PersistedState): PersistedState {
+        if (fail) throw java.io.IOException("Disk full")
+        return transform(state.value).also { state.value = it }
     }
 }

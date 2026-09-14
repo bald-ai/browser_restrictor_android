@@ -28,6 +28,7 @@ class GateOverlayController(
     private val repository: RestrictorRepository,
     private val scope: CoroutineScope,
     private val onExerciseChallenge: () -> Unit,
+    private val onSprintChallenge: () -> Unit,
     private val onLeaveBrowser: () -> Unit,
     private val onFocusChanged: (Boolean) -> Unit,
     private val onAttachFailure: (Throwable) -> Unit,
@@ -85,6 +86,7 @@ class GateOverlayController(
                                 }
                             },
                             onExerciseChallenge = onExerciseChallenge,
+                            onSprintChallenge = onSprintChallenge,
                             onTryAgain = {
                                 scope.launch {
                                     repository.tryAgain(

@@ -31,6 +31,7 @@ import com.michalkrsik.internetrestrictor.domain.StateSnapshot
 import com.michalkrsik.internetrestrictor.domain.ThemePreference
 import com.michalkrsik.internetrestrictor.ui.dashboard.DashboardScreen
 import com.michalkrsik.internetrestrictor.ui.challenge.ExerciseChallengeActivity
+import com.michalkrsik.internetrestrictor.ui.sprint.SprintChallengeActivity
 import com.michalkrsik.internetrestrictor.ui.onboarding.OnboardingScreen
 import com.michalkrsik.internetrestrictor.ui.settings.SettingsScreen
 import com.michalkrsik.internetrestrictor.ui.theme.EditorialTheme
@@ -153,6 +154,7 @@ class MainActivity : ComponentActivity() {
                 onTestBrowser = ::launchBrowser,
                 onStartExercise = ::launchExerciseChallenge,
                 onHealthAction = { handleHealthAction(snapshot.enforcementHealth) },
+                onStartSprint = ::launchSprintChallenge,
             )
         }
     }
@@ -220,6 +222,10 @@ class MainActivity : ComponentActivity() {
 
     private fun launchExerciseChallenge() {
         startActivity(Intent(this, ExerciseChallengeActivity::class.java))
+    }
+
+    private fun launchSprintChallenge() {
+        startActivity(Intent(this, SprintChallengeActivity::class.java))
     }
 
     private fun openBrowserListing() {

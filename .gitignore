@@ -17,3 +17,9 @@
 node_modules/
 
 !/validation_artifacts/pulse/README.md
+
+# Mark historical artifacts explicitly for future contributors.
+!/design-preview/README.md
+!/prototypes/README.md
+!/validation_artifacts/README.md
+!/review-reports/README.md

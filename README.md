@@ -19,7 +19,7 @@ This is a personal, user-controlled tool—not parental control, device manageme
 - A one-use verification receipt for each recording, persisted until 04:00, prevents one model result from being credited twice.
 - One earned emergency 15-minute access unlock per local day. Each day begins with none; the first completed exercise set earns it, granting 15 elapsed minutes of free access without consuming earned budget, even when the daily budget is exhausted.
 - At 20:00 local time, accumulated spendable budget and normal browser access reset immediately. Exercise-set progress, shared exercise points, the earned emergency unlock, and today's report history survive; new evening sets earn fresh spendable time.
-- An append-only push-up ledger counts every verified push-up repetition in Europe/Prague cycles running from the 9th at 00:00 to the next month's 9th. Plank and machine work never write fake push-ups into that ledger. The dashboard shows the current total and all completed cycle totals; completed cycles are never pruned by report cleanup.
+- An append-only push-up ledger counts every verified push-up repetition in device-local time cycles running from the 9th at 00:00 to the next month's 9th. Plank and machine work never write fake push-ups into that ledger. The dashboard shows the current total and all completed cycle totals; completed cycles are never pruned by report cleanup.
 - Emergency unlocks are always enabled; there is no product switch that can disable them.
 - A zero-minute base daily budget with unlimited 3-minute earned increments and no weekly or monthly pool.
 - Exact 04:00 local daily-boundary usage splitting, daily usage accounting, and persisted exercise-set history grouped into Monday-to-Sunday weeks.

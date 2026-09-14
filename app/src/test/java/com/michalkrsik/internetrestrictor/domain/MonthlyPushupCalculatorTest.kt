@@ -17,8 +17,8 @@ class MonthlyPushupCalculatorTest {
             .toInstant()
             .toEpochMilli()
 
-        assertEquals("2026-08-09", MonthlyPushupCalculator.cycleStartKey(before))
-        assertEquals("2026-09-09", MonthlyPushupCalculator.cycleStartKey(boundary))
+        assertEquals("2026-08-09", MonthlyPushupCalculator.cycleStartKey(before, prague))
+        assertEquals("2026-09-09", MonthlyPushupCalculator.cycleStartKey(boundary, prague))
     }
 
     @Test
@@ -28,7 +28,7 @@ class MonthlyPushupCalculatorTest {
             .toEpochMilli()
         val existing = listOf(MonthlyPushupCycle("2026-08-09", 42))
 
-        val normalized = MonthlyPushupCalculator.ensureCurrentCycle(existing, november)
+        val normalized = MonthlyPushupCalculator.ensureCurrentCycle(existing, november, prague)
 
         assertEquals(
             listOf(
@@ -51,7 +51,7 @@ class MonthlyPushupCalculatorTest {
             MonthlyPushupCycle("2026-09-09", 3),
         )
 
-        val updated = MonthlyPushupCalculator.addPushups(cycles, 7, now)
+        val updated = MonthlyPushupCalculator.addPushups(cycles, 7, now, prague)
 
         assertEquals(MonthlyPushupCycle("2026-08-09", 42), updated[0])
         assertEquals(MonthlyPushupCycle("2026-09-09", 10), updated[1])

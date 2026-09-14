@@ -10,12 +10,16 @@ class LocalEventLog(context: Context) {
 
     fun record(event: String) {
         val safe = event.replace('\n', ' ').take(240)
-        synchronized(lock) {
-            val existing = if (file.exists()) file.readLines().takeLast(MAX_EVENTS - 1) else emptyList()
-            file.bufferedWriter().use { writer ->
-                existing.forEach { writer.appendLine(it) }
-                writer.appendLine("${Instant.now()} $safe")
+        try {
+            synchronized(lock) {
+                val existing = if (file.exists()) file.readLines().takeLast(MAX_EVENTS - 1) else emptyList()
+                file.bufferedWriter().use { writer ->
+                    existing.forEach { writer.appendLine(it) }
+                    writer.appendLine("${Instant.now()} $safe")
+                }
             }
+        } catch (_: Exception) {
+            // Diagnostics must remain best effort, including when storage is unavailable.
         }
     }
 

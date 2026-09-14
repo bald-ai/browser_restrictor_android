@@ -2,6 +2,8 @@ package com.michalkrsik.internetrestrictor.ui
 
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -38,6 +40,25 @@ class GateScreenTest {
         gateSessionId = "gate",
     )
     private val actions = GateActions({ _ -> }, {}, {}, {}, {})
+
+    @Test
+    fun exerciseInfoStaysInsideGateAndCanBeDismissedRepeatedly() {
+        val state = engine.normalize(PersistedState(), now, ZoneId.of("UTC"))
+        val snapshot = engine.snapshot(state, runtime, now)
+        composeRule.setContent {
+            RestrictorTheme(snapshot.settings.theme) { GateScreen(snapshot, actions) }
+        }
+
+        repeat(3) {
+            composeRule.onNodeWithContentDescription("How exercise points work")
+                .performScrollTo().performClick()
+            composeRule.onNodeWithText("Exercise points").performScrollTo().assertIsDisplayed()
+            composeRule.onAllNodes(isDialog()).assertCountEquals(0)
+            composeRule.onNodeWithText("Got it").performScrollTo().performClick()
+            composeRule.onAllNodesWithText("Exercise points").assertCountEquals(0)
+            composeRule.onNodeWithText("Leave browser").performScrollTo().assertIsDisplayed()
+        }
+    }
 
     @Test
     fun pausedGateShowsOnlyLockedSessionChoices() {

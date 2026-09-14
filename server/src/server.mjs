@@ -21,7 +21,10 @@ const MODEL = "google/gemini-3.8-flash";
 const MAX_VIDEO_BYTES = 75 * 1024 * 1024;
 const MAX_REQUEST_BYTES = MAX_VIDEO_BYTES + 1024 * 1024;
 const MAX_SOURCE_SECONDS = 30.5;
-const MODEL_SAMPLE_FPS = 4;
+const MODEL_SAMPLE_FPS = DENSIFY_FACTOR;
+const VIDEO_SHORT_EDGE = 720;
+const MODEL_REASONING_EFFORT = "medium";
+const MODEL_MAX_OUTPUT_TOKENS = 16384;
 const FFMPEG_TIMEOUT_MS = 20_000;
 const OPENROUTER_TIMEOUT_MS = 180_000;
 const TEMP_PREFIX = "browser-restrictor-exercise-";
@@ -111,7 +114,8 @@ export function parseMultipartVideo(body, contentType) {
   return parseExerciseMultipart(body, contentType, { defaultExerciseId: "push_up" }).video;
 }
 
-async function runProcess(command, args, timeoutMs) {
+export async function runProcess(command, args, timeoutMs, signal) {
+  signal?.throwIfAborted();
   return await new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
     const stdout = [];
@@ -124,6 +128,10 @@ async function runProcess(command, args, timeoutMs) {
       child.kill("SIGKILL");
     }, timeoutMs);
 
+    const abort = () => child.kill("SIGKILL");
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
+
     child.stdout.on("data", (chunk) => {
       stdoutSize += chunk.length;
       if (stdoutSize <= 2 * 1024 * 1024) stdout.push(chunk);
@@ -134,14 +142,17 @@ async function runProcess(command, args, timeoutMs) {
     });
     child.on("error", (error) => {
       clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
       reject(error);
     });
     child.on("close", (code) => {
       clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
       const result = {
         stdout: Buffer.concat(stdout).toString("utf8"),
         stderr: Buffer.concat(stderr).toString("utf8"),
       };
+      if (signal?.aborted) return reject(signal.reason);
       if (timedOut) return reject(new HttpError(504, `${command} timed out`));
       if (code !== 0) return reject(new HttpError(400, `${command} rejected the video`));
       resolve(result);
@@ -149,13 +160,13 @@ async function runProcess(command, args, timeoutMs) {
   });
 }
 
-async function inspectVideo(inputPath) {
+async function inspectVideo(inputPath, signal) {
   const result = await runProcess("ffprobe", [
     "-v", "error",
     "-show_entries", "format=duration,size:stream=codec_type,width,height",
     "-of", "json",
     inputPath,
-  ], FFMPEG_TIMEOUT_MS);
+  ], FFMPEG_TIMEOUT_MS, signal);
   let parsed;
   try {
     parsed = JSON.parse(result.stdout);
@@ -171,18 +182,18 @@ async function inspectVideo(inputPath) {
   return { duration, width: videoStream.width, height: videoStream.height };
 }
 
-async function prepareVideo(inputPath, outputPath) {
+async function prepareVideo(inputPath, outputPath, signal) {
   const args = [
     "-hide_banner", "-loglevel", "error", "-y",
     "-i", inputPath,
     "-an", "-map_metadata", "-1",
-    "-vf", `scale=360:-2,fps=${MODEL_SAMPLE_FPS},setpts=N/1/TB`,
+    "-vf", `scale=w='if(gte(iw,ih),-2,${VIDEO_SHORT_EDGE})':h='if(gte(iw,ih),${VIDEO_SHORT_EDGE},-2)',fps=${MODEL_SAMPLE_FPS},setpts=N/1/TB`,
     "-r", "1",
     "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
     "-pix_fmt", "yuv420p", "-movflags", "+faststart",
     outputPath,
   ];
-  await runProcess("ffmpeg", args, FFMPEG_TIMEOUT_MS);
+  await runProcess("ffmpeg", args, FFMPEG_TIMEOUT_MS, signal);
 }
 
 export function validateVerdict(value, definition = getExerciseDefinition("push_up")) {
@@ -217,6 +228,13 @@ export function validateClassifierVerdict(value) {
   return value;
 }
 
+// Generous physical ceiling: three complete repetitions per original second.
+export function boundMeasurement(value, metric, sourceSeconds) {
+  const maximum = metric === "hold_seconds" ? Math.ceil(sourceSeconds) : Math.ceil(sourceSeconds * 3);
+  if (value > maximum) throw new HttpError(502, "Verification measurement exceeds the clip duration");
+  return value;
+}
+
 export function normalizeClassifierVerdict(value) {
   const verdict = validateClassifierVerdict(value);
   if (verdict.exercise_id !== "plank") return verdict;
@@ -238,7 +256,7 @@ const classifierSchema = Object.freeze({
   additionalProperties: false,
 });
 
-async function callOpenRouter(videoPath, apiKey, request) {
+async function callOpenRouter(videoPath, apiKey, request, signal) {
   const video = await fs.readFile(videoPath);
   const payload = {
     model: MODEL,
@@ -252,8 +270,8 @@ async function callOpenRouter(videoPath, apiKey, request) {
         ],
       },
     ],
-    reasoning: { effort: "low", exclude: true },
-    max_tokens: 4096,
+    reasoning: { effort: MODEL_REASONING_EFFORT, exclude: true },
+    max_tokens: MODEL_MAX_OUTPUT_TOKENS,
     response_format: {
       type: "json_schema",
       json_schema: {
@@ -266,6 +284,7 @@ async function callOpenRouter(videoPath, apiKey, request) {
   };
 
   let response;
+  let text;
   try {
     response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
@@ -276,13 +295,14 @@ async function callOpenRouter(videoPath, apiKey, request) {
         "X-Title": "browser-restrictor-exercise-verifier",
       },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(OPENROUTER_TIMEOUT_MS),
+      signal: AbortSignal.any([signal, AbortSignal.timeout(OPENROUTER_TIMEOUT_MS)].filter(Boolean)),
     });
+    text = await response.text();
   } catch (error) {
+    signal?.throwIfAborted();
     if (error.name === "TimeoutError") throw new HttpError(504, "Model verification timed out");
     throw new HttpError(502, "Could not reach the verification model");
   }
-  const text = await response.text();
   if (!response.ok) throw new HttpError(502, `Verification provider returned HTTP ${response.status}`);
 
   try {
@@ -345,32 +365,46 @@ async function cleanupStaleDirectories() {
   }
 }
 
-export function createServer({ apiKey, sharedSecret }) {
+export function createServer({ apiKey, sharedSecret, processing = {} }) {
+  const processor = { inspectVideo, prepareVideo, callOpenRouter, ...processing };
   let busy = false;
   const server = http.createServer(async (req, res) => {
     const requestId = crypto.randomUUID();
     const startedAt = performance.now();
-    if (req.method === "GET" && req.url === "/health") {
-      return json(res, 200, {
-        status: "ok",
-        model: MODEL,
-        exercises: publicExerciseCatalog(),
-      });
-    }
-    const legacyPushupRequest = req.method === "POST" && req.url === "/v1/pushup-verify";
-    const exerciseRequest = req.method === "POST" && req.url === "/v1/exercise-verify";
-    if (!legacyPushupRequest && !exerciseRequest) {
-      return json(res, 404, { error: "Not found" });
-    }
-    const authorization = req.headers.authorization;
-    const expected = `Bearer ${sharedSecret}`;
-    if (!authorization || authorization.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(authorization), Buffer.from(expected))) {
-      return json(res, 401, { error: "Unauthorized" });
-    }
-    if (busy) return json(res, 503, { error: "Verifier is busy" }, { "Retry-After": "5" });
-    busy = true;
     let tempDirectory;
+    let ownsBusy = false;
+    const controller = new AbortController();
+    const abort = () => controller.abort(new Error("Client disconnected"));
+    req.once("aborted", abort);
+    res.once("close", () => { if (!res.writableEnded) abort(); });
     try {
+      if (req.method === "GET" && req.url === "/health") {
+        return json(res, 200, {
+          status: "ok",
+          model: MODEL,
+          verification_settings: {
+            reasoning_effort: MODEL_REASONING_EFFORT,
+            max_output_tokens: MODEL_MAX_OUTPUT_TOKENS,
+            video_short_edge: VIDEO_SHORT_EDGE,
+            sample_fps: MODEL_SAMPLE_FPS,
+            playback_fps: 1,
+          },
+          exercises: publicExerciseCatalog(),
+        });
+      }
+      const legacyPushupRequest = req.method === "POST" && req.url === "/v1/pushup-verify";
+      const exerciseRequest = req.method === "POST" && req.url === "/v1/exercise-verify";
+      if (!legacyPushupRequest && !exerciseRequest) {
+        return json(res, 404, { error: "Not found" });
+      }
+      const authorization = Buffer.from(req.headers.authorization ?? "");
+      const expected = Buffer.from(`Bearer ${sharedSecret}`);
+      if (authorization.length !== expected.length || !crypto.timingSafeEqual(authorization, expected)) {
+        return json(res, 401, { error: "Unauthorized" });
+      }
+      if (busy) return json(res, 503, { error: "Verifier is busy" }, { "Retry-After": "5" });
+      busy = true;
+      ownsBusy = true;
       const body = await readBoundedBody(req, MAX_REQUEST_BYTES);
       const upload = parseExerciseMultipart(body, req.headers["content-type"], {
         defaultExerciseId: legacyPushupRequest ? "push_up" : null,
@@ -383,20 +417,21 @@ export function createServer({ apiKey, sharedSecret }) {
       const inputPath = path.join(tempDirectory, "input.mp4");
       const outputPath = path.join(tempDirectory, "prepared.mp4");
       await fs.writeFile(inputPath, upload.video, { mode: 0o600 });
-      const metadata = await inspectVideo(inputPath);
-      await prepareVideo(inputPath, outputPath);
+      const metadata = await processor.inspectVideo(inputPath, controller.signal);
+      await processor.prepareVideo(inputPath, outputPath, controller.signal);
       const modelStartedAt = performance.now();
       if (legacyPushupRequest) {
         const definition = getExerciseDefinition("push_up");
         if (!exerciseIsReady(definition)) {
           throw new HttpError(409, `Exercise verification is not ready: ${definition.pending.join(", ")}`);
         }
-        const { verdict, diagnostics } = await callOpenRouter(
+        const { verdict, diagnostics } = await processor.callOpenRouter(
           outputPath,
           apiKey,
           legacyPushupModelRequest(definition),
+          controller.signal,
         );
-        const value = verdict[definition.resultField];
+        const value = boundMeasurement(verdict[definition.resultField], "repetitions", metadata.duration);
         console.log(JSON.stringify({
           request_id: requestId,
           status: "ok",
@@ -404,7 +439,7 @@ export function createServer({ apiKey, sharedSecret }) {
           metric: definition.metric,
           value,
           source_seconds: Number(metadata.duration.toFixed(3)),
-          processed_seconds: Number(metadata.duration.toFixed(3)),
+          processed_seconds: Number((metadata.duration * DENSIFY_FACTOR).toFixed(3)),
           model_ms: Math.round(performance.now() - modelStartedAt),
           total_ms: Math.round(performance.now() - startedAt),
           ...diagnostics,
@@ -417,7 +452,8 @@ export function createServer({ apiKey, sharedSecret }) {
         });
       }
 
-      const { verdict, diagnostics } = await callOpenRouter(outputPath, apiKey, classifierModelRequest);
+      const { verdict, diagnostics } = await processor.callOpenRouter(outputPath, apiKey, classifierModelRequest, controller.signal);
+      verdict.value = boundMeasurement(verdict.value, verdict.metric, metadata.duration);
       console.log(JSON.stringify({
         request_id: requestId,
         status: "ok",
@@ -425,7 +461,7 @@ export function createServer({ apiKey, sharedSecret }) {
         metric: verdict.metric,
         value: verdict.value,
         source_seconds: Number(metadata.duration.toFixed(3)),
-        processed_seconds: Number(metadata.duration.toFixed(3)),
+        processed_seconds: Number((metadata.duration * DENSIFY_FACTOR).toFixed(3)),
         model_ms: Math.round(performance.now() - modelStartedAt),
         total_ms: Math.round(performance.now() - startedAt),
         ...diagnostics,
@@ -445,10 +481,12 @@ export function createServer({ apiKey, sharedSecret }) {
         error: error.message,
         total_ms: Math.round(performance.now() - startedAt),
       }));
+      if (controller.signal.aborted || res.destroyed) return;
       return json(res, status, { error: status === 500 ? "Internal verifier error" : error.message });
     } finally {
       if (tempDirectory) await fs.rm(tempDirectory, { recursive: true, force: true }).catch(() => {});
-      busy = false;
+      req.removeListener("aborted", abort);
+      if (ownsBusy) busy = false;
     }
   });
   server.headersTimeout = 10_000;

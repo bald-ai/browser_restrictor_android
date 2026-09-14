@@ -31,7 +31,7 @@ const plankPrompt = [
   "Tolerate imperfect framing, ordinary form, camera shake, and brief occlusion.",
   "Ignore setup, getting into position, rest breaks, standing or sitting gaps, and motion after the hold ends.",
   "If the hold is briefly broken, count only the continuous valid hold segments and sum them.",
-  "Measure original-time seconds of the valid hold. Do not estimate from repetition-like bouncing.",
+  "Measure densified playback seconds of the valid hold. Do not estimate from repetition-like bouncing.",
   "Return zero only when no measurable plank hold is visible.",
 ].join(" ");
 
@@ -49,7 +49,7 @@ const outdoorLatPulldownPrompt = [
 
 const densifyInstruction = [
   `The supplied video is temporally densified by a factor of ${DENSIFY_FACTOR}:`,
-  "four frames from each original second are shown as four successive playback seconds.",
+  `Each original second is shown as ${DENSIFY_FACTOR} successive playback seconds.`,
   "For a plank, return the measured duration in densified playback seconds; do not convert it to original time.",
   "The server will perform the deterministic duration conversion after your response.",
   "Repetition counts are not scaled.",

@@ -1,7 +1,5 @@
 package com.michalkrsik.internetrestrictor.ui.challenge
 
-import com.michalkrsik.internetrestrictor.ui.components.ExercisePointsProgress
-import com.michalkrsik.internetrestrictor.domain.formatExercisePoints
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -15,6 +13,7 @@ import android.view.Surface
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -33,11 +32,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -48,13 +47,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalConfiguration
@@ -63,31 +62,22 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
-import androidx.lifecycle.lifecycleScope
 import com.michalkrsik.internetrestrictor.BuildConfig
 import com.michalkrsik.internetrestrictor.appContainer
 import com.michalkrsik.internetrestrictor.domain.EXERCISE_SET_REWARD_MINUTES
 import com.michalkrsik.internetrestrictor.domain.ExerciseId
 import com.michalkrsik.internetrestrictor.domain.ExercisePolicies
-import com.michalkrsik.internetrestrictor.domain.SUPPORTED_BROWSERS
 import com.michalkrsik.internetrestrictor.domain.YOUTUBE_PACKAGE_NAME
-import com.michalkrsik.internetrestrictor.domain.YOUTUBE_UNLOCK_SETS
-import com.michalkrsik.internetrestrictor.domain.isProtectedTargetPackage
+import com.michalkrsik.internetrestrictor.ui.components.ExercisePointsProgress
 import com.michalkrsik.internetrestrictor.ui.theme.EditorialTheme
 import com.michalkrsik.internetrestrictor.ui.theme.PillShape
-import com.michalkrsik.internetrestrictor.ui.theme.pulseButtonColors
 import com.michalkrsik.internetrestrictor.ui.theme.PulseActionBorder
 import com.michalkrsik.internetrestrictor.ui.theme.RestrictorTheme
-import java.io.BufferedReader
+import com.michalkrsik.internetrestrictor.ui.theme.pulseButtonColors
 import java.io.File
-import java.io.InputStreamReader
-import java.net.HttpURLConnection
-import java.net.URL
 import java.util.UUID
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 class ExerciseChallengeActivity : ComponentActivity() {
     private val handler = Handler(Looper.getMainLooper())
@@ -98,8 +88,13 @@ class ExerciseChallengeActivity : ComponentActivity() {
     private var activeRecording: Recording? = null
     private var discardFinalize = false
     private var recordingStartedElapsedMs = 0L
-    private var phase by mutableStateOf(ChallengePhase.PREPARING)
-    private var status by mutableStateOf("Preparing camera…")
+    private val session by viewModels<ExerciseSession>()
+    private var phase: ChallengePhase
+        get() = session.phase
+        set(value) { session.phase = value }
+    private var status: String
+        get() = session.status
+        set(value) { session.status = value }
     private var recordingSecondsRemaining by mutableIntStateOf(
         ExerciseChallengeCatalog.RECORDING_LIMIT_SECONDS,
     )
@@ -158,10 +153,6 @@ class ExerciseChallengeActivity : ComponentActivity() {
         }
     }
 
-    private val resultReturn = Runnable {
-        if (phase == ChallengePhase.RESULT) returnToOrigin()
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         recordingSecondsRemaining = ExerciseChallengeCatalog.RECORDING_LIMIT_SECONDS
@@ -171,12 +162,26 @@ class ExerciseChallengeActivity : ComponentActivity() {
             implementationMode = PreviewView.ImplementationMode.COMPATIBLE
         }
         setContent {
+            androidx.activity.compose.BackHandler(enabled = phase in setOf(ChallengePhase.FINALIZING, ChallengePhase.CHECKING)) {}
+            LaunchedEffect(phase) {
+                if (phase == ChallengePhase.RESULT) {
+                    delay(RESULT_DISPLAY_MS)
+                    returnToOrigin()
+                }
+            }
             val snapshot by appContainer.repository.snapshot.collectAsState()
             RestrictorTheme(snapshot.settings.theme) {
                 ExerciseChallengeScreen()
             }
         }
-        ensureCameraPermission()
+        if (session.pending == null && phase !in setOf(ChallengePhase.FINALIZING, ChallengePhase.CHECKING, ChallengePhase.RESULT)) {
+            ensureCameraPermission()
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
     }
 
     override fun onStart() {
@@ -198,8 +203,12 @@ class ExerciseChallengeActivity : ComponentActivity() {
         handler.removeCallbacks(countdownTicker)
         handler.removeCallbacks(recordingTicker)
         handler.removeCallbacks(recordingTimeout)
-        handler.removeCallbacks(resultReturn)
         discardFinalize = true
+        // Finalizing still belongs to this camera instance; verification belongs to the retained session.
+        if (phase in setOf(ChallengePhase.RECORDING, ChallengePhase.COUNTDOWN, ChallengePhase.FINALIZING)) {
+            phase = ChallengePhase.READY
+            status = "Recording interrupted. Ready to record again."
+        }
         activeRecording?.stop()
         activeRecording = null
         cameraProvider?.unbindAll()
@@ -298,6 +307,7 @@ class ExerciseChallengeActivity : ComponentActivity() {
         ) {
             OutlinedButton(
                 onClick = ::finish,
+                enabled = phase !in setOf(ChallengePhase.FINALIZING, ChallengePhase.CHECKING),
                 shape = PillShape,
                 border = BorderStroke(1.dp, EditorialTheme.colors.hairline),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
@@ -310,6 +320,7 @@ class ExerciseChallengeActivity : ComponentActivity() {
                     phase !in setOf(
                         ChallengePhase.COUNTDOWN,
                         ChallengePhase.RECORDING,
+                        ChallengePhase.FINALIZING,
                         ChallengePhase.CHECKING,
                         ChallengePhase.RESULT,
                     ),
@@ -395,8 +406,9 @@ class ExerciseChallengeActivity : ComponentActivity() {
                     ChallengePhase.COUNTDOWN -> "Starting in $countdownSecondsRemaining…"
                     ChallengePhase.READY -> "Start exercise"
                     ChallengePhase.RECORDING -> "Finish recording"
+                    ChallengePhase.FINALIZING -> "Finishing recording…"
                     ChallengePhase.CHECKING -> "Checking video…"
-                    ChallengePhase.RETRY -> "Record again"
+                    ChallengePhase.RETRY -> if (session.pending != null) "Retry saving" else "Record again"
                     ChallengePhase.RESULT -> "Returning to browser…"
                     ChallengePhase.PREPARING -> "Preparing camera…"
                     ChallengePhase.ERROR -> "Camera unavailable"
@@ -407,7 +419,11 @@ class ExerciseChallengeActivity : ComponentActivity() {
 
     private fun primaryAction() {
         when (phase) {
-            ChallengePhase.READY, ChallengePhase.RETRY -> startCountdown()
+            ChallengePhase.READY, ChallengePhase.RETRY -> {
+                if (session.pending != null) session.retrySave(appContainer, intent.getStringExtra(EXTRA_RETURN_PACKAGE) == YOUTUBE_PACKAGE_NAME)
+                else if (videoCapture == null) ensureCameraPermission()
+                else startCountdown()
+            }
             ChallengePhase.RECORDING -> stopRecording("Finishing recording…")
             else -> Unit
         }
@@ -425,10 +441,13 @@ class ExerciseChallengeActivity : ComponentActivity() {
     }
 
     private fun startCamera() {
-        phase = ChallengePhase.PREPARING
-        status = "Preparing camera…"
+        if (phase !in setOf(ChallengePhase.FINALIZING, ChallengePhase.CHECKING, ChallengePhase.RESULT, ChallengePhase.RETRY)) {
+            phase = ChallengePhase.PREPARING
+            status = "Preparing camera…"
+        }
         val providerFuture = ProcessCameraProvider.getInstance(this)
         providerFuture.addListener({
+            if (isDestroyed) return@addListener
             runCatching {
                 val provider = providerFuture.get()
                 cameraProvider = provider
@@ -441,15 +460,20 @@ class ExerciseChallengeActivity : ComponentActivity() {
                 bindCamera(provider)
             }.onFailure { error ->
                 Log.e(TAG, "Camera bind failed", error)
-                phase = ChallengePhase.ERROR
-                status = "Could not open camera: ${error.message.orEmpty()}"
+                if (session.pending == null && phase !in setOf(ChallengePhase.FINALIZING, ChallengePhase.CHECKING, ChallengePhase.RESULT)) {
+                    phase = ChallengePhase.ERROR
+                    status = "Could not open camera: ${error.message.orEmpty()}"
+                }
             }
         }, ContextCompat.getMainExecutor(this))
     }
 
     private fun bindCamera(provider: ProcessCameraProvider) {
-        phase = ChallengePhase.PREPARING
-        status = "Switching camera…"
+        val preserveStatus = phase in setOf(ChallengePhase.FINALIZING, ChallengePhase.CHECKING, ChallengePhase.RESULT, ChallengePhase.RETRY)
+        if (!preserveStatus) {
+            phase = ChallengePhase.PREPARING
+            status = "Switching camera…"
+        }
         val rotation = previewView.display?.rotation ?: Surface.ROTATION_0
         val preview = Preview.Builder()
             .setTargetRotation(rotation)
@@ -468,16 +492,18 @@ class ExerciseChallengeActivity : ComponentActivity() {
         provider.bindToLifecycle(this, selector, preview, capture)
         previewUseCase = preview
         videoCapture = capture
-        phase = ChallengePhase.READY
-        status = if (lensFacing == CameraSelector.LENS_FACING_FRONT) {
-            "Front camera ready."
-        } else {
-            "Back camera ready."
+        if (!preserveStatus) {
+            phase = ChallengePhase.READY
+            status = if (lensFacing == CameraSelector.LENS_FACING_FRONT) {
+                "Front camera ready."
+            } else {
+                "Back camera ready."
+            }
         }
     }
 
     private fun flipCamera() {
-        if (phase in setOf(ChallengePhase.COUNTDOWN, ChallengePhase.RECORDING, ChallengePhase.CHECKING)) return
+        if (phase in setOf(ChallengePhase.COUNTDOWN, ChallengePhase.RECORDING, ChallengePhase.FINALIZING, ChallengePhase.CHECKING)) return
         val provider = cameraProvider ?: return
         val target = if (lensFacing == CameraSelector.LENS_FACING_FRONT) {
             CameraSelector.LENS_FACING_BACK
@@ -538,187 +564,28 @@ class ExerciseChallengeActivity : ComponentActivity() {
 
     private fun stopRecording(message: String) {
         if (phase != ChallengePhase.RECORDING) return
-        phase = ChallengePhase.CHECKING
+        phase = ChallengePhase.FINALIZING
         status = message
         handler.removeCallbacks(recordingTicker)
         handler.removeCallbacks(recordingTimeout)
         activeRecording?.stop()
     }
 
-    private fun checkVideo(videoFile: File, verificationId: String) {
-        phase = ChallengePhase.CHECKING
-        status = "Checking exercise…"
-        lifecycleScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                try {
-                    runCatching {
-                        callVerificationServer(
-                            videoFile = videoFile,
-                            verifyUrl = BuildConfig.VERIFY_URL,
-                            sharedSecret = BuildConfig.VERIFY_SHARED_SECRET,
-                        )
-                    }
-                } finally {
-                    videoFile.delete()
-                }
-            }
-            result.fold(
-                onSuccess = onSuccess@{ verdict ->
-                    val policy = ExercisePolicies.find(verdict.exerciseId)
-                    if (verdict.exerciseId == ExerciseId.UNSUPPORTED || policy == null) {
-                        appContainer.eventLog.record(
-                            "Exercise video was unsupported: ${verdict.reason}",
-                        )
-                        showRetry("No supported exercise detected: ${verdict.reason}")
-                        return@onSuccess
-                    }
-                    if (verdict.value <= 0) {
-                        appContainer.eventLog.record(
-                            "${policy.displayName} video had no countable ${policy.remainderNounPlural}",
-                        )
-                        showRetry("No ${policy.displayName.lowercase()} counted: ${verdict.reason}")
-                        return@onSuccess
-                    }
-                    val previous = appContainer.repository.snapshot.value
-                    val saved = appContainer.repository.recordVerifiedExercise(
-                        verificationId,
-                        verdict.exerciseId,
-                        verdict.value,
-                    )
-                    if (!saved) {
-                        showRetry("${policy.displayName} were counted, but the progress could not be saved.")
-                        return@onSuccess
-                    }
-                    val updated = appContainer.repository.snapshot.value
-                    val sameDay = previous.todayUsageReport.localDayKey == updated.todayUsageReport.localDayKey
-                    val newlyEarnedRounds = updated.earnedBudgetRoundsToday -
-                        (if (sameDay) previous.earnedBudgetRoundsToday else 0L)
-                    val earnedMinutes = newlyEarnedRounds * EXERCISE_SET_REWARD_MINUTES
-                    val carried = updated.exercisePointSixthsToday
-                    appContainer.eventLog.record(
-                        "${policy.displayName} video measured ${verdict.value}; " +
-                            "$earnedMinutes daily budget minutes earned; " +
-                            "${formatExercisePoints(carried)} of 5 points carried",
-                    )
-                    val baseResultMessage = formatExerciseResult(
-                        exerciseId = verdict.exerciseId,
-                        measuredValue = verdict.value,
-                        completedSets = newlyEarnedRounds,
-                    )
-                    val returningToYoutube =
-                        intent.getStringExtra(EXTRA_RETURN_PACKAGE) == YOUTUBE_PACKAGE_NAME
-                    val youtubeUnlocked =
-                        updated.earnedBudgetRoundsToday >= YOUTUBE_UNLOCK_SETS
-                    val resultMessage = when {
-                        returningToYoutube && youtubeUnlocked ->
-                            "$baseResultMessage · YouTube unlocked until 04:00"
-                        returningToYoutube ->
-                            "$baseResultMessage · ${updated.earnedBudgetRoundsToday}/" +
-                                "$YOUTUBE_UNLOCK_SETS toward YouTube"
-                        else -> baseResultMessage
-                    }
-                    if (shouldReturnAfterExerciseResult(
-                        returningToYoutube = returningToYoutube,
-                        youtubeUnlocked = youtubeUnlocked,
-                        newlyEarnedRounds = newlyEarnedRounds,
-                    )) {
-                        showResultAndReturn(resultMessage)
-                    } else {
-                        showRetry(resultMessage)
-                    }
-                },
-                onFailure = { error ->
-                    Log.e(TAG, "Exercise verification failed", error)
-                    appContainer.eventLog.record(
-                        "Exercise verification error: ${error.javaClass.simpleName}",
-                    )
-                    showRetry("Check failed: ${error.message.orEmpty()}")
-                },
-            )
-        }
-    }
+    private fun checkVideo(videoFile: File, verificationId: String) = session.checkVideo(
+        videoFile, verificationId, appContainer,
+        intent.getStringExtra(EXTRA_RETURN_PACKAGE) == YOUTUBE_PACKAGE_NAME,
+    )
 
     private fun showRetry(message: String) {
-        handler.removeCallbacks(resultReturn)
         phase = ChallengePhase.RETRY
         status = message
     }
 
-    private fun showResultAndReturn(message: String) {
-        handler.removeCallbacks(resultReturn)
-        phase = ChallengePhase.RESULT
-        status = message
-        handler.postDelayed(resultReturn, RESULT_DISPLAY_MS)
-    }
-
-    private fun callVerificationServer(
-        videoFile: File,
-        verifyUrl: String,
-        sharedSecret: String,
-    ): ExerciseVerificationResult {
-        val boundary = "browser-restrictor-${System.currentTimeMillis()}"
-        val videoPart = (
-            "--$boundary\r\n" +
-                "Content-Disposition: form-data; name=\"video\"; filename=\"challenge.mp4\"\r\n" +
-                "Content-Type: video/mp4\r\n\r\n"
-        ).toByteArray(Charsets.UTF_8)
-        val suffix = "\r\n--$boundary--\r\n".toByteArray(Charsets.UTF_8)
-        val contentLength = videoPart.size.toLong() + videoFile.length() + suffix.size
-        val endpointUrl = verificationUrl(verifyUrl)
-        val connection = (URL(endpointUrl).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 30_000
-            readTimeout = 200_000
-            doOutput = true
-            setFixedLengthStreamingMode(contentLength)
-            setRequestProperty("Authorization", "Bearer $sharedSecret")
-            setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-        }
-        try {
-            connection.outputStream.buffered().use { output ->
-                output.write(videoPart)
-                videoFile.inputStream().buffered().use { input -> input.copyTo(output) }
-                output.write(suffix)
-            }
-            val code = connection.responseCode
-            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-            val body = stream?.let { BufferedReader(InputStreamReader(it)).use(BufferedReader::readText) }.orEmpty()
-            if (code !in 200..299) throw IllegalStateException("Verification HTTP $code")
-            return parseExerciseVerificationResult(body)
-        } finally {
-            connection.disconnect()
-        }
-    }
-
     private fun returnToOrigin() {
-        val preferredPackage = intent.getStringExtra(EXTRA_RETURN_PACKAGE)
-            ?.takeIf(::isProtectedTargetPackage)
-        val candidatePackages = buildList {
-            preferredPackage?.let(::add)
-            SUPPORTED_BROWSERS.mapTo(this) { it.packageName }
-        }.distinct()
-        val launchIntent = candidatePackages.firstNotNullOfOrNull { packageName ->
-            packageManager.getLaunchIntentForPackage(packageName)
-        }
-        if (launchIntent == null) {
-            showRetry("The originating app could not be opened.")
-            return
-        }
-        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
-        startActivity(launchIntent)
-        finish()
+        if (openChallengeOrigin()) finish()
+        else showRetry("The originating app could not be opened.")
     }
 
-    private enum class ChallengePhase {
-        PREPARING,
-        READY,
-        COUNTDOWN,
-        RECORDING,
-        CHECKING,
-        RESULT,
-        RETRY,
-        ERROR,
-    }
 
     companion object {
         const val EXTRA_RETURN_PACKAGE = "return_package"
@@ -750,29 +617,6 @@ internal fun shouldReturnAfterExerciseResult(
     returningToYoutube: Boolean,
     youtubeUnlocked: Boolean,
     newlyEarnedRounds: Long,
-): Boolean = newlyEarnedRounds > 0 && (!returningToYoutube || youtubeUnlocked)
+): Boolean = shouldReturnAfterChallenge(returningToYoutube, youtubeUnlocked, newlyEarnedRounds)
 
-internal object ExerciseChallengeVisibility {
-    val active = MutableStateFlow(false)
-    val activityStarted = MutableStateFlow(false)
-
-    fun prepareLaunch() {
-        activityStarted.value = false
-        active.value = true
-    }
-
-    fun onActivityStarted() {
-        activityStarted.value = true
-        active.value = true
-    }
-
-    fun onActivityStopped() {
-        activityStarted.value = false
-        active.value = false
-    }
-
-    fun cancelLaunch() {
-        activityStarted.value = false
-        active.value = false
-    }
-}
+internal object ExerciseChallengeVisibility : ChallengeVisibility()

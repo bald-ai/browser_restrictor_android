@@ -3,9 +3,6 @@ package com.michalkrsik.internetrestrictor.ui.challenge
 import com.michalkrsik.internetrestrictor.domain.ExerciseId
 import com.michalkrsik.internetrestrictor.domain.ExerciseMetric
 import com.michalkrsik.internetrestrictor.domain.ExercisePolicies
-import com.michalkrsik.internetrestrictor.domain.MACHINE_REPS_PER_SET
-import com.michalkrsik.internetrestrictor.domain.PLANK_SECONDS_PER_SET
-import com.michalkrsik.internetrestrictor.domain.PUSHUPS_PER_SET
 import org.json.JSONObject
 
 data class ExerciseChallengeSpec(
@@ -22,34 +19,17 @@ data class ExerciseChallengeSpec(
 }
 
 object ExerciseChallengeCatalog {
-    val all: List<ExerciseChallengeSpec> = listOf(
+    val all: List<ExerciseChallengeSpec> = ExercisePolicies.credited.map { policy ->
         ExerciseChallengeSpec(
-            id = ExerciseId.PUSH_UP,
-            displayName = "Push-ups",
-            metric = ExerciseMetric.REPETITIONS,
-            recordingLimitSeconds = 30,
-            unitsPerSet = PUSHUPS_PER_SET.toInt(),
+            id = policy.id,
+            displayName = policy.displayName,
+            metric = policy.metric,
+            recordingLimitSeconds = RECORDING_LIMIT_SECONDS,
+            unitsPerSet = policy.unitsPerSet.toInt(),
             verificationReady = true,
             rewardPolicyReady = true,
-        ),
-        ExerciseChallengeSpec(
-            id = ExerciseId.PLANK,
-            displayName = "Plank",
-            metric = ExerciseMetric.HOLD_SECONDS,
-            recordingLimitSeconds = 30,
-            unitsPerSet = PLANK_SECONDS_PER_SET.toInt(),
-            verificationReady = true,
-            rewardPolicyReady = true,
-        ),
-        ExerciseChallengeSpec(
-            id = ExerciseId.OUTDOOR_LAT_PULLDOWN,
-            displayName = "Outdoor lat pull-down",
-            metric = ExerciseMetric.REPETITIONS,
-            recordingLimitSeconds = 30,
-            unitsPerSet = MACHINE_REPS_PER_SET.toInt(),
-            verificationReady = true,
-            rewardPolicyReady = true,
-        ),
+        )
+    } + listOf(
         ExerciseChallengeSpec(
             id = ExerciseId.SIT_UP,
             displayName = "Sit-ups",

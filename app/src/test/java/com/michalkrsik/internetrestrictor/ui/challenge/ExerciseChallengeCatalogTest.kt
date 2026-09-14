@@ -10,6 +10,13 @@ import org.junit.Test
 
 class ExerciseChallengeCatalogTest {
     @Test
+    fun retryAfterSupportsSecondsDatesAndInvalidHeaders() {
+        org.junit.Assert.assertEquals(5_000L, retryAfterDelayMs("5"))
+        org.junit.Assert.assertEquals(5_000L, retryAfterDelayMs("invalid"))
+        org.junit.Assert.assertEquals(10_000L, retryAfterDelayMs("Thu, 01 Jan 1970 00:00:10 GMT", 0L))
+    }
+
+    @Test
     fun catalogUsesStableWireIdsAndMetricTypes() {
         assertEquals(
             listOf("push_up", "plank", "outdoor_lat_pulldown", "sit_up"),

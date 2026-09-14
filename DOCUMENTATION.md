@@ -1,5 +1,41 @@
 # Project documentation
 
+## Source map
+
+- `app/src/main/`: maintained Android app and product behavior.
+- `app/src/test/` and `app/src/androidTest/`: Android regression and device tests.
+- `server/src/` and `server/test/`: maintained video verifier and its tests.
+- `app/src/main/java/com/michalkrsik/internetrestrictor/domain/Exercise.kt`: authoritative exercise weights; display set sizes derive from them.
+- `app/src/main/java/com/michalkrsik/internetrestrictor/domain/RestrictionEngine.kt`: reward application and restriction rules.
+- `design-preview/`: historical React design mockup; not the shipped Android UI.
+- `prototypes/`: historical experiments; not maintained product code.
+- `validation_artifacts/` and `review-reports/`: historical captures and review evidence.
+
+## Challenge reliability and limits
+
+Verified camera measurements and sprint results retain their receipt until saving succeeds;
+"Retry saving" reuses that receipt without another recording or model call. The reward
+transaction returns its awarded sets, remainder, and day, so crossing 04:00 does not
+require the UI to infer the award from changing daily totals. Sprint session state lives
+in the foreground service; camera verification and pending credit live in a retained
+ViewModel. These preserve progress across Activity recreation within the running app.
+
+Sprints stop automatically after 15 minutes and retain their evaluated result. Leaving
+or starting over with unsaved sprint progress requires a discard confirmation. Missing
+GPS coverage at the beginning of a recording counts toward the reliability fallback.
+Permanent location denial routes the user to the app's system settings.
+
+Normal session presets remain maximum wall-clock windows subject to the available
+budget. An exhausted normal session can be replaced by an earned emergency skip.
+Monthly push-up cycles follow the device timezone, like the daily accounting periods.
+
+The verifier uses one playback densification factor for preprocessing and plank timing.
+Plank output is converted to original seconds on the server. Results exceeding the clip's
+length (holds) or three repetitions per original second are rejected as implausible.
+The client permits 240 seconds for a response, retries explicit busy responses according
+to Retry-After, and disconnects cancelled requests; the server cancels its active work
+when that client connection closes.
+
 ## Personal notes and future ideas
 
 Personal notes and future ideas belong in `Dev/` at the project root, as individual
@@ -298,6 +334,10 @@ return one supported exercise with its raw measurement or return `unsupported`; 
 client does not carry an unused confidence signal.
 
 The preprocessor still samples at `MODEL_SAMPLE_FPS=4` using `fps=4,setpts=N/1/TB`.
+Video is resized proportionally to a 720-pixel short edge (1280×720 for 16:9
+landscape, 720×1280 for portrait), then encoded as H.264 at CRF 23 without audio.
+Gemini 3.8 Flash uses medium reasoning with a 16,384-token output allowance,
+including reasoning tokens. `/health` exposes these active verification settings.
 For planks, the model reports the visually measured densified playback seconds and the
 server divides by four and rounds to the nearest original second. Keeping this simple
 arithmetic out of the model avoids inconsistent duration conversion. Repetition counts
@@ -316,3 +356,29 @@ counter so plank and machine sets cannot inflate push-up history. Every recordin
 a client-generated verification ID. Crediting the measurement and storing that ID are
 one atomic state change, so replaying the same result cannot award credit twice. The
 IDs reset with the rest of the logical-day state at 04:00.
+
+### GPS sprint activity
+
+- **Entry points:** Dedicated "Start sprint" action buttons on the Dashboard, GateScreen (Paused, Out of Time), and YouTube locked overlays, completely separate from the camera exercise flow.
+- **Recording lifecycle:** Managed by `SprintLocationService`, an Android location foreground service (`FOREGROUND_SERVICE_TYPE_LOCATION`) with an ongoing notification and `PARTIAL_WAKE_LOCK`. Designed to continue recording while the device screen is locked; physical device verification remains pending.
+- **GPS acquisition:** Entry requires both `ACCESS_FINE_LOCATION` and `ACCESS_COARSE_LOCATION` permissions (requested together per Android 12+ requirements), enabled GPS provider in system settings, and a fresh satellite fix ($\le 5\text{s}$ old) with horizontal accuracy $\le 25\text{m}$.
+- **Movement qualification:**
+  - Target sprint distance: 150m; passing set threshold: 120m per earned set.
+  - Qualifying average speed: $\ge 15.0\text{ km/h}$ ($\ge 4.167\text{ m/s}$, with $14.95\text{ km/h}$ float tolerance).
+  - Running entry: $\ge 3.6\text{ m/s}$ ($13\text{ km/h}$) allows accumulating steps into candidate efforts; walking ($\sim 1.4\text{ m/s}$) or stationary jitter is completely rejected.
+  - Speed metric & pace evaluation: Qualification uses time-weighted pace per interval, using reported Doppler speed when present and robust coordinate fallback where absent. Modest coordinate distance undercounts do not discard reliable reported running speeds (accommodated by the 120m threshold). Gross discrepancies between speed and displacement flag GPS as unreliable.
+  - Stationary oscillation defense: When speed is absent, small coordinate oscillations within the declared accuracy radius or with near-zero directional progress (<35% net displacement / total distance) are rejected, preventing standing still from generating running credit while preserving clean directional sprints.
+  - Spike rejection: At least 2 steps (3 consecutive fixes) and $\ge 1.5\text{s}$ duration are required to qualify an effort, preventing isolated single-point coordinate spikes from accumulating credit.
+  - Jump filter: Fixes with implied coordinate speed $> 15\text{ m/s}$ ($54\text{ km/h}$) are rejected as GPS multipath artifacts.
+  - Accuracy filter & reliability: Fixes with horizontal accuracy $> 30\text{m}$ are discarded during recording. Unreliable GPS is flagged if $> 60\%$ of fixes are discarded for poor accuracy, if a GPS blackout gap $> 8\text{s}$ occurs, or if no usable fixes arrive in runs $\ge 4\text{s}$.
+  - Qualification stability: The longest qualifying prefix $\ge 15.0\text{ km/h}$ is committed and preserved; slowing down (e.g. phone retrieval or jogging to a halt) never revokes already earned qualifying metres or set qualification. Live and final evaluation agree.
+  - Vibration: Single 500ms haptic pulse fires at each newly reached set boundary (120m, 240m, etc.).
+- **Carryover & persistence (Schema 12):**
+  - Unearned qualifying metres carry over across recordings via `DailyCounter.sprintMetersRemainder` (bounds: $0 \dots 119\text{m}$).
+  - Remainder resets to 0 at the logical day boundary (04:00) alongside unfinished exercise progress; persists through the 20:00 evening budget reset.
+- **Reward semantics:**
+  - Every 120m qualifying distance earns 1 set (+3 browser minutes, counts towards 4 sets for YouTube unlock until 04:00, unlocks emergency skip on set 1).
+  - Deduplication: `recordingId` is tracked in `creditedExerciseVerificationIds` to prevent duplicate awards.
+  - Unreliable GPS fallback: When GPS was unreliable, user can confirm manual completion to receive exactly 1 set (deduplicated, no double crediting).
+  - Destination unlock protection: Reopening YouTube from sprint results is blocked unless $\ge 4$ sets have been unlocked today.
+  - Asynchronous save safety: `SprintChallengeActivity` captures immutable `SprintSaveState`, disables navigation and back presses during persistence, and only reflects awards upon confirmed storage commit.

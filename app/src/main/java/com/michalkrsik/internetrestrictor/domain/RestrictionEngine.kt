@@ -52,6 +52,7 @@ class RestrictionEngine(
         val normalizedMonthlyCycles = MonthlyPushupCalculator.ensureCurrentCycle(
             state.monthlyPushupCycles,
             nowWallMs,
+            zoneId,
         )
         if (normalizedMonthlyCycles != state.monthlyPushupCycles) {
             state = state.copy(monthlyPushupCycles = normalizedMonthlyCycles)
@@ -245,7 +246,7 @@ class RestrictionEngine(
             underlying
         }
         val pending = state.pendingWait
-        val currentMonthlyCycleKey = MonthlyPushupCalculator.cycleStartKey(nowWallMs)
+        val currentMonthlyCycleKey = MonthlyPushupCalculator.cycleStartKey(nowWallMs, zoneId)
         val currentMonthlyCycle = state.monthlyPushupCycles.firstOrNull {
             it.cycleStartDate == currentMonthlyCycleKey
         } ?: MonthlyPushupCycle(currentMonthlyCycleKey)
@@ -273,7 +274,10 @@ class RestrictionEngine(
             GateMode.OUT_OF_TIME, GateMode.OUT_OF_TIME_LATCHED -> true
             else -> false
         }
-        val activeUnlockIsCurrent = state.activeUnlock?.expiresAtWallMs?.let { it > nowWallMs } == true
+        val activeUnlockIsCurrent = state.activeUnlock?.let {
+            it.expiresAtWallMs > nowWallMs &&
+                (it.source == UnlockSource.EMERGENCY || budgets.none { budget -> budget.exhausted })
+        } == true
         val skipEligible = emergencyEarnedToday &&
             remainingSkips > 0 &&
             skipModeEligible &&
@@ -308,6 +312,7 @@ class RestrictionEngine(
             earnedBudgetRoundsToday = state.dailyCounter.earnedBudgetRounds,
             exercisePointSixthsToday = state.dailyCounter.exercisePointSixths,
             verifiedPushupsToday = state.dailyCounter.verifiedPushups,
+            sprintMetersRemainder = state.dailyCounter.sprintMetersRemainder,
             offSessionStartedAtWallMs = state.offUsageReminder.sessionStartedAtWallMs,
             usageReports = state.usageReports,
             todayUsageReport = state.usageReports.firstOrNull {
@@ -453,7 +458,7 @@ class RestrictionEngine(
             }
         }
 
-        val currentSnapshot = snapshot(state, runtime, nowWallMs)
+        val currentSnapshot = snapshot(state, runtime, nowWallMs, zoneId = zoneId)
         if (!currentSnapshot.skipSnapshot.eligible) return rejected(state, "Emergency skip unavailable")
         val duration = currentSnapshot.skipSnapshot.grantDurationMs
         val unlock = UnlockSession(
@@ -523,18 +528,6 @@ class RestrictionEngine(
         zoneId: ZoneId,
     ): CommandResult {
         val state = normalize(input, nowWallMs, zoneId)
-        if (verificationId.isBlank() || verificationId.length > 128) {
-            return rejected(state, "Invalid exercise verification ID")
-        }
-        if (verificationId in state.dailyCounter.creditedExerciseVerificationIds) {
-            return rejected(state, "Exercise verification was already credited")
-        }
-        if (
-            state.dailyCounter.creditedExerciseVerificationIds.size >=
-            MAX_DAILY_CREDITED_EXERCISE_VERIFICATIONS
-        ) {
-            return rejected(state, "Daily exercise verification history is at its safe limit")
-        }
         val policy = ExercisePolicies.find(exerciseId)
         if (policy == null || !policy.credited) {
             return rejected(state, "Unsupported exercise cannot earn credit")
@@ -549,72 +542,91 @@ class RestrictionEngine(
         } catch (_: ArithmeticException) {
             return rejected(state, "${policy.displayName} measurement is too large")
         }
-        val newlyEarnedRounds = accumulation.completedSets
-        if (newlyEarnedRounds > MAX_SAFE_BUDGET_ROUNDS - state.dailyCounter.earnedBudgetRounds) {
+        return applyAward(
+            state, verificationId, accumulation.completedSets, accumulation.remainder,
+            state.dailyCounter.copy(exercisePointSixths = accumulation.remainder),
+            if (exerciseId == ExerciseId.PUSH_UP) value else 0L, nowWallMs, zoneId,
+        )
+    }
+
+    fun recordSprintRecording(
+        input: PersistedState,
+        recordingId: String,
+        qualifyingMeters: Long,
+        manualCompletionAward: Boolean = false,
+        nowWallMs: Long,
+        zoneId: ZoneId,
+    ): CommandResult {
+        val state = normalize(input, nowWallMs, zoneId)
+        if (qualifyingMeters < 0) return rejected(state, "Sprint distance cannot be negative")
+        val accumulation = try {
+            if (manualCompletionAward) ExerciseAccumulation(1L, state.dailyCounter.sprintMetersRemainder)
+            else accumulateExerciseUnits(
+                state.dailyCounter.sprintMetersRemainder, qualifyingMeters, SPRINT_SET_QUALIFYING_METERS,
+            )
+        } catch (_: ArithmeticException) {
+            return rejected(state, "Sprint distance measurement is too large")
+        }
+        return applyAward(
+            state, recordingId, accumulation.completedSets, accumulation.remainder,
+            state.dailyCounter.copy(sprintMetersRemainder = accumulation.remainder),
+            0L, nowWallMs, zoneId,
+        )
+    }
+
+    private fun applyAward(
+        state: PersistedState,
+        receiptId: String,
+        sets: Long,
+        remainder: Long,
+        counter: DailyCounter,
+        pushups: Long,
+        nowWallMs: Long,
+        zoneId: ZoneId,
+    ): CommandResult {
+        if (receiptId.isBlank() || receiptId.length > 128) return rejected(state, "Invalid reward receipt ID")
+        if (receiptId in counter.creditedExerciseVerificationIds) return rejected(state, "Reward was already credited")
+        if (counter.creditedExerciseVerificationIds.size >= MAX_DAILY_CREDITED_EXERCISE_VERIFICATIONS) {
+            return rejected(state, "Daily exercise verification history is at its safe limit")
+        }
+        if (sets > MAX_SAFE_BUDGET_ROUNDS - counter.earnedBudgetRounds ||
+            sets > MAX_SAFE_BUDGET_ROUNDS - counter.spendableBudgetRounds) {
             return rejected(state, "Daily earned budget is at its safe limit")
         }
-        if (newlyEarnedRounds > MAX_SAFE_BUDGET_ROUNDS - state.dailyCounter.spendableBudgetRounds) {
-            return rejected(state, "Spendable budget is at its safe limit")
-        }
-        val totalEarnedRounds = Math.addExact(
-            state.dailyCounter.earnedBudgetRounds,
-            newlyEarnedRounds,
-        )
-        val spendableRounds = Math.addExact(
-            state.dailyCounter.spendableBudgetRounds,
-            newlyEarnedRounds,
-        )
-        val monthlyPushupCycles = if (exerciseId == ExerciseId.PUSH_UP) {
-            try {
-                MonthlyPushupCalculator.addPushups(
-                    cycles = state.monthlyPushupCycles,
-                    repetitions = value,
-                    nowWallMs = nowWallMs,
-                )
-            } catch (_: ArithmeticException) {
-                return rejected(state, "Monthly push-up total is at its safe limit")
-            }
-        } else {
-            state.monthlyPushupCycles
-        }
-        val verifiedPushups = if (exerciseId == ExerciseId.PUSH_UP) {
-            try {
-                Math.addExact(state.dailyCounter.verifiedPushups, value)
-            } catch (_: ArithmeticException) {
-                return rejected(state, "Daily push-up total is at its safe limit")
-            }
-        } else {
-            state.dailyCounter.verifiedPushups
+        val totalSets = counter.earnedBudgetRounds + sets
+        val verifiedPushups: Long
+        val cycles: List<MonthlyPushupCycle>
+        try {
+            verifiedPushups = Math.addExact(counter.verifiedPushups, pushups)
+            cycles = if (pushups > 0) MonthlyPushupCalculator.addPushups(
+                state.monthlyPushupCycles, pushups, nowWallMs, zoneId,
+            ) else state.monthlyPushupCycles
+        } catch (_: ArithmeticException) {
+            return rejected(state, "Push-up total is at its safe limit")
         }
         return CommandResult.Applied(
             state.copy(
                 stateRevision = nextRevision(state.stateRevision),
-                dailyCounter = state.dailyCounter.copy(
-                    exercisePointSixths = accumulation.remainder,
-                    earnedBudgetRounds = totalEarnedRounds,
-                    spendableBudgetRounds = spendableRounds,
+                dailyCounter = counter.copy(
+                    earnedBudgetRounds = totalSets,
+                    spendableBudgetRounds = counter.spendableBudgetRounds + sets,
                     verifiedPushups = verifiedPushups,
-                    creditedExerciseVerificationIds =
-                        state.dailyCounter.creditedExerciseVerificationIds + verificationId,
+                    creditedExerciseVerificationIds = counter.creditedExerciseVerificationIds + receiptId,
                 ),
-                usageReports = state.usageReports.withExerciseSets(
-                    localDayKey = state.dailyCounter.localDayKey,
-                    sessions = totalEarnedRounds,
-                ),
-                monthlyPushupCycles = monthlyPushupCycles,
-                activityEvents = if (newlyEarnedRounds > 0) {
+                usageReports = state.usageReports.withExerciseSets(counter.localDayKey, totalSets),
+                monthlyPushupCycles = cycles,
+                activityEvents = if (sets > 0) {
                     (state.activityEvents + ActivityEvent(
                         id = idGenerator.nextId(),
-                        localDayKey = state.dailyCounter.localDayKey,
+                        localDayKey = counter.localDayKey,
                         type = ActivityEventType.EXERCISE_SET,
                         startedAtWallMs = nowWallMs,
                         endedAtWallMs = nowWallMs,
-                        valueMs = newlyEarnedRounds * EXERCISE_SET_REWARD_MINUTES * MINUTE_MS,
+                        valueMs = sets * EXERCISE_SET_REWARD_MINUTES * MINUTE_MS,
                     )).takeLast(MAX_ACTIVITY_EVENTS)
-                } else {
-                    state.activityEvents
-                },
+                } else state.activityEvents,
             ),
+            RewardCommit(sets, remainder, counter.localDayKey),
         )
     }
 
@@ -628,7 +640,7 @@ class RestrictionEngine(
         if (intervalEndWallMs <= intervalStartWallMs) return UsageConsumptionResult(input, 0L, 0L)
         var state = normalize(input, intervalStartWallMs, zoneId)
         val initialMode = underlyingMode(state, runtime, intervalStartWallMs)
-        if (initialMode !in accessGrantedModes) return UsageConsumptionResult(state, 0L, 0L)
+        if (!initialMode.traits.recordsUsage) return UsageConsumptionResult(state, 0L, 0L)
 
         var cursor = intervalStartWallMs
         var totalRecordedMs = 0L
@@ -637,7 +649,7 @@ class RestrictionEngine(
         while (cursor < intervalEndWallMs) {
             state = normalize(state, cursor, zoneId)
             val mode = underlyingMode(state, runtime, cursor)
-            if (mode !in accessGrantedModes) break
+            if (!mode.traits.recordsUsage) break
 
             val eveningReset = PeriodCalculator.eveningBudgetReset(cursor, zoneId)
             val dailyReset = PeriodCalculator.nextDailyReset(cursor, zoneId)
@@ -649,9 +661,7 @@ class RestrictionEngine(
             if (segmentDuration <= 0) break
 
             val budgets = budgetSnapshots(state)
-            val isEmergency = state.activeUnlock?.let {
-                it.source == UnlockSource.EMERGENCY && it.expiresAtWallMs > cursor
-            } == true
+            val isEmergency = !mode.traits.chargesBudget
 
             val accessible: Long
             val budgetCharged: Long
@@ -892,10 +902,5 @@ class RestrictionEngine(
         const val MAX_REPORT_DAYS = REPORT_HISTORY_DAYS + 1
         const val MAX_ACTIVITY_EVENTS = 512
         private const val BROWSER_EVENT_MERGE_GAP_MS = 10_000L
-        val accessGrantedModes = setOf(
-            GateMode.ACCESS_GRANTED_NORMAL,
-            GateMode.ACCESS_GRANTED_EMERGENCY,
-            GateMode.ACCESS_GRANTED_NO_DELAY,
-        )
     }
 }

@@ -82,6 +82,7 @@ fun DashboardScreen(
     onTestBrowser: () -> Unit,
     onStartExercise: () -> Unit,
     onHealthAction: () -> Unit,
+    onStartSprint: () -> Unit = {},
 ) {
     var showReports by rememberSaveable { mutableStateOf(false) }
     var showMonthly by rememberSaveable { mutableStateOf(false) }
@@ -137,6 +138,8 @@ fun DashboardScreen(
         }
         Spacer(Modifier.height(18.dp))
         PulsePrimary("Start exercise", onStartExercise, exercise = true)
+        Spacer(Modifier.height(8.dp))
+        PulsePrimary("Start sprint", onStartSprint, exercise = true)
         PulseText("Available time resets at 20:00", 9, Modifier.align(Alignment.CenterHorizontally).padding(vertical = 11.dp), muted = true)
         val health = healthCopy(snapshot.enforcementHealth, snapshot.usageAccessGranted)
         if(!health.positive || health.action != null) HealthCard(snapshot.enforcementHealth, snapshot.usageAccessGranted, onHealthAction, compact = true)

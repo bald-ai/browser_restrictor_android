@@ -26,6 +26,24 @@ import org.junit.Test
 
 class AppStateSerializerTest {
     @Test
+    fun corruptListCountsAreRejectedBeforeAllocation() = runTest {
+        val output = ByteArrayOutputStream()
+        AppStateSerializer.writeTo(PersistedState(), output)
+        val original = output.toByteArray()
+        // Empty current-schema tail: reports, 33-byte reminder, grace flag, events, cycles.
+        for (offsetFromEnd in listOf(46, 8, 4)) {
+            for (count in listOf(-1, Int.MAX_VALUE)) {
+                val bytes = original.copyOf()
+                java.nio.ByteBuffer.wrap(bytes).putInt(bytes.size - offsetFromEnd, count)
+                try {
+                    AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
+                    org.junit.Assert.fail("Accepted count $count at tail offset $offsetFromEnd")
+                } catch (_: CorruptionException) { }
+            }
+        }
+    }
+
+    @Test
     fun stateRoundTripsWithoutDroppingRuntimeRules() = runTest {
         val state = PersistedState(
             stateRevision = 42,
@@ -135,7 +153,7 @@ class AppStateSerializerTest {
 
         val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
 
-        assertEquals(11, migrated.schemaVersion)
+        assertEquals(12, migrated.schemaVersion)
         assertEquals(77, migrated.stateRevision)
         assertEquals(true, migrated.settings.enforcementEnabled)
         assertEquals(null, migrated.settings.pauseUntilWallMs)
@@ -255,7 +273,7 @@ class AppStateSerializerTest {
 
         val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
 
-        assertEquals(11, migrated.schemaVersion)
+        assertEquals(12, migrated.schemaVersion)
         assertEquals(123_000, migrated.dailyUsage.usedMs)
         assertEquals(2, migrated.dailyCounter.earnedBudgetRounds)
         assertEquals(1, migrated.dailyCounter.emergencySkipsUsed)
@@ -305,11 +323,13 @@ class AppStateSerializerTest {
         }.toByteArray()
 
         val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
-        val zone = ZoneId.of("Europe/Prague")
-        val now = ZonedDateTime.of(2026, 8, 18, 12, 0, 0, 0, zone).toInstant().toEpochMilli()
-        val normalized = RestrictionEngine().normalize(migrated, now, zone)
+        val normalized = RestrictionEngine().normalize(
+            input = migrated,
+            nowWallMs = ZonedDateTime.of(2026, 7, 10, 10, 0, 0, 0, ZoneId.of("UTC")).toInstant().toEpochMilli(),
+            zoneId = ZoneId.of("UTC"),
+        )
 
-        assertEquals(11, normalized.schemaVersion)
+        assertEquals(12, normalized.schemaVersion)
         assertEquals(true, normalized.settings.enforcementEnabled)
         assertEquals(null, normalized.settings.pauseUntilWallMs)
         assertEquals(true, normalized.settings.emergencySkipsEnabled)
@@ -360,7 +380,7 @@ class AppStateSerializerTest {
 
         val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
 
-        assertEquals(11, migrated.schemaVersion)
+        assertEquals(12, migrated.schemaVersion)
         assertEquals(2, migrated.dailyCounter.earnedBudgetRounds)
         assertEquals(0, migrated.dailyCounter.pushupRepetitionRemainder)
         assertEquals(2, migrated.usageReports.single().exerciseSets)
@@ -409,7 +429,7 @@ class AppStateSerializerTest {
 
         val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
 
-        assertEquals(11, migrated.schemaVersion)
+        assertEquals(12, migrated.schemaVersion)
         assertEquals(3, migrated.dailyCounter.earnedBudgetRounds)
         assertEquals(3, migrated.dailyCounter.spendableBudgetRounds)
         assertEquals(4, migrated.dailyCounter.pushupRepetitionRemainder)
@@ -461,7 +481,7 @@ class AppStateSerializerTest {
 
         val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
 
-        assertEquals(11, migrated.schemaVersion)
+        assertEquals(12, migrated.schemaVersion)
         assertEquals(30_000, migrated.dailyUsage.usedMs)
         assertEquals(3, migrated.dailyCounter.earnedBudgetRounds)
         assertEquals(1, migrated.dailyCounter.spendableBudgetRounds)
@@ -522,7 +542,7 @@ class AppStateSerializerTest {
 
         val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
 
-        assertEquals(11, migrated.schemaVersion)
+        assertEquals(12, migrated.schemaVersion)
         assertEquals(3, migrated.dailyCounter.earnedBudgetRounds)
         assertEquals(1, migrated.dailyCounter.spendableBudgetRounds)
         assertEquals(4, migrated.dailyCounter.pushupRepetitionRemainder)
@@ -588,7 +608,7 @@ class AppStateSerializerTest {
 
         val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
 
-        assertEquals(11, migrated.schemaVersion)
+        assertEquals(12, migrated.schemaVersion)
         assertEquals(3, migrated.dailyCounter.earnedBudgetRounds)
         assertEquals(1, migrated.dailyCounter.spendableBudgetRounds)
         assertEquals(4, migrated.dailyCounter.pushupRepetitionRemainder)
@@ -598,8 +618,70 @@ class AppStateSerializerTest {
         assertEquals(4, migrated.dailyCounter.machineRepetitionRemainder)
         assertEquals(listOf("already-credited"), migrated.dailyCounter.creditedExerciseVerificationIds)
         assertEquals(0, migrated.dailyCounter.exercisePointSixths)
+        assertEquals(0, migrated.dailyCounter.sprintMetersRemainder)
         assertEquals(3, migrated.usageReports.single().exerciseSets)
         assertEquals(listOf(MonthlyPushupCycle("2026-07-09", 81)), migrated.monthlyPushupCycles)
+    }
+
+    @Test
+    fun schemaV11BytesMigrateWithZeroSprintRemainder() = runTest {
+        val bytes = ByteArrayOutputStream().also { output ->
+            DataOutputStream(output).use { target ->
+                target.writeInt(0x49525354)
+                target.writeInt(11) // Schema 11
+                target.writeLong(97)
+                target.writeBoolean(true)
+                target.writeBoolean(false)
+                target.writeBoolean(true)
+                target.writeBoolean(true)
+                target.writeLong(1)
+                target.writeInt(ThemePreference.DARK.ordinal)
+                target.writeBoolean(true)
+                target.writeInt(3)
+                listOf(3L, 5L, 10L).forEach(target::writeLong)
+                target.writeUTF("2026-08-21")
+                target.writeLong(30_000)
+                target.writeBoolean(false)
+                target.writeBoolean(false)
+                target.writeUTF("2026-08-21")
+                target.writeLong(3)
+                target.writeLong(0)
+                target.writeLong(4)
+                target.writeLong(1)
+                target.writeBoolean(true)
+                target.writeLong(19) // Verified push-ups
+                target.writeLong(9) // Legacy plank seconds
+                target.writeLong(4) // Legacy machine reps
+                target.writeInt(1)
+                target.writeUTF("already-credited")
+                target.writeLong(12) // exercisePointSixths
+                // Schema 11 does not have sprintMetersRemainder
+                target.writeLong(120_000)
+                target.writeUTF("epoch-v11")
+                target.writeLong(100_000)
+                target.writeInt(0)
+                target.writeInt(1)
+                target.writeUTF("2026-08-21")
+                target.writeLong(30_000)
+                target.writeLong(0)
+                target.writeLong(3)
+                repeat(2) { target.writeLong(0) }
+                target.writeBoolean(false)
+                repeat(2) { target.writeLong(0) }
+                target.writeBoolean(false)
+                target.writeInt(0)
+                target.writeInt(1)
+                target.writeUTF("2026-07-09")
+                target.writeLong(81)
+            }
+        }.toByteArray()
+
+        val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
+
+        assertEquals(12, migrated.schemaVersion)
+        assertEquals(3, migrated.dailyCounter.earnedBudgetRounds)
+        assertEquals(12, migrated.dailyCounter.exercisePointSixths)
+        assertEquals(0, migrated.dailyCounter.sprintMetersRemainder)
     }
 
     @Test(expected = CorruptionException::class)

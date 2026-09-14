@@ -40,6 +40,27 @@ class RestrictionEngineTest {
         applied(engine.earnPushupBudget(initial(settings), now, zone)).copy(activityEvents = emptyList())
 
     @Test
+    fun emergencySkipReplacesAnExhaustedButUnexpiredNormalSession() {
+        val earned = initialWithBudget()
+        val exhausted = earned.copy(
+            dailyUsage = earned.dailyUsage.copy(usedMs = 3 * MINUTE_MS),
+            activeUnlock = UnlockSession("normal", UnlockSource.NORMAL, now, now + 10 * MINUTE_MS),
+        )
+        val snapshot = engine.snapshot(exhausted, ready, now, zoneId = zone)
+        assertEquals(GateMode.OUT_OF_TIME, snapshot.canonicalMode)
+        assertTrue(snapshot.skipSnapshot.eligible)
+        val result = engine.emergencySkip(exhausted, ready, snapshot.stateRevision, null, now, zone)
+        assertEquals(UnlockSource.EMERGENCY, (result as CommandResult.Applied).state.activeUnlock?.source)
+    }
+
+    @Test
+    fun monthlyCreditUsesTheSuppliedZoneInsteadOfPrague() {
+        val beforeUtcNinth = ZonedDateTime.of(2026, 9, 8, 23, 0, 0, 0, zone).toInstant().toEpochMilli()
+        val result = engine.recordPushupRepetitions(PersistedState(), 5, beforeUtcNinth, zone) as CommandResult.Applied
+        assertEquals(MonthlyPushupCycle("2026-08-09", 5), result.state.monthlyPushupCycles.single())
+    }
+
+    @Test
     fun defaultsUseFixedDailyBudgetAndWaitRules() {
         val settings = RestrictorSettings()
         assertTrue(settings.enforcementEnabled)
@@ -360,14 +381,14 @@ class RestrictionEngineTest {
             .toEpochMilli()
         val afterBoundary = beforeBoundary + 2_000
         val first = applied(engine.recordPushupRepetitions(
-            engine.normalize(PersistedState(), beforeBoundary, zone),
+            engine.normalize(PersistedState(), beforeBoundary, prague),
             4,
             beforeBoundary,
-            zone,
+            prague,
         ))
 
-        val second = applied(engine.recordPushupRepetitions(first, 1, afterBoundary, zone))
-        val snapshot = engine.snapshot(second, ready, afterBoundary, zoneId = zone)
+        val second = applied(engine.recordPushupRepetitions(first, 1, afterBoundary, prague))
+        val snapshot = engine.snapshot(second, ready, afterBoundary, zoneId = prague)
 
         assertEquals(MonthlyPushupCycle("2026-08-09", 4), second.monthlyPushupCycles[0])
         assertEquals(MonthlyPushupCycle("2026-09-09", 1), second.monthlyPushupCycles[1])
