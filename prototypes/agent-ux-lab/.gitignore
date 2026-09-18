@@ -1,0 +1,10 @@
+.env
+results/
+research/
+node_modules/
+*.log
+state.json
+
+state-v2.json
+state-v2.json.tmp
+state.json.tmp

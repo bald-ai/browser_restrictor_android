@@ -20,5 +20,6 @@ class AppContainer(context: Context) {
         diagnosticSink = eventLog::record,
     )
     val accessChecker = DeviceAccessChecker(context)
+    val v1 = com.michalkrsik.internetrestrictor.v1.V1Coordinator(context, repository, applicationScope)
 
 }

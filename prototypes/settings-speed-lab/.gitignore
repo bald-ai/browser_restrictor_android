@@ -1,0 +1,6 @@
+node_modules/
+frozen/
+candidate-agent.mjs
+data/
+results/
+*.env

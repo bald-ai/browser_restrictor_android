@@ -112,6 +112,17 @@ fun PulseControlGroup(content: @Composable ColumnScope.() -> Unit) {
 
 @Composable
 fun PulseCarryOver(snapshot: StateSnapshot) {
+    if (com.michalkrsik.internetrestrictor.BuildConfig.IS_V1) {
+        Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                PulseText("PROGRESS TO NEXT CREDIT", 9)
+                PulseText("Resets ${snapshot.configuration.settings.dayReset}", 9, muted = true)
+            }
+            LinearProgressIndicator(progress = { snapshot.taskCreditProgress.toFloat().coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().padding(vertical = 9.dp), color = EditorialTheme.colors.accent, trackColor = EditorialTheme.colors.accent.copy(alpha = 0.15f), drawStopIndicator = {})
+            PulseText("${(snapshot.taskCreditProgress * 100).toInt()}% · any task contributes", 10, muted = true)
+        }
+        return
+    }
     var now by remember { mutableLongStateOf(snapshot.wallNowMs) }
     LaunchedEffect(Unit) { while(true) { now = System.currentTimeMillis(); delay(1000) } }
     val minutes = carryExpirationRemainingMs(now, ZoneId.systemDefault()) / 60_000

@@ -94,7 +94,7 @@ class ExerciseCreditEngineTest {
     }
 
     @Test
-    fun eveningResetKeepsSetsAndSharedProgressWhileRefreshingSpendableBudget() {
+    fun eveningPreservesSetsProgressAndSpendableBudget() {
         val beforeReset = ZonedDateTime.of(2026, 7, 10, 19, 59, 59, 0, zone)
             .toInstant()
             .toEpochMilli()
@@ -111,19 +111,19 @@ class ExerciseCreditEngineTest {
         val after = engine.normalize(withPushupSurplus, beforeReset + 2_000, zone)
 
         assertEquals(2, after.dailyCounter.earnedBudgetRounds)
-        assertEquals(0, after.dailyCounter.spendableBudgetRounds)
+        assertEquals(2, after.dailyCounter.spendableBudgetRounds)
         assertEquals(4, after.dailyCounter.exercisePointSixths)
         assertEquals(4, after.dailyCounter.verifiedPushups)
-        assertTrue(after.dailyCounter.eveningResetApplied)
+        assertFalse(after.dailyCounter.legacyEveningResetApplied)
         assertEquals(1, engine.snapshot(after, ready, beforeReset + 2_000).skipSnapshot.remaining)
-        assertEquals(GateMode.OUT_OF_TIME, engine.underlyingMode(after, ready, beforeReset + 2_000))
+        assertEquals(GateMode.PAUSED, engine.underlyingMode(after, ready, beforeReset + 2_000))
 
         val eveningSet = applied(
             engine.recordVerifiedExercise(after, ExerciseId.OUTDOOR_LAT_PULLDOWN, 10, beforeReset + 3_000, zone),
         )
         assertEquals(3, eveningSet.dailyCounter.earnedBudgetRounds)
-        assertEquals(1, eveningSet.dailyCounter.spendableBudgetRounds)
-        assertEquals(3, engine.budgetSnapshots(eveningSet).single().limitMinutes)
+        assertEquals(3, eveningSet.dailyCounter.spendableBudgetRounds)
+        assertEquals(9, engine.budgetSnapshots(eveningSet).single().limitMinutes)
         assertEquals(4, eveningSet.dailyCounter.verifiedPushups)
     }
 
@@ -136,7 +136,7 @@ class ExerciseCreditEngineTest {
                 earnedBudgetRounds = 3,
                 pushupRepetitionRemainder = 4,
                 spendableBudgetRounds = 0,
-                eveningResetApplied = true,
+                legacyEveningResetApplied = true,
                 plankSecondRemainder = 7,
                 machineRepetitionRemainder = 9,
                 verifiedPushups = 19,
@@ -150,7 +150,7 @@ class ExerciseCreditEngineTest {
         assertEquals(0, after.dailyCounter.exercisePointSixths)
         assertEquals(0, after.dailyCounter.verifiedPushups)
         assertEquals(emptyList<String>(), after.dailyCounter.creditedExerciseVerificationIds)
-        assertFalse(after.dailyCounter.eveningResetApplied)
+        assertFalse(after.dailyCounter.legacyEveningResetApplied)
     }
 
     @Test

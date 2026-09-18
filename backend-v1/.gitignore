@@ -1,0 +1,9 @@
+node_modules/
+data/
+.env
+results/
+
+# Railway treats this directory as its archive root. Include runtime docs here
+# as well as in the repository's Markdown allowlist.
+!/docs/
+!/docs/*.md

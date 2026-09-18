@@ -93,6 +93,7 @@ fun DashboardScreen(
         Spacer(Modifier.height(18.dp))
         AvailableTimeCard(snapshot)
         PulseCarryOver(snapshot)
+        com.michalkrsik.internetrestrictor.ui.components.LastExerciseCard(snapshot)
         Row(Modifier.fillMaxWidth().padding(vertical = 18.dp), horizontalArrangement = Arrangement.spacedBy(15.dp)) {
             Column(Modifier.weight(1f).clickable { showReports = true }.padding(start = 2.dp)) {
                 Text("EXERCISE SETS", style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp))
@@ -137,10 +138,10 @@ fun DashboardScreen(
             }
         }
         Spacer(Modifier.height(18.dp))
-        PulsePrimary("Start exercise", onStartExercise, exercise = true)
+        PulsePrimary("Start push-ups", onStartExercise, exercise = true)
         Spacer(Modifier.height(8.dp))
         PulsePrimary("Start sprint", onStartSprint, exercise = true)
-        PulseText("Available time resets at 20:00", 9, Modifier.align(Alignment.CenterHorizontally).padding(vertical = 11.dp), muted = true)
+        PulseText("Available time resets at ${snapshot.configuration.settings.dayReset}", 9, Modifier.align(Alignment.CenterHorizontally).padding(vertical = 11.dp), muted = true)
         val health = healthCopy(snapshot.enforcementHealth, snapshot.usageAccessGranted)
         if(!health.positive || health.action != null) HealthCard(snapshot.enforcementHealth, snapshot.usageAccessGranted, onHealthAction, compact = true)
         Spacer(Modifier.weight(1f))
@@ -195,7 +196,7 @@ private fun AvailableTimeCard(snapshot: StateSnapshot) {
             Spacer(Modifier.height(10.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 PulseText("${(budget?.usedMs ?: 0L) / 60_000} min used", 10, color = androidx.compose.ui.graphics.Color(0xFF455922))
-                PulseText("${budget?.limitMinutes ?: 0L} min earned", 10, color = androidx.compose.ui.graphics.Color(0xFF455922))
+                PulseText("${budget?.limitMinutes ?: 0L} min total", 10, color = androidx.compose.ui.graphics.Color(0xFF455922))
             }
         }
     }

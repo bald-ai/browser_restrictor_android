@@ -1,6 +1,11 @@
 package com.michalkrsik.internetrestrictor.data
 
 import android.content.Context
+import com.michalkrsik.internetrestrictor.domain.AppConfiguration
+import com.michalkrsik.internetrestrictor.domain.TaskMeasurementReceipt
+import com.michalkrsik.internetrestrictor.domain.applyConfiguration
+import com.michalkrsik.internetrestrictor.domain.applyTaskReceipt
+import com.michalkrsik.internetrestrictor.domain.correctTaskReceipt
 import androidx.datastore.core.DataStore
 import androidx.datastore.core.DataStoreFactory
 import com.michalkrsik.internetrestrictor.domain.CommandResult
@@ -90,7 +95,7 @@ class RestrictorRepository(
                     runtime = runtime.copy(storageReady = true, storageError = false)
                     manageGateTokensLocked()
                     publishLocked()
-                    diagnosticSink("State store loaded")
+                    this@RestrictorRepository.diagnosticSink("State store loaded")
                 }
             } catch (error: Exception) {
                 mutationMutex.withLock {
@@ -98,7 +103,7 @@ class RestrictorRepository(
                     lastError = "Stored state could not be trusted. Open app info to clear data, or reinstall."
                     runtime = runtime.copy(storageReady = false, storageError = true)
                     publishLocked()
-                    diagnosticSink("State store read failed")
+                    this@RestrictorRepository.diagnosticSink("State store read failed")
                 }
             } finally {
                 loaded.complete(Unit)
@@ -237,6 +242,18 @@ class RestrictorRepository(
         )
     }
 
+    suspend fun applyConfiguration(configuration: AppConfiguration): Boolean = command(clearOutOfTimeLatch = true) {
+        engine.applyConfiguration(persistedState, configuration, timeSource.wallTimeMs(), timeSource.zoneId())
+    }
+
+    suspend fun applyTaskReceipt(receipt: TaskMeasurementReceipt): Boolean = command(clearOutOfTimeLatch = true) {
+        engine.applyTaskReceipt(persistedState, receipt, timeSource.wallTimeMs(), timeSource.zoneId())
+    }
+
+    suspend fun correctTaskReceipt(receiptId: String, value: Long, flagOnly: Boolean = false): Boolean = command(clearOutOfTimeLatch = true) {
+        engine.correctTaskReceipt(persistedState, receiptId, value, timeSource.wallTimeMs(), timeSource.zoneId(), flagOnly)
+    }
+
     suspend fun recordPushupRepetitions(repetitions: Int): Boolean =
         recordVerifiedExercise(
             verificationId = idGenerator.nextId(),
@@ -257,6 +274,13 @@ class RestrictorRepository(
             nowWallMs = timeSource.wallTimeMs(),
             zoneId = timeSource.zoneId(),
         )
+    }
+
+    suspend fun correctExercise(
+        receiptId: String, exercise: ExerciseId, value: Long, flagOnly: Boolean = false,
+    ): RewardSaveResult = rewardCommand {
+        engine.correctExercise(persistedState, receiptId, exercise, value, flagOnly,
+            timeSource.wallTimeMs(), timeSource.zoneId())
     }
 
     suspend fun recordSprintRecording(
@@ -554,10 +578,8 @@ class RestrictorRepository(
 
         // Flush the old period before normalize can reset its counters or unlock.
         val zone = timeSource.zoneId()
-        val periodChanged = PeriodCalculator.keysAt(previousWall, zone) != PeriodCalculator.keysAt(wallTimeMs, zone)
-        val eveningReset = PeriodCalculator.eveningBudgetReset(previousWall, zone)
-        val eveningCrossed = previousWall < eveningReset && eveningReset <= wallTimeMs
-        if (clockChanged || periodChanged || eveningCrossed) flushUsageBufferLocked(forceSummaryFlush = true)
+        val periodChanged = PeriodCalculator.keysAt(previousWall, zone, persistedState.configuration.settings) != PeriodCalculator.keysAt(wallTimeMs, zone, persistedState.configuration.settings)
+        if (clockChanged || periodChanged) flushUsageBufferLocked(forceSummaryFlush = true)
         val normalized = engine.normalize(persistedState, wallTimeMs, timeSource.zoneId())
         if (normalized != persistedState) {
             val before = persistedState
@@ -705,11 +727,8 @@ class RestrictorRepository(
         if (before.activeUnlock?.source == UnlockSource.NORMAL && after.activeUnlock == null) {
             diagnosticSink("Normal unlock expired (spendable=${after.dailyCounter.spendableBudgetRounds} sets, used=${after.dailyUsage.usedMs}ms)")
         }
-        if (!before.dailyCounter.eveningResetApplied && after.dailyCounter.eveningResetApplied) {
-            diagnosticSink("Evening 20:00 reset applied (spendable reset from ${before.dailyCounter.spendableBudgetRounds} to 0, usedMs reset from ${before.dailyUsage.usedMs} to 0)")
-        }
         if (before.dailyCounter.localDayKey.isNotBlank() && before.dailyCounter.localDayKey != after.dailyCounter.localDayKey) {
-            diagnosticSink("Daily 04:00 reset applied for day ${after.dailyCounter.localDayKey} (previous earned=${before.dailyCounter.earnedBudgetRounds}, usedMs=${before.dailyUsage.usedMs})")
+            diagnosticSink("Daily ${after.configuration.settings.dayReset} reset applied for day ${after.dailyCounter.localDayKey} (previous earned=${before.dailyCounter.earnedBudgetRounds}, usedMs=${before.dailyUsage.usedMs})")
         }
         if (before.dailyCounter.earnedBudgetRounds < after.dailyCounter.earnedBudgetRounds) {
             diagnosticSink("Exercise sets added budget for today")

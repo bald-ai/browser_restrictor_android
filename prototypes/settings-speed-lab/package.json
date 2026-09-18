@@ -1,0 +1,1 @@
+{"name":"friction-settings-speed-lab","private":true,"type":"module","scripts":{"freeze":"node freeze.mjs","start":"node serve.mjs","test":"node --test patch.test.mjs","benchmark":"node benchmark.mjs","benchmark:voice":"node voice-benchmark.mjs","report":"node report.mjs"},"devDependencies":{"playwright":"^1.55.0"}}

@@ -63,7 +63,6 @@ import com.michalkrsik.internetrestrictor.domain.ProtectionHealth
 import com.michalkrsik.internetrestrictor.domain.RestrictorSettings
 import com.michalkrsik.internetrestrictor.domain.StateSnapshot
 import com.michalkrsik.internetrestrictor.domain.ThemePreference
-import com.michalkrsik.internetrestrictor.ui.challenge.ExerciseChallengeActivity
 import com.michalkrsik.internetrestrictor.ui.components.HealthCard
 import com.michalkrsik.internetrestrictor.ui.components.PermissionStateRows
 import com.michalkrsik.internetrestrictor.ui.theme.EditorialTheme
@@ -85,11 +84,12 @@ fun SettingsScreen(
     onOpenUsageAccess: () -> Unit,
     onHealthAction: () -> Unit,
     onExportDiagnostics: () -> Unit,
+    onCustomize: () -> Unit = {},
 ) {
     BackHandler(onBack = onBack)
-    var firstSession by rememberSaveable { mutableStateOf(snapshot.settings.sessionMinutes[0].toString()) }
-    var secondSession by rememberSaveable { mutableStateOf(snapshot.settings.sessionMinutes[1].toString()) }
-    var thirdSession by rememberSaveable { mutableStateOf(snapshot.settings.sessionMinutes[2].toString()) }
+    var firstSession by rememberSaveable { mutableStateOf(snapshot.settings.sessionMinutes.getOrElse(0) { 3L }.toString()) }
+    var secondSession by rememberSaveable { mutableStateOf(snapshot.settings.sessionMinutes.getOrElse(1) { 5L }.toString()) }
+    var thirdSession by rememberSaveable { mutableStateOf(snapshot.settings.sessionMinutes.getOrElse(2) { 10L }.toString()) }
     var showClearReportsDialog by rememberSaveable { mutableStateOf(false) }
     var systemAccessExpanded by rememberSaveable { mutableStateOf(false) }
     var developerExpanded by rememberSaveable { mutableStateOf(false) }
@@ -105,7 +105,9 @@ fun SettingsScreen(
         Spacer(Modifier.height(7.dp))
         Text("BROWSER RULES.", style = MaterialTheme.typography.headlineLarge.copy(fontSize = 35.sp, lineHeight = 40.sp, letterSpacing = (-1).sp))
         Spacer(Modifier.height(21.dp))
-        PulseControlGroup {
+        if (com.michalkrsik.internetrestrictor.BuildConfig.IS_V1) {
+            PulsePrimary("Customize tasks & rules", onCustomize, subtitle = "Settings, rewards, reset times and task definitions")
+        } else PulseControlGroup {
             PulseSection("Session presets", "Minutes")
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 PresetField(firstSession, { firstSession = it }, 1, parsedSessions[0] == null, Modifier.weight(1f), snapshot.settings.theme == ThemePreference.LIGHT)
@@ -142,13 +144,13 @@ fun SettingsScreen(
             PulseText("How time works", 13, weight = FontWeight.SemiBold)
             Box(Modifier.clickable { developerExpanded = true }.semantics { contentDescription = "More settings and diagnostics" }) { PulseIcon("help", 16, MaterialTheme.colorScheme.onSurfaceVariant) }
         }
-        listOf("Earned time" to "3 min / set", "Focused pause" to "12 seconds", "Budget reset" to "Every day, 20:00").forEach { (label, detail) ->
+        listOf("Earned time" to "${snapshot.configuration.settings.minutesPerCredit} min / credit", "Focused pause" to "${snapshot.configuration.settings.waitSeconds} seconds", "Daily allowance" to "${snapshot.configuration.settings.dailyBudgetMinutes} min at reset", "Daily reset" to "Every day, ${snapshot.configuration.settings.dayReset}").forEach { (label, detail) ->
             Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween) { PulseText(label, 11, weight = FontWeight.Medium); PulseText(detail, 10, muted = true) }
             HorizontalDivider(color = EditorialTheme.colors.hairline)
         }
-        Text("Every 5 exercise points earns one set. Emergency access is earned with your first set of the day.", Modifier.padding(top = 11.dp), style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp, lineHeight = 17.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Tasks contribute toward your next credit. Emergency access is earned with your first credit of the day.", Modifier.padding(top = 11.dp), style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp, lineHeight = 17.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(20.dp))
-        PulsePrimary("Save changes", { onSave(snapshot.settings.copy(delayEnabled = true, sessionMinutes = sessionValues)) }, enabled = sessionsValid)
+        if (!com.michalkrsik.internetrestrictor.BuildConfig.IS_V1) PulsePrimary("Save changes", { onSave(snapshot.settings.copy(delayEnabled = true, sessionMinutes = sessionValues)) }, enabled = sessionsValid)
         Spacer(Modifier.height(24.dp))
         Spacer(Modifier.weight(1f))
         PulseNav(settings = true, onToday = onBack, onSettings = {})
@@ -164,7 +166,7 @@ fun SettingsScreen(
                     TextButton(onClick = { showClearReportsDialog = true }) { Text("Clear report history") }
                     TextButton(onClick = onExportDiagnostics) { Text("Export diagnostics") }
                     PulseText("Exercise verifier model", 11, muted = true)
-                    PulseText(ExerciseChallengeActivity.MODEL, 11)
+                    PulseText("Configured by the task verification backend", 11)
                 }
             }
         }, confirmButton = { TextButton(onClick = { systemAccessExpanded = false; developerExpanded = false }) { Text("Done") } })

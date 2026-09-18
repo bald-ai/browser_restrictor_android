@@ -67,7 +67,7 @@ fun ExercisePointsProgress(sixths: Long, modifier: Modifier = Modifier) {
                 ) {
                     Text("Exercise points", style = MaterialTheme.typography.titleSmall)
                     Text(
-                        "1 point equals:\n\n1 push-up\n2 machine reps\n3 seconds of plank\n\nMix exercises to earn 5 points for +3 minutes. Partial points carry over until 04:00.",
+                        "Each push-up earns 1 point. Earn 5 points for +3 minutes. Partial points carry over until 04:00. Previously earned exercise points still count.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     TextButton(onClick = { showInfo = false }, modifier = Modifier.align(Alignment.End)) {

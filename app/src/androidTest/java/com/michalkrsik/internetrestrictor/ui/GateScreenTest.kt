@@ -42,22 +42,20 @@ class GateScreenTest {
     private val actions = GateActions({ _ -> }, {}, {}, {}, {})
 
     @Test
-    fun exerciseInfoStaysInsideGateAndCanBeDismissedRepeatedly() {
+    fun taskEntryInvokesTheSharedTaskSelectionAction() {
         val state = engine.normalize(PersistedState(), now, ZoneId.of("UTC"))
         val snapshot = engine.snapshot(state, runtime, now)
+        var selected = 0
         composeRule.setContent {
-            RestrictorTheme(snapshot.settings.theme) { GateScreen(snapshot, actions) }
+            RestrictorTheme(snapshot.settings.theme) {
+                GateScreen(snapshot, actions.copy(onExerciseChallenge = { selected++ }))
+            }
         }
-
-        repeat(3) {
-            composeRule.onNodeWithContentDescription("How exercise points work")
-                .performScrollTo().performClick()
-            composeRule.onNodeWithText("Exercise points").performScrollTo().assertIsDisplayed()
-            composeRule.onAllNodes(isDialog()).assertCountEquals(0)
-            composeRule.onNodeWithText("Got it").performScrollTo().performClick()
-            composeRule.onAllNodesWithText("Exercise points").assertCountEquals(0)
-            composeRule.onNodeWithText("Leave browser").performScrollTo().assertIsDisplayed()
-        }
+        composeRule.onNodeWithText("PROGRESS TO NEXT CREDIT").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("CHOOSE A TASK").performScrollTo().performClick()
+        composeRule.runOnIdle { org.junit.Assert.assertEquals(1, selected) }
+        composeRule.onAllNodesWithText("START PUSH-UPS").assertCountEquals(0)
+        composeRule.onAllNodesWithText("START SPRINT").assertCountEquals(0)
     }
 
     @Test
@@ -76,14 +74,13 @@ class GateScreenTest {
         composeRule.onNodeWithContentDescription("3 minute session").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithContentDescription("5 minute session").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithContentDescription("10 minute session").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("CONTINUE FOR 5 MINUTES").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Unlock · 5 minutes").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText(
             "A 12-second pause before each session",
         ).performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("START EXERCISE").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("Earn 3 minutes with your next set").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("How exercise points work").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Exercise points toward a 3-minute boost").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("CHOOSE A TASK").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Earn 3 minutes with your next credit").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("PROGRESS TO NEXT CREDIT").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Leave browser").performScrollTo().assertIsDisplayed()
         composeRule.onAllNodesWithText("Settings", substring = true).assertCountEquals(0)
     }
@@ -111,15 +108,16 @@ class GateScreenTest {
         }
 
         composeRule.onNodeWithText("BROWSER TIME IS USED UP.").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("START EXERCISE").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("Exercise points toward a 3-minute boost").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("CHOOSE A TASK").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("PROGRESS TO NEXT CREDIT").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Try again").performScrollTo().assertIsDisplayed()
         composeRule.onAllNodesWithText("minute session", substring = true).assertCountEquals(0)
+        composeRule.onAllNodesWithText("Unlock ·", substring = true).assertCountEquals(0)
         composeRule.onAllNodesWithText("emergency skip", substring = true).assertCountEquals(0)
     }
 
     @Test
-    fun youtubeGateOffersOnlyTheFirstPushupRoundAndLeaveActions() {
+    fun youtubeGateOffersTaskSelectionAndLeaveActions() {
         val normalized = engine.normalize(PersistedState(), now, ZoneId.of("UTC")).copy(
             dailyCounter = engine.normalize(PersistedState(), now, ZoneId.of("UTC"))
                 .dailyCounter.copy(
@@ -141,10 +139,11 @@ class GateScreenTest {
         }
 
         composeRule.onNodeWithText("EXERCISE BEFORE YOUTUBE.").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("Start exercise").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("3/4 sets today · unlocks until 04:00").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Unlock YouTube").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("3/4 credits today · until 04:00").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Leave YouTube").performScrollTo().assertIsDisplayed()
         composeRule.onAllNodesWithText("minute session", substring = true).assertCountEquals(0)
+        composeRule.onAllNodesWithText("Unlock ·", substring = true).assertCountEquals(0)
         composeRule.onAllNodesWithText("emergency skip", substring = true).assertCountEquals(0)
     }
 

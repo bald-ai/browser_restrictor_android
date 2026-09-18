@@ -1,7 +1,0 @@
-*
-!Dockerfile
-!package.json
-!src/
-!src/**
-!test/
-!test/**

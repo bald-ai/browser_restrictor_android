@@ -176,7 +176,8 @@ class ChromeAccessibilityService : AccessibilityService() {
                 repository.snapshot,
                 ExerciseChallengeVisibility.active,
                 SprintChallengeVisibility.active,
-            ) { snapshot, exerciseActive, sprintActive ->
+                com.michalkrsik.internetrestrictor.ui.challenge.TaskPickerTransition.pending,
+            ) { snapshot, exerciseActive, sprintActive, _ ->
                 snapshot to (exerciseActive || sprintActive)
             }.collect { (snapshot, challengeActive) ->
                 overlayCoordinator.render(targetFor(snapshot, challengeActive))
@@ -206,7 +207,7 @@ class ChromeAccessibilityService : AccessibilityService() {
             repository.snapshot
                 .map { snapshot ->
                     if (snapshot.canonicalMode == GateMode.YOUTUBE_ACCESS_GRANTED) {
-                        PeriodCalculator.nextDailyReset(snapshot.wallNowMs, timeSource.zoneId())
+                        PeriodCalculator.nextDailyReset(snapshot.wallNowMs, timeSource.zoneId(), snapshot.configuration.settings)
                     } else {
                         null
                     }
@@ -246,9 +247,28 @@ class ChromeAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun openExerciseChallenge() = launchChallenge(
-        ExerciseChallengeActivity::class.java, ExerciseChallengeVisibility, "Exercise",
-    )
+    private fun openExerciseChallenge() {
+        val transition = com.michalkrsik.internetrestrictor.ui.challenge.TaskPickerTransition
+        if (transition.pending.value) return
+        transition.pending.value = true
+        try {
+            startActivity(Intent(this, com.michalkrsik.internetrestrictor.MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+                .putExtra(com.michalkrsik.internetrestrictor.MainActivity.EXTRA_DESTINATION,
+                    com.michalkrsik.internetrestrictor.MainActivity.DESTINATION_DASHBOARD))
+            challengeLaunchWatchdogJob?.cancel()
+            challengeLaunchWatchdogJob = serviceScope.launch {
+                delay(CHALLENGE_LAUNCH_TIMEOUT_MS)
+                if (transition.pending.value) {
+                    eventLog.record("Task picker did not draw; gate handoff cancelled")
+                    transition.pending.value = false
+                }
+            }
+        } catch (error: Exception) {
+            transition.pending.value = false
+            eventLog.record("Task picker launch failed: ${error.javaClass.simpleName}")
+        }
+    }
 
     private fun openSprintChallenge() = launchChallenge(
         SprintChallengeActivity::class.java, SprintChallengeVisibility, "Sprint",
@@ -398,6 +418,7 @@ class ChromeAccessibilityService : AccessibilityService() {
         snapshot: StateSnapshot,
         challengeActive: Boolean,
     ): OverlayCoordinator.Target = when {
+        com.michalkrsik.internetrestrictor.ui.challenge.TaskPickerTransition.pending.value -> OverlayCoordinator.Target.GATE
         challengeActive -> OverlayCoordinator.Target.CHALLENGE
         leaveRearmGuard.suppressingOverlays -> OverlayCoordinator.Target.HIDDEN
         snapshot.usesFullGate -> OverlayCoordinator.Target.GATE

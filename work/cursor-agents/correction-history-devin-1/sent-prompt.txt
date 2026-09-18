@@ -1,0 +1,31 @@
+Implement the agreed permanent local correction history specification at /Users/applelevne/Documents/coding-projects/browser_restrictor_android/work/cursor-agents/correction-history-spec.md. Read it fully before editing. Preserve all existing dirty changes. Do not delegate, change branches, create worktrees, commit or install on devices. Run the specified checks and report results.
+
+
+Declared assignment scopes (paths include descendants):
+{"reads": ["/Users/applelevne/Documents/coding-projects/browser_restrictor_android/work/cursor-agents/correction-history-spec.md"], "writes": ["/Users/applelevne/Documents/coding-projects/browser_restrictor_android/DOCUMENTATION.md", "/Users/applelevne/Documents/coding-projects/browser_restrictor_android/app/src/main/java/com/michalkrsik/internetrestrictor/data", "/Users/applelevne/Documents/coding-projects/browser_restrictor_android/app/src/main/java/com/michalkrsik/internetrestrictor/domain", "/Users/applelevne/Documents/coding-projects/browser_restrictor_android/app/src/test"]}
+Only edit declared write scopes. Do not delegate further, change branches, or create worktrees.
+
+## Return a handoff to the orchestrator
+
+You are an external worker. Complete the assignment above within its constraints.
+Your final response must be one JSON object with the fields below. Put any
+requested exact answer or payload in summary or findings. Keep it concise but
+retain details needed to use and verify your work. Use empty arrays when a field
+has no entries. Do not invent evidence, file locations, checks, or success.
+
+{
+  "outcome": "complete | partial | blocked",
+  "summary": "The result and what it means for the assignment.",
+  "findings": ["Concrete findings, including relevant exact values."],
+  "changes": ["Files/artifacts changed and what changed; no unrelated files."],
+  "decisions": ["Important choices and brief rationale, including rejected alternatives when useful."],
+  "evidence": ["Exact source file paths and line numbers when known, URLs, reproduction steps, or artifact paths supporting the findings."],
+  "checks": [{"check": "Actual command or verification", "result": "passed | failed | not_run", "detail": "Observed result, or why it was not run."}],
+  "open_issues": ["Uncertainties, assumptions needing confirmation, blockers, missing checks, and questions for the orchestrator."],
+  "next_steps": ["Specific remaining actions or integration guidance, if any."]
+}
+
+Report failed checks even if later corrected; say what fixed them. Distinguish
+observed facts from hypotheses. For blocked or partial work, explain what is
+missing and what would unblock it. Include important discoveries that affect
+other work. Do not include private reasoning transcripts or routine tool chatter.

@@ -1,0 +1,28 @@
+{
+  "passed": true,
+  "cue": [
+    {
+      "state": "running",
+      "at": 2.2133333333333334
+    },
+    {
+      "state": "running",
+      "at": 2.224
+    }
+  ],
+  "end": {
+    "x": 292.66668701171875,
+    "y": 607.6428833007812,
+    "width": 44,
+    "height": 44
+  },
+  "viewportHeight": 754,
+  "before": {
+    "revision": 1,
+    "voiceActive": false
+  },
+  "after": {
+    "revision": 1,
+    "voiceActive": false
+  }
+}

@@ -18,10 +18,12 @@ data class WallInterval(val startMs: Long, val endMs: Long) {
 }
 
 object PeriodCalculator {
-    fun keysAt(wallMs: Long, zoneId: ZoneId): PeriodKeys {
+    fun dailyResetStart(wallMs: Long, zoneId: ZoneId, settings: ConfigurationSettings = ConfigurationSettings()): Long =
+        resetAt(LocalDate.parse(keysAt(wallMs, zoneId, settings).daily), resetTime(settings.dayReset), zoneId)
+
+    fun keysAt(wallMs: Long, zoneId: ZoneId, settings: ConfigurationSettings = ConfigurationSettings()): PeriodKeys {
         val current = Instant.ofEpochMilli(wallMs).atZone(zoneId)
-        val resetTime = LocalTime.of(DAILY_RESET_HOUR, 0)
-        val date = if (current.toLocalTime() < resetTime) {
+        val date = if (wallMs < resetAt(current.toLocalDate(), resetTime(settings.dayReset), zoneId)) {
             current.toLocalDate().minusDays(1)
         } else {
             current.toLocalDate()
@@ -31,37 +33,22 @@ object PeriodCalculator {
         )
     }
 
-    fun nextDailyReset(wallMs: Long, zoneId: ZoneId): Long {
+    fun nextDailyReset(wallMs: Long, zoneId: ZoneId, settings: ConfigurationSettings = ConfigurationSettings()): Long {
         val current = Instant.ofEpochMilli(wallMs).atZone(zoneId)
-        val todayReset = current.toLocalDate()
-            .atTime(LocalTime.of(DAILY_RESET_HOUR, 0))
-            .atZone(zoneId)
-        val next = if (current.toInstant() < todayReset.toInstant()) {
+        val todayReset = resetAt(current.toLocalDate(), resetTime(settings.dayReset), zoneId)
+        return if (wallMs < todayReset) {
             todayReset
         } else {
-            current.toLocalDate().plusDays(1)
-                .atTime(LocalTime.of(DAILY_RESET_HOUR, 0))
-                .atZone(zoneId)
+            resetAt(current.toLocalDate().plusDays(1), resetTime(settings.dayReset), zoneId)
         }
-        return next.toInstant().toEpochMilli()
     }
 
-    fun eveningBudgetReset(wallMs: Long, zoneId: ZoneId): Long {
-        val date = LocalDate.parse(keysAt(wallMs, zoneId).daily)
-        return date.atTime(LocalTime.of(EVENING_BUDGET_RESET_HOUR, 0))
-            .atZone(zoneId)
-            .toInstant()
-            .toEpochMilli()
-    }
-
-    fun splitAtBudgetBoundaries(startMs: Long, endMs: Long, zoneId: ZoneId): List<WallInterval> {
+    fun splitAtDailyResets(startMs: Long, endMs: Long, zoneId: ZoneId, settings: ConfigurationSettings = ConfigurationSettings()): List<WallInterval> {
         if (endMs <= startMs) return emptyList()
         val result = mutableListOf<WallInterval>()
         var cursor = startMs
         while (cursor < endMs) {
-            val eveningReset = eveningBudgetReset(cursor, zoneId)
-            val dailyReset = nextDailyReset(cursor, zoneId)
-            val boundary = if (cursor < eveningReset) minOf(eveningReset, dailyReset) else dailyReset
+            val boundary = nextDailyReset(cursor, zoneId, settings)
             val segmentEnd = minOf(endMs, boundary)
             result += WallInterval(cursor, segmentEnd)
             cursor = segmentEnd
@@ -69,19 +56,18 @@ object PeriodCalculator {
         return result
     }
 
-    fun splitAtDailyResets(startMs: Long, endMs: Long, zoneId: ZoneId): List<WallInterval> {
-        if (endMs <= startMs) return emptyList()
-        val result = mutableListOf<WallInterval>()
-        var cursor = startMs
-        while (cursor < endMs) {
-            val boundary = nextDailyReset(cursor, zoneId)
-            val segmentEnd = minOf(endMs, boundary)
-            result += WallInterval(cursor, segmentEnd)
-            cursor = segmentEnd
-        }
-        return result
-    }
+    fun budgetKey(wallMs: Long, zoneId: ZoneId, settings: ConfigurationSettings = ConfigurationSettings()): String =
+        keysAt(wallMs, zoneId, settings).daily
 
     fun localDate(wallMs: Long, zoneId: ZoneId): LocalDate =
         Instant.ofEpochMilli(wallMs).atZone(zoneId).toLocalDate()
+
+    /** Repeated local times reset once, at the first occurrence. A missing local
+     * time resets at the first valid instant after the daylight-saving gap. */
+    private fun resetAt(date: LocalDate, time: LocalTime, zoneId: ZoneId): Long {
+        val local = date.atTime(time)
+        val offsets = zoneId.rules.getValidOffsets(local)
+        return if (offsets.isEmpty()) zoneId.rules.getTransition(local)!!.instant.toEpochMilli()
+        else local.toInstant(offsets.first()).toEpochMilli()
+    }
 }

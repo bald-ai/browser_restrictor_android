@@ -126,6 +126,11 @@ class SprintChallengeActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (com.michalkrsik.internetrestrictor.BuildConfig.IS_V1) {
+            startActivity(Intent(this, com.michalkrsik.internetrestrictor.MainActivity::class.java).putExtra(com.michalkrsik.internetrestrictor.MainActivity.EXTRA_DESTINATION, com.michalkrsik.internetrestrictor.MainActivity.DESTINATION_DASHBOARD))
+            finish()
+            return
+        }
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
         hasFineLocation = ContextCompat.checkSelfPermission(

@@ -40,14 +40,14 @@ class PeriodCalculatorTest {
     }
 
     @Test
-    fun budgetIntervalSplitsExactlyAtTwentyHundred() {
+    fun noExtraBoundaryAtTwentyHundred() {
         val zone = ZoneId.of("Europe/Prague")
         val start = ZonedDateTime.of(2026, 7, 10, 19, 59, 59, 500_000_000, zone)
             .toInstant()
             .toEpochMilli()
 
-        val intervals = PeriodCalculator.splitAtBudgetBoundaries(start, start + 1_000, zone)
+        val intervals = PeriodCalculator.splitAtDailyResets(start, start + 1_000, zone)
 
-        assertEquals(listOf(500L, 500L), intervals.map { it.durationMs })
+        assertEquals(listOf(1000L), intervals.map { it.durationMs })
     }
 }

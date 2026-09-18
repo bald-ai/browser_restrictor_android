@@ -4,6 +4,7 @@ import androidx.datastore.core.CorruptionException
 import com.michalkrsik.internetrestrictor.domain.ActivityEvent
 import com.michalkrsik.internetrestrictor.domain.ActivityEventType
 import com.michalkrsik.internetrestrictor.domain.BudgetPeriod
+import com.michalkrsik.internetrestrictor.domain.CorrectionEvent
 import com.michalkrsik.internetrestrictor.domain.DailyCounter
 import com.michalkrsik.internetrestrictor.domain.DailyUsageReport
 import com.michalkrsik.internetrestrictor.domain.MonthlyPushupCycle
@@ -30,11 +31,13 @@ class AppStateSerializerTest {
         val output = ByteArrayOutputStream()
         AppStateSerializer.writeTo(PersistedState(), output)
         val original = output.toByteArray()
-        // Empty current-schema tail: reports, 33-byte reminder, grace flag, events, cycles.
-        for (offsetFromEnd in listOf(46, 8, 4)) {
+        // The unchanged v14 portion ends before the appended v15 JSON section.
+        val legacyEnd = original.size - 4 - ConfigurationJson.stateJson(PersistedState()).toString().toByteArray(Charsets.UTF_8).size
+        // Legacy tail: reports, 33-byte reminder, grace flag, events, cycles, receipt, corrections.
+        for (offsetFromEnd in listOf(51, 13, 9, 4)) {
             for (count in listOf(-1, Int.MAX_VALUE)) {
                 val bytes = original.copyOf()
-                java.nio.ByteBuffer.wrap(bytes).putInt(bytes.size - offsetFromEnd, count)
+                java.nio.ByteBuffer.wrap(bytes).putInt(legacyEnd - offsetFromEnd, count)
                 try {
                     AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
                     org.junit.Assert.fail("Accepted count $count at tail offset $offsetFromEnd")
@@ -59,7 +62,7 @@ class AppStateSerializerTest {
                 emergencySkipsUsed = 1,
                 pushupRepetitionRemainder = 4,
                 spendableBudgetRounds = 1,
-                eveningResetApplied = true,
+                legacyEveningResetApplied = true,
                 exercisePointSixths = 7,
                 plankSecondRemainder = 6,
                 machineRepetitionRemainder = 3,
@@ -82,6 +85,26 @@ class AppStateSerializerTest {
             monthlyPushupCycles = listOf(
                 MonthlyPushupCycle("2026-06-09", 81),
                 MonthlyPushupCycle("2026-07-09", 24),
+            ),
+            correctionHistory = listOf(
+                CorrectionEvent(
+                    id = "correction-1",
+                    receiptId = "verification-1",
+                    correctedAtWallMs = 1_752_000_000_000,
+                    originalType = "push_up",
+                    originalValue = 6,
+                    correctedType = "plank",
+                    correctedValue = 15,
+                ),
+                CorrectionEvent(
+                    id = "correction-2",
+                    receiptId = "verification-2",
+                    correctedAtWallMs = 1_752_000_100_000,
+                    originalType = "push_up",
+                    originalValue = 6,
+                    correctedType = "push_up",
+                    correctedValue = 0,
+                ),
             ),
         )
         val output = ByteArrayOutputStream()
@@ -153,7 +176,7 @@ class AppStateSerializerTest {
 
         val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
 
-        assertEquals(12, migrated.schemaVersion)
+        assertEquals(com.michalkrsik.internetrestrictor.domain.RESTRICTOR_SCHEMA_VERSION, migrated.schemaVersion)
         assertEquals(77, migrated.stateRevision)
         assertEquals(true, migrated.settings.enforcementEnabled)
         assertEquals(null, migrated.settings.pauseUntilWallMs)
@@ -273,7 +296,7 @@ class AppStateSerializerTest {
 
         val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
 
-        assertEquals(12, migrated.schemaVersion)
+        assertEquals(com.michalkrsik.internetrestrictor.domain.RESTRICTOR_SCHEMA_VERSION, migrated.schemaVersion)
         assertEquals(123_000, migrated.dailyUsage.usedMs)
         assertEquals(2, migrated.dailyCounter.earnedBudgetRounds)
         assertEquals(1, migrated.dailyCounter.emergencySkipsUsed)
@@ -329,7 +352,7 @@ class AppStateSerializerTest {
             zoneId = ZoneId.of("UTC"),
         )
 
-        assertEquals(12, normalized.schemaVersion)
+        assertEquals(com.michalkrsik.internetrestrictor.domain.RESTRICTOR_SCHEMA_VERSION, normalized.schemaVersion)
         assertEquals(true, normalized.settings.enforcementEnabled)
         assertEquals(null, normalized.settings.pauseUntilWallMs)
         assertEquals(true, normalized.settings.emergencySkipsEnabled)
@@ -380,7 +403,7 @@ class AppStateSerializerTest {
 
         val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
 
-        assertEquals(12, migrated.schemaVersion)
+        assertEquals(com.michalkrsik.internetrestrictor.domain.RESTRICTOR_SCHEMA_VERSION, migrated.schemaVersion)
         assertEquals(2, migrated.dailyCounter.earnedBudgetRounds)
         assertEquals(0, migrated.dailyCounter.pushupRepetitionRemainder)
         assertEquals(2, migrated.usageReports.single().exerciseSets)
@@ -429,11 +452,11 @@ class AppStateSerializerTest {
 
         val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
 
-        assertEquals(12, migrated.schemaVersion)
+        assertEquals(com.michalkrsik.internetrestrictor.domain.RESTRICTOR_SCHEMA_VERSION, migrated.schemaVersion)
         assertEquals(3, migrated.dailyCounter.earnedBudgetRounds)
         assertEquals(3, migrated.dailyCounter.spendableBudgetRounds)
         assertEquals(4, migrated.dailyCounter.pushupRepetitionRemainder)
-        assertEquals(false, migrated.dailyCounter.eveningResetApplied)
+        assertEquals(false, migrated.dailyCounter.legacyEveningResetApplied)
     }
 
     @Test
@@ -481,12 +504,12 @@ class AppStateSerializerTest {
 
         val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
 
-        assertEquals(12, migrated.schemaVersion)
+        assertEquals(com.michalkrsik.internetrestrictor.domain.RESTRICTOR_SCHEMA_VERSION, migrated.schemaVersion)
         assertEquals(30_000, migrated.dailyUsage.usedMs)
         assertEquals(3, migrated.dailyCounter.earnedBudgetRounds)
         assertEquals(1, migrated.dailyCounter.spendableBudgetRounds)
         assertEquals(4, migrated.dailyCounter.pushupRepetitionRemainder)
-        assertEquals(true, migrated.dailyCounter.eveningResetApplied)
+        assertEquals(true, migrated.dailyCounter.legacyEveningResetApplied)
         assertEquals(3, migrated.usageReports.single().exerciseSets)
         assertEquals(emptyList<MonthlyPushupCycle>(), migrated.monthlyPushupCycles)
         assertEquals(19, migrated.dailyCounter.verifiedPushups)
@@ -542,11 +565,11 @@ class AppStateSerializerTest {
 
         val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
 
-        assertEquals(12, migrated.schemaVersion)
+        assertEquals(com.michalkrsik.internetrestrictor.domain.RESTRICTOR_SCHEMA_VERSION, migrated.schemaVersion)
         assertEquals(3, migrated.dailyCounter.earnedBudgetRounds)
         assertEquals(1, migrated.dailyCounter.spendableBudgetRounds)
         assertEquals(4, migrated.dailyCounter.pushupRepetitionRemainder)
-        assertEquals(true, migrated.dailyCounter.eveningResetApplied)
+        assertEquals(true, migrated.dailyCounter.legacyEveningResetApplied)
         assertEquals(19, migrated.dailyCounter.verifiedPushups)
         assertEquals(0, migrated.dailyCounter.plankSecondRemainder)
         assertEquals(0, migrated.dailyCounter.machineRepetitionRemainder)
@@ -608,11 +631,11 @@ class AppStateSerializerTest {
 
         val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
 
-        assertEquals(12, migrated.schemaVersion)
+        assertEquals(com.michalkrsik.internetrestrictor.domain.RESTRICTOR_SCHEMA_VERSION, migrated.schemaVersion)
         assertEquals(3, migrated.dailyCounter.earnedBudgetRounds)
         assertEquals(1, migrated.dailyCounter.spendableBudgetRounds)
         assertEquals(4, migrated.dailyCounter.pushupRepetitionRemainder)
-        assertEquals(true, migrated.dailyCounter.eveningResetApplied)
+        assertEquals(true, migrated.dailyCounter.legacyEveningResetApplied)
         assertEquals(19, migrated.dailyCounter.verifiedPushups)
         assertEquals(9, migrated.dailyCounter.plankSecondRemainder)
         assertEquals(4, migrated.dailyCounter.machineRepetitionRemainder)
@@ -678,10 +701,30 @@ class AppStateSerializerTest {
 
         val migrated = AppStateSerializer.readFrom(ByteArrayInputStream(bytes))
 
-        assertEquals(12, migrated.schemaVersion)
+        assertEquals(com.michalkrsik.internetrestrictor.domain.RESTRICTOR_SCHEMA_VERSION, migrated.schemaVersion)
         assertEquals(3, migrated.dailyCounter.earnedBudgetRounds)
         assertEquals(12, migrated.dailyCounter.exercisePointSixths)
         assertEquals(0, migrated.dailyCounter.sprintMetersRemainder)
+    }
+
+    @Test
+    fun correctionHistoryRoundTripsAboveTenThousandEntries() = runTest {
+        val events = List(12_345) {
+            CorrectionEvent(
+                id = "correction-$it",
+                receiptId = "verification-${it % 9}",
+                correctedAtWallMs = 1_752_000_000_000L + it,
+                originalType = "push_up",
+                originalValue = 6,
+                correctedType = "plank",
+                correctedValue = it.toLong(),
+            )
+        }
+        val state = PersistedState(correctionHistory = events)
+        val output = ByteArrayOutputStream()
+        AppStateSerializer.writeTo(state, output)
+        val restored = AppStateSerializer.readFrom(ByteArrayInputStream(output.toByteArray()))
+        assertEquals(state, restored)
     }
 
     @Test(expected = CorruptionException::class)

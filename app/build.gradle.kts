@@ -18,8 +18,7 @@ fun verifierSetting(propertyName: String, environmentName: String): String =
         ?: localProperties.getProperty(propertyName)?.trim()?.takeIf { it.isNotEmpty() }
         ?: providers.environmentVariable(environmentName).orNull?.trim().orEmpty()
 
-val verifierUrl = verifierSetting("verifyUrl", "VERIFY_URL")
-val verifierSecret = verifierSetting("verifySharedSecret", "VERIFY_SHARED_SECRET")
+val v1BackendUrl = verifierSetting("v1BackendUrl", "V1_BACKEND_URL")
 
 fun buildConfigString(value: String): String = "\"" + value
     .replace("\\", "\\\\")
@@ -27,18 +26,12 @@ fun buildConfigString(value: String): String = "\"" + value
     .replace("\n", "\\n")
     .replace("\r", "\\r") + "\""
 
-val validateVerifierConfiguration by tasks.registering {
+val validateV1Configuration by tasks.registering {
     group = "verification"
-    description = "Prevent distributing an app that cannot start exercise verification."
     doLast {
-        val missing = buildList {
-            if (verifierUrl.isBlank()) add("verifyUrl / VERIFY_URL")
-            if (verifierSecret.isBlank()) add("verifySharedSecret / VERIFY_SHARED_SECRET")
-        }
-        check(missing.isEmpty()) {
-            "Cannot package Internet Restrictor: missing ${missing.joinToString()}. " +
-                "Set these in local.properties, Gradle properties, or environment variables. " +
-                "Exercise recording requires a configured verifier."
+        check(v1BackendUrl.startsWith("https://") &&
+            !v1BackendUrl.contains("exercise-verifier-production")) {
+            "Friction requires an HTTPS v1BackendUrl / V1_BACKEND_URL."
         }
     }
 }
@@ -48,12 +41,15 @@ val validateVerifierConfiguration by tasks.registering {
 androidComponents.onVariants { variant ->
     val variantName = variant.name.replaceFirstChar { it.uppercaseChar() }
     tasks.matching { it.name == "package$variantName" || it.name == "bundle$variantName" }
-        .configureEach { dependsOn(validateVerifierConfiguration) }
+        .configureEach {
+            dependsOn(validateV1Configuration)
+        }
 }
 
 android {
     namespace = "com.michalkrsik.internetrestrictor"
     compileSdk = 36
+    testBuildType = providers.gradleProperty("androidTestBuildType").getOrElse("debug")
 
     defaultConfig {
         // Must remain distinct from the separate Calculator/GPS prototype.
@@ -65,16 +61,9 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
-        buildConfigField(
-            "String",
-            "VERIFY_URL",
-            buildConfigString(verifierUrl),
-        )
-        buildConfigField(
-            "String",
-            "VERIFY_SHARED_SECRET",
-            buildConfigString(verifierSecret),
-        )
+        buildConfigField("boolean", "IS_V1", "true")
+        buildConfigField("String", "V1_BACKEND_URL", buildConfigString(v1BackendUrl))
+
     }
 
     signingConfigs.getByName("debug") {
@@ -84,6 +73,15 @@ android {
     }
 
     buildTypes {
+        create("v1Dev") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".v1dev"
+            versionNameSuffix = "-v1-dev"
+            matchingFallbacks += listOf("debug")
+            signingConfig = signingConfigs.getByName("debug")
+            buildConfigField("boolean", "IS_V1", "true")
+
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
@@ -148,6 +146,7 @@ dependencies {
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+    add("v1DevImplementation", "androidx.compose.ui:ui-test-manifest")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")

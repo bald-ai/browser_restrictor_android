@@ -13,6 +13,7 @@ class RestrictorApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
+        if (BuildConfig.IS_V1) container.v1.start()
         accessMonitor = DeviceAccessMonitor(this, container)
         ProcessLifecycleOwner.get().lifecycle.addObserver(accessMonitor)
     }
@@ -20,4 +21,3 @@ class RestrictorApplication : Application() {
 
 val android.content.Context.appContainer: AppContainer
     get() = (applicationContext as RestrictorApplication).container
-

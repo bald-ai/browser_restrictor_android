@@ -188,7 +188,7 @@ private fun ExpandedBadge(snapshot: StateSnapshot) {
     val unlock = snapshot.activeUnlock
     if (unlock != null) {
         BadgeValue(
-            label = "Unlock",
+            label = snapshot.configuration.settings.unlockLabel,
             value = "${formatCompactTime(unlock.expiresAtWallMs - snapshot.wallNowMs)} left",
         )
         BadgeDivider()

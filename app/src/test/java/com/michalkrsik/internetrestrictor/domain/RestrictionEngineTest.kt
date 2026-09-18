@@ -412,7 +412,7 @@ class RestrictionEngineTest {
     }
 
     @Test
-    fun eveningResetWipesOnlySpendableBudgetAndStopsNormalAccess() {
+    fun eveningPreservesBudgetUsageAndNormalAccess() {
         val beforeReset = ZonedDateTime.of(2026, 7, 10, 19, 59, 59, 0, zone)
             .toInstant()
             .toEpochMilli()
@@ -431,14 +431,14 @@ class RestrictionEngineTest {
         val after = engine.normalize(state, beforeReset + 1_000, zone)
 
         assertEquals(3, after.dailyCounter.earnedBudgetRounds)
-        assertEquals(0, after.dailyCounter.spendableBudgetRounds)
+        assertEquals(3, after.dailyCounter.spendableBudgetRounds)
         assertEquals(24, after.dailyCounter.exercisePointSixths)
-        assertTrue(after.dailyCounter.eveningResetApplied)
-        assertEquals(0, after.dailyUsage.usedMs)
-        assertNull(after.activeUnlock)
+        assertFalse(after.dailyCounter.legacyEveningResetApplied)
+        assertEquals(5 * MINUTE_MS, after.dailyUsage.usedMs)
+        assertEquals(state.activeUnlock, after.activeUnlock)
         assertEquals(report, after.usageReports.single())
         assertEquals(1, engine.snapshot(after, ready, beforeReset + 1_000).skipSnapshot.remaining)
-        assertEquals(GateMode.OUT_OF_TIME, engine.underlyingMode(after, ready, beforeReset + 1_000))
+        assertEquals(GateMode.ACCESS_GRANTED_NORMAL, engine.underlyingMode(after, ready, beforeReset + 1_000))
     }
 
     @Test
@@ -465,7 +465,7 @@ class RestrictionEngineTest {
     }
 
     @Test
-    fun normalUsageIsCutOffExactlyAtEveningReset() {
+    fun normalUsageContinuesAcrossTwentyHundred() {
         val start = ZonedDateTime.of(2026, 7, 10, 19, 59, 59, 500_000_000, zone)
             .toInstant()
             .toEpochMilli()
@@ -480,14 +480,14 @@ class RestrictionEngineTest {
 
         val after = engine.consumeUsage(state, ready, start, start + 1_000, zone)
 
-        assertEquals(0, after.dailyUsage.usedMs)
-        assertEquals(500, after.usageReports.single().protectedUsageMs)
-        assertNull(after.activeUnlock)
-        assertEquals(0, engine.budgetSnapshots(after).single().limitMinutes)
+        assertEquals(1000, after.dailyUsage.usedMs)
+        assertEquals(1000, after.usageReports.single().protectedUsageMs)
+        assertEquals(state.activeUnlock, after.activeUnlock)
+        assertEquals(3, engine.budgetSnapshots(after).single().limitMinutes)
     }
 
     @Test
-    fun eveningResetAppliesOnceAndNewPushupsEarnFreshBudget() {
+    fun eveningPreservesPartialProgressForNewPushups() {
         val reset = ZonedDateTime.of(2026, 7, 10, 20, 0, 0, 0, zone)
             .toInstant()
             .toEpochMilli()
@@ -509,7 +509,7 @@ class RestrictionEngineTest {
     }
 
     @Test
-    fun eveningResetPreservesEmergencyUnlockButCancelsPendingWait() {
+    fun eveningPreservesEmergencyUnlockAndPendingWait() {
         val reset = ZonedDateTime.of(2026, 7, 10, 20, 0, 0, 0, zone)
             .toInstant()
             .toEpochMilli()
@@ -527,7 +527,7 @@ class RestrictionEngineTest {
             zone,
         ))
         val cancelledWait = engine.normalize(waiting, reset, zone)
-        assertNull(cancelledWait.pendingWait)
+        assertEquals(waiting.pendingWait, cancelledWait.pendingWait)
 
         val emergency = earned.copy(
             activeUnlock = UnlockSession(
@@ -699,7 +699,7 @@ class RestrictionEngineTest {
     }
 
     @Test
-    fun emergencyUsageSpanningEveningResetPreservesFreeAccessAndAppliesReset() {
+    fun emergencyUsageAcrossTwentyHundredPreservesFreeAccessAndBudget() {
         val eveningReset = ZonedDateTime.of(2026, 7, 10, 20, 0, 0, 0, zone).toInstant().toEpochMilli()
         val start = eveningReset - 5 * MINUTE_MS
         val expiry = eveningReset + 10 * MINUTE_MS
@@ -722,10 +722,10 @@ class RestrictionEngineTest {
 
         val used = engine.consumeUsage(emergency, ready, start, end, zone)
 
-        // Across 20:00, evening reset cleared spendable budget to 0 rounds, but usedMs is 0 (zero charged)
+        // Emergency use remains free across the evening; the earned budget stays available.
         assertEquals(0L, used.dailyUsage.usedMs)
-        assertEquals(0L, used.dailyCounter.spendableBudgetRounds)
-        assertTrue(used.dailyCounter.eveningResetApplied)
+        assertEquals(5L, used.dailyCounter.spendableBudgetRounds)
+        assertFalse(used.dailyCounter.legacyEveningResetApplied)
         assertNotNull(used.activeUnlock)
         assertEquals(UnlockSource.EMERGENCY, used.activeUnlock?.source)
         assertEquals(10 * MINUTE_MS, used.usageReports.single { it.localDayKey == "2026-07-10" }.protectedUsageMs)
@@ -821,7 +821,7 @@ class RestrictionEngineTest {
                 earnedBudgetRounds = 3,
                 exercisePointSixths = 24,
                 spendableBudgetRounds = 3,
-                eveningResetApplied = true,
+                legacyEveningResetApplied = true,
             ),
             usageReports = listOf(DailyUsageReport("2026-07-10", exerciseSets = 3)),
         )
@@ -835,7 +835,7 @@ class RestrictionEngineTest {
         assertEquals(0, after.dailyCounter.spendableBudgetRounds)
         assertEquals(0, after.dailyCounter.emergencySkipsUsed)
         assertEquals(0, after.dailyCounter.exercisePointSixths)
-        assertFalse(after.dailyCounter.eveningResetApplied)
+        assertFalse(after.dailyCounter.legacyEveningResetApplied)
         assertEquals(0, engine.snapshot(after, ready, beforeReset + 3_000).skipSnapshot.remaining)
     }
 

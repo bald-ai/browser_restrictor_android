@@ -2,12 +2,10 @@
   "name": "browser-restrictor-deployment",
   "private": true,
   "scripts": {
-    "hosting:plan": "railway config plan",
-    "hosting:apply": "railway config apply",
-    "hosting:deploy": "railway up server --path-as-root --service exercise-verifier"
+    "test": "npm --prefix backend-v1 test",
+    "hosting:deploy": "railway up backend-v1 --path-as-root --project b806bbbd-f21d-4546-a59c-6ebd81802ac9 --environment production --service friction-v1-api"
   },
   "devDependencies": {
-    "@railway/cli": "5.49.2",
-    "railway": "3.11.0"
+    "@railway/cli": "5.49.2"
   }
 }

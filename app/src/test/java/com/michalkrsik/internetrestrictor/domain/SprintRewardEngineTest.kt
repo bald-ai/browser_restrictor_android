@@ -62,7 +62,7 @@ class SprintRewardEngineTest {
     }
 
     @Test
-    fun sprintRemainderSurvives2000Reset() {
+    fun sprintRemainderSurvivesEvening() {
         val morning = wallMs(2026, 7, 10, 10, 0)
         val initial = engine.normalize(PersistedState(), morning, zone)
 
@@ -79,11 +79,11 @@ class SprintRewardEngineTest {
         assertEquals(0L, stateAfterMorning.dailyCounter.earnedBudgetRounds)
         assertEquals(50L, stateAfterMorning.dailyCounter.sprintMetersRemainder)
 
-        // Cross 20:00 evening budget reset
+        // Crossing 20:00 no longer changes the budget.
         val evening = wallMs(2026, 7, 10, 20, 15)
         val normalizedEvening = engine.normalize(stateAfterMorning, evening, zone)
 
-        assertEquals(true, normalizedEvening.dailyCounter.eveningResetApplied)
+        assertEquals(false, normalizedEvening.dailyCounter.legacyEveningResetApplied)
         assertEquals(0L, normalizedEvening.dailyCounter.spendableBudgetRounds)
         // Sprint remainder survives 20:00!
         assertEquals(50L, normalizedEvening.dailyCounter.sprintMetersRemainder)

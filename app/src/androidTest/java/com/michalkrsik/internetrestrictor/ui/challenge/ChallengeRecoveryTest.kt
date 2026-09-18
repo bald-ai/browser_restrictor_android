@@ -37,6 +37,7 @@ class ChallengeRecoveryTest {
     private val context get() = instrumentation.targetContext
 
     @Before fun permissions() {
+        org.junit.Assume.assumeFalse("Legacy sprint UI is retired in V1", com.michalkrsik.internetrestrictor.BuildConfig.IS_V1)
         for (permission in listOf(Manifest.permission.ACCESS_COARSE_LOCATION,
             Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.CAMERA,
             Manifest.permission.POST_NOTIFICATIONS)) {
@@ -67,76 +68,6 @@ class ChallengeRecoveryTest {
             assertEquals(SprintPhase.RESULT, resultService.phase)
             assertEquals(pending.recordingId, resultService.saveState?.recordingId)
             assertEquals(pending.result, resultService.saveState?.result)
-        }
-    }
-
-    @Test fun verifiedCameraReceiptSurvivesActivityRecreation() {
-        ActivityScenario.launch(ExerciseChallengeActivity::class.java).use { scenario ->
-            val verdict = ExerciseVerificationResult(ExerciseId.PUSH_UP, ExerciseMetric.REPETITIONS, 7, "test")
-            var retained: ExerciseSession? = null
-            scenario.onActivity {
-                retained = ViewModelProvider(it)[ExerciseSession::class.java].apply {
-                    pending = "verified-receipt" to verdict
-                    phase = ChallengePhase.RETRY
-                    status = "Retry saving"
-                }
-            }
-            scenario.recreate()
-            instrumentation.waitForIdleSync()
-            scenario.onActivity {
-                val session = ViewModelProvider(it)[ExerciseSession::class.java]
-                assertSame(retained, session)
-                assertEquals("verified-receipt" to verdict, session.pending)
-                assertEquals(ChallengePhase.RETRY, session.phase)
-            }
-        }
-    }
-
-    @Test fun interruptedCameraFinalizationDoesNotLeaveChallengeStuck() {
-        ActivityScenario.launch(ExerciseChallengeActivity::class.java).use { scenario ->
-            waitForCameraInitialization()
-            var retained: ExerciseSession? = null
-            scenario.onActivity {
-                // Hold the boundary before CameraX Finalize deterministically, without uploading a video.
-                retained = ViewModelProvider(it)[ExerciseSession::class.java].apply {
-                    phase = ChallengePhase.RECORDING
-                }
-            }
-            clickText("Finish recording")
-            scenario.onActivity { assertEquals(ChallengePhase.FINALIZING, retained?.phase) }
-            scenario.recreate()
-            waitForCameraInitialization()
-            scenario.onActivity {
-                val session = ViewModelProvider(it)[ExerciseSession::class.java]
-                assertSame(retained, session)
-                // An emulator may lack the requested video quality; either outcome must allow exit.
-                assertTrue(session.phase in setOf(ChallengePhase.READY, ChallengePhase.ERROR))
-            }
-            composeRule.onNodeWithText("Cancel").assertIsEnabled()
-            clickText("Cancel")
-            composeRule.waitUntil(timeoutMillis = 5_000) {
-                scenario.state == androidx.lifecycle.Lifecycle.State.DESTROYED
-            }
-        }
-    }
-
-    @Test fun cameraVerificationRemainsCheckingDuringRecreation() {
-        ActivityScenario.launch(ExerciseChallengeActivity::class.java).use { scenario ->
-            waitForCameraInitialization()
-            var retained: ExerciseSession? = null
-            scenario.onActivity {
-                retained = ViewModelProvider(it)[ExerciseSession::class.java].apply {
-                    phase = ChallengePhase.CHECKING
-                    status = "Checking exercise…"
-                }
-            }
-            scenario.recreate()
-            scenario.onActivity {
-                val session = ViewModelProvider(it)[ExerciseSession::class.java]
-                assertSame(retained, session)
-                assertEquals(ChallengePhase.CHECKING, session.phase)
-                assertEquals("Checking exercise…", session.status)
-            }
         }
     }
 
@@ -181,14 +112,6 @@ class ChallengeRecoveryTest {
 
     private fun clickText(text: String) {
         composeRule.onNodeWithText(text).performClick()
-    }
-
-    private fun waitForCameraInitialization() {
-        composeRule.waitUntil(timeoutMillis = 10_000) {
-            listOf("Start exercise", "Camera unavailable").any {
-                composeRule.onAllNodesWithText(it).fetchSemanticsNodes().isNotEmpty()
-            }
-        }
     }
 
     private fun attachedService(scenario: ActivityScenario<SprintChallengeActivity>): SprintLocationService {

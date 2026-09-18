@@ -81,13 +81,26 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        finishTaskPickerHandoffAfterDraw()
         refreshDeviceAccess()
+        if (BuildConfig.IS_V1) lifecycleScope.launch { appContainer.v1.sync(); appContainer.v1.retryPending() }
+    }
+
+    private fun finishTaskPickerHandoffAfterDraw() {
+        val transition = com.michalkrsik.internetrestrictor.ui.challenge.TaskPickerTransition
+        if (!transition.pending.value) return
+        // Frame commit runs after rendering, even while the accessibility gate has focus.
+        window.decorView.viewTreeObserver.registerFrameCommitCallback {
+            transition.pending.value = false
+        }
+        window.decorView.invalidate()
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         requestedDestination.value = intent.getStringExtra(EXTRA_DESTINATION)
+        finishTaskPickerHandoffAfterDraw()
     }
 
     @Composable
@@ -144,11 +157,28 @@ class MainActivity : ComponentActivity() {
                 onOpenAccessibility = ::openAccessibilitySettings,
                 onOpenUsageAccess = ::openUsageAccessSettings,
                 onHealthAction = { handleHealthAction(snapshot.enforcementHealth) },
+                onCustomize = { startActivity(Intent(this, com.michalkrsik.internetrestrictor.v1.V1ConversationActivity::class.java)) },
                 onExportDiagnostics = {
                     diagnosticsExporter.launch("internet-restrictor-diagnostics.txt")
                 },
             )
-            else -> DashboardScreen(
+            else -> if (BuildConfig.IS_V1) {
+                val connection by appContainer.v1.status.collectAsState()
+                com.michalkrsik.internetrestrictor.v1.V1Dashboard(
+                    snapshot = snapshot, connection = connection,
+                    onConversation = { startActivity(Intent(this, com.michalkrsik.internetrestrictor.v1.V1ConversationActivity::class.java)) },
+                    onSettings = { destination = DESTINATION_SETTINGS },
+                    onTask = { task ->
+                        if (snapshot.appliedConfigRevision < 0) {
+                            lifecycleScope.launch { appContainer.v1.sync() }
+                        } else startActivity(Intent(this, if (task.verifier == "gps") com.michalkrsik.internetrestrictor.v1.V1GpsActivity::class.java else com.michalkrsik.internetrestrictor.v1.V1VideoActivity::class.java).putExtra("taskId", task.id))
+                    },
+                    onHealth = { handleHealthAction(snapshot.enforcementHealth) },
+                    onRetry = { lifecycleScope.launch { appContainer.v1.sync(); appContainer.v1.retryPending() } },
+                    onCorrect = { receipt, value -> appContainer.v1.correct(receipt.measurement.attemptId, value) },
+                    onFallback = { receipt -> appContainer.v1.confirmGpsFallback(receipt.measurement.attemptId) },
+                )
+            } else DashboardScreen(
                 snapshot = snapshot,
                 onOpenSettings = { destination = DESTINATION_SETTINGS },
                 onTestBrowser = ::launchBrowser,

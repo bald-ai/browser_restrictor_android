@@ -93,7 +93,7 @@ fun GateScreen(snapshot: StateSnapshot, actions: GateActions) {
         WaitingGate(snapshot, actions.onLeaveBrowser)
         return
     }
-    var selectedMinutes by rememberSaveable(snapshot.gateSessionId, snapshot.settings.sessionMinutes) { mutableLongStateOf(snapshot.settings.sessionMinutes[1]) }
+    var selectedMinutes by rememberSaveable(snapshot.gateSessionId, snapshot.settings.sessionMinutes) { mutableLongStateOf(snapshot.settings.sessionMinutes.getOrElse(1) { snapshot.settings.sessionMinutes.first() }) }
     var actionInFlight by remember { mutableStateOf(false) }
     LaunchedEffect(snapshot.stateRevision, snapshot.canonicalMode) { actionInFlight = false }
     PulseScreen {
@@ -148,9 +148,9 @@ private fun YouTubeLockedControls(
             modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp),
             shape = PillShape,
         ) {
-            Text("Start exercise", style = MaterialTheme.typography.labelLarge)
+            Text(if (com.michalkrsik.internetrestrictor.BuildConfig.IS_V1) snapshot.configuration.settings.youtubeUnlockLabel else "Start push-ups", style = MaterialTheme.typography.labelLarge)
         }
-        Button(
+        if (!com.michalkrsik.internetrestrictor.BuildConfig.IS_V1) Button(
             colors = pulseButtonColors(),
             border = PulseActionBorder,
             onClick = onSprintChallenge,
@@ -161,14 +161,14 @@ private fun YouTubeLockedControls(
             Text("Start sprint", style = MaterialTheme.typography.labelLarge)
         }
         Text(
-            "${snapshot.earnedBudgetRoundsToday}/$YOUTUBE_UNLOCK_SETS sets today · unlocks until 04:00",
+            "${snapshot.earnedBudgetRoundsToday}/${snapshot.configuration.settings.youtubeCredits} ${snapshot.configuration.settings.creditName} today · until ${snapshot.configuration.settings.dayReset}",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth(),
         )
         Text(
-            "Every set earns +3 minutes",
+            "Every credit earns +${snapshot.configuration.settings.minutesPerCredit} minutes",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -199,18 +199,18 @@ private fun PausedControls(
             Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(4.dp).background(PulseYellow, RoundedCornerShape(50)))
                 Spacer(Modifier.width(5.dp))
-                PulseText("A 12-second pause before each session", 9, muted = true)
+                PulseText("A ${snapshot.configuration.settings.waitSeconds}-second pause before each session", 9, muted = true)
             }
         }
         Spacer(Modifier.height(5.dp))
         PulseCarryOver(snapshot)
         Spacer(Modifier.height(18.dp))
-        PulsePrimary("Start exercise", onExerciseChallenge, exercise = true, subtitle = "Earn 3 minutes with your next set", enabled = !actionInFlight)
+        PulsePrimary(if (com.michalkrsik.internetrestrictor.BuildConfig.IS_V1) "Choose a task" else "Start push-ups", onExerciseChallenge, exercise = true, subtitle = "Earn ${snapshot.configuration.settings.minutesPerCredit} minutes with your next credit", enabled = !actionInFlight)
         Spacer(Modifier.height(8.dp))
-        PulsePrimary("Start sprint", onSprintChallenge, exercise = true, subtitle = "Earn 3 minutes with a 120m sprint", enabled = !actionInFlight)
+        if (!com.michalkrsik.internetrestrictor.BuildConfig.IS_V1) PulsePrimary("Start sprint", onSprintChallenge, exercise = true, subtitle = "Choose a GPS task to earn more time", enabled = !actionInFlight)
         Spacer(Modifier.height(10.dp))
         OutlinedButton(onClick = onStart, enabled = !actionInFlight, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(7.dp), border = BorderStroke(1.dp, EditorialTheme.colors.hairline), colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)) {
-            Text("CONTINUE FOR $selectedMinutes MINUTES", style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp, letterSpacing = .5.sp))
+            Text("${snapshot.configuration.settings.unlockLabel} · $selectedMinutes minutes", style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp, letterSpacing = .5.sp))
             Spacer(Modifier.width(8.dp))
             PulseIcon("arrow", 17)
         }
@@ -364,8 +364,8 @@ private fun ExerciseAndSprintButtons(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         PulseCarryOver(snapshot)
-        PulsePrimary("Start exercise", onExerciseChallenge, exercise = true, subtitle = "Earn 3 minutes with your next set", enabled = !actionInFlight)
-        PulsePrimary("Start sprint", onSprintChallenge, exercise = true, subtitle = "Earn 3 minutes with a 120m sprint", enabled = !actionInFlight)
+        PulsePrimary(if (com.michalkrsik.internetrestrictor.BuildConfig.IS_V1) "Choose a task" else "Start push-ups", onExerciseChallenge, exercise = true, subtitle = "Earn ${snapshot.configuration.settings.minutesPerCredit} minutes with your next credit", enabled = !actionInFlight)
+        if (!com.michalkrsik.internetrestrictor.BuildConfig.IS_V1) PulsePrimary("Start sprint", onSprintChallenge, exercise = true, subtitle = "Choose a GPS task to earn more time", enabled = !actionInFlight)
     }
 }
 
@@ -375,9 +375,9 @@ internal fun CarryOverRows(snapshot: StateSnapshot) { PulseCarryOver(snapshot) }
 @Composable
 private fun SkipButton(snapshot: StateSnapshot, actionInFlight: Boolean, onClick: () -> Unit) {
     TextButton(onClick = onClick, enabled = snapshot.skipSnapshot.eligible && !actionInFlight, modifier = Modifier.fillMaxWidth()) {
-        PulseText("Emergency unlock", 11, muted = true)
+        PulseText(snapshot.configuration.settings.emergencyUnlockLabel, 11, muted = true)
         Spacer(Modifier.width(7.dp))
-        PulseText("${snapshot.skipSnapshot.remaining} available · 15 min", 9, muted = true)
+        PulseText("${snapshot.skipSnapshot.remaining} available · ${snapshot.configuration.settings.emergencyMinutes} min", 9, muted = true)
     }
     HorizontalDivider(color = EditorialTheme.colors.hairline)
 }
@@ -446,6 +446,6 @@ private fun supportingCopy(snapshot: StateSnapshot): String = when (snapshot.can
         "Your $minutes min session is opening soon."
     }
     GateMode.OUT_OF_TIME, GateMode.OUT_OF_TIME_LATCHED -> "Budget used. Try again after reset."
-    GateMode.YOUTUBE_LOCKED -> "Any combination of 4 sets unlocks it until 04:00."
+    GateMode.YOUTUBE_LOCKED -> "Any combination of ${snapshot.configuration.settings.youtubeCredits} ${snapshot.configuration.settings.creditName} unlocks it until ${snapshot.configuration.settings.dayReset}."
     else -> ""
 }

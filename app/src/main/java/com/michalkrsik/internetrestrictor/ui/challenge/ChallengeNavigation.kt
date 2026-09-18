@@ -28,3 +28,8 @@ internal fun Activity.openChallengeOrigin(): Boolean {
         true
     } catch (_: Exception) { false }
 }
+
+/** Keep the browser covered until the dashboard has submitted a visible frame. */
+internal object TaskPickerTransition {
+    val pending = MutableStateFlow(false)
+}

@@ -102,7 +102,7 @@ class BrowserForegroundMonitor(
         }
         val windows = service.windows.orEmpty()
         val candidateStillForeground = activeApplicationPackage(windows)
-            ?.let(::isGateExitPackage) == true
+            ?.let { isGateExitPackage(it, applicationWindow = true) } == true
         if (!exitStabilizer.confirmAfterDelay(nowElapsedMs, candidateStillForeground)) {
             return null
         }
@@ -127,9 +127,9 @@ class BrowserForegroundMonitor(
             ?.takeIf { it.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED }
             ?.packageName
             ?.toString()
-            ?.takeIf(::isGateExitPackage)
+            ?.takeIf { isGateExitPackage(it) }
         if (eventPackage != null) return eventPackage
-        return activeApplicationPackage(windows)?.takeIf(::isGateExitPackage)
+        return activeApplicationPackage(windows)?.takeIf { isGateExitPackage(it, applicationWindow = true) }
     }
 
     private fun classifyImeContext(windows: List<AccessibilityWindowInfo>): ForegroundDecision {
@@ -181,9 +181,16 @@ class BrowserForegroundMonitor(
 
     private fun activeApplicationPackage(
         windows: List<AccessibilityWindowInfo>,
-    ): String? = windows.firstOrNull {
-        it.type == AccessibilityWindowInfo.TYPE_APPLICATION && it.isActive
-    }?.let(::ownerPackage)
+    ): String? {
+        val applications = windows.filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+        // Our focusable gate can own Android's active/focused flags. The top
+        // application window still identifies the app underneath it after Home
+        // or an app switch; requiring isActive here leaves the gate latched.
+        val foreground = applications.firstOrNull { it.isFocused }
+            ?: applications.firstOrNull { it.isActive }
+            ?: applications.maxByOrNull { it.layer }
+        return foreground?.let(::ownerPackage)
+    }
 
     private fun ownerPackage(window: AccessibilityWindowInfo): String? {
         val root: AccessibilityNodeInfo = try {
@@ -204,9 +211,9 @@ class BrowserForegroundMonitor(
         return packageName
     }
 
-    private fun isGateExitPackage(packageName: String): Boolean =
+    private fun isGateExitPackage(packageName: String, applicationWindow: Boolean = false): Boolean =
         protectedTargetForPackage(packageName) == null &&
-            packageName != service.packageName &&
+            (applicationWindow || packageName != service.packageName) &&
             packageName != SYSTEM_UI_PACKAGE
 
     private data class PackageClassification(

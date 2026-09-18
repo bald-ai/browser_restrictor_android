@@ -1,10 +1,69 @@
 # Project documentation
 
+## One V1 implementation
+
+All Android builds use the configurable V1 backend in `backend-v1/` at
+`https://friction-v1-api-production.up.railway.app`. The `debug` and `release`
+variants retain the original application ID. `v1Dev` retains its separate
+`com.michalkrsik.browserrestrictor.v1dev` ID for testing alongside the daily app.
+
+Users select a configured video or GPS task. Android owns blocking, timers,
+balances and activity history; the backend owns setup revisions, review/undo and
+verification receipts. Existing local history and corrections migrate without
+being deleted. The old recording Activity is a redirect to the task dashboard.
+The legacy verifier service, its shared-secret configuration and both old
+verification endpoints have been removed from this repository.
+
+V1 includes manual setup, grouped change review, and GPT-Live-1 Ripple voice over
+WebRTC. GPT-6 Astra handles supported app functions. Configuration changes are
+acknowledged only after Android persists them.
+
+The detailed implementation record, API contract, test evidence and handoff are in
+`Dev/V1_IMPLEMENTATION_PLAN.md`, `Dev/V1_API_CONTRACT.md`, and
+`Dev/V1_TEST_REPORT.md`. Those historical reports describe their original build;
+this document describes the current single-backend layout.
+
+## Daily allowance and reset
+
+`dailyBudgetMinutes` accepts whole minutes from 0 to 30, default 0. Manual setup
+and the in-app agent use the same reviewed configuration workflow. Saving a new
+allowance preserves the current balance; it applies at the next `dayReset`.
+The reset replaces unused time with the allowance and clears daily progress and
+unlock eligibility. Tasks may earn additional minutes above the allowance cap.
+There is one reset, default 04:00 in the phone's time zone.
+
+The separate browsing reset has been retired from controls, agent schemas,
+receipts and runtime scheduling. Backend schema 2 migrates existing settings
+and removes retired review cards, issuing a new configuration revision for the
+phone. Historical revision records remain available for old attempts. Android
+accepts old settings without the new allowance as zero and preserves balances.
+The old positional binary reset marker remains only for saved-data compatibility
+and legacy correction eligibility; it never schedules a reset.
+
+See [AGENT_CAPABILITIES.md](AGENT_CAPABILITIES.md) for the maintained list of
+agent functions, settings, bounds and timing rules.
+
+## Documentation available to the assistant
+
+The backend preloads `backend-v1/docs/app-overview.md` in voice and text prompts
+for immediate answers to common questions. It also ships the detailed
+`backend-v1/docs/app-guide.md`. The existing `read_details`
+function exposes an index and focused topics for settings, daily allowance,
+sessions, verification, corrections, offline behavior, troubleshooting and other
+product rules. `backend-v1/app-docs.mjs` loads it at startup and derives the topic
+catalog. The agent reads details on demand and explains them using current app
+context. `history` continues to return actual device statistics. Keep both documents
+with the backend when packaging/deploying; the backend-local Git ignore rules
+explicitly include them, and the Dockerfile checks their presence at build time; no separate documentation service or
+network request is required. Changes to the guide take effect after backend
+restart/deployment.
+
 ## Source map
 
 - `app/src/main/`: maintained Android app and product behavior.
 - `app/src/test/` and `app/src/androidTest/`: Android regression and device tests.
-- `server/src/` and `server/test/`: maintained video verifier and its tests.
+- `backend-v1/`: the only backend, including configurable video verification and its tests.
+- `app/src/main/java/com/michalkrsik/internetrestrictor/v1/`: v1 setup sync, trusted conversation WebView, and task capture.
 - `app/src/main/java/com/michalkrsik/internetrestrictor/domain/Exercise.kt`: authoritative exercise weights; display set sizes derive from them.
 - `app/src/main/java/com/michalkrsik/internetrestrictor/domain/RestrictionEngine.kt`: reward application and restriction rules.
 - `design-preview/`: historical React design mockup; not the shipped Android UI.
@@ -13,28 +72,19 @@
 
 ## Challenge reliability and limits
 
-Verified camera measurements and sprint results retain their receipt until saving succeeds;
-"Retry saving" reuses that receipt without another recording or model call. The reward
-transaction returns its awarded sets, remainder, and day, so crossing 04:00 does not
-require the UI to infer the award from changing daily totals. Sprint session state lives
-in the foreground service; camera verification and pending credit live in a retained
-ViewModel. These preserve progress across Activity recreation within the running app.
+V1 saves submitted video evidence for retry and pins each attempt to its task and
+configuration revision. Duplicate uploads reuse the receipt, avoiding duplicate
+model usage or rewards. Previews use the same evaluator without awarding credit.
 
-Sprints stop automatically after 15 minutes and retain their evaluated result. Leaving
-or starting over with unsaved sprint progress requires a discard confirmation. Missing
-GPS coverage at the beginning of a recording counts toward the reliability fallback.
-Permanent location denial routes the user to the app's system settings.
+The verifier samples four source frames per second and presents them at one
+playback frame per second. Duration measurements are divided by four on the server;
+repetition counts are unchanged. Measurements exceeding the clip's duration or
+five repetitions per original second are rejected. Temporary server video files
+are deleted in a `finally` block.
 
-Normal session presets remain maximum wall-clock windows subject to the available
-budget. An exhausted normal session can be replaced by an earned emergency skip.
-Monthly push-up cycles follow the device timezone, like the daily accounting periods.
-
-The verifier uses one playback densification factor for preprocessing and plank timing.
-Plank output is converted to original seconds on the server. Results exceeding the clip's
-length (holds) or three repetitions per original second are rejected as implausible.
-The client permits 240 seconds for a response, retries explicit busy responses according
-to Retry-After, and disconnects cancelled requests; the server cancels its active work
-when that client connection closes.
+Saved local history, receipts, corrections, balances and configuration have migration
+and serialization coverage in Android unit tests. Changing the evaluation pipeline
+does not delete historical exercise IDs or their reward records.
 
 ## Personal notes and future ideas
 
@@ -50,44 +100,12 @@ remain in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Production setup
 
-The Android app sends exercise recordings to the dedicated Railway verifier,
-which processes the video with FFmpeg and calls OpenRouter. Railway is the only
-production hosting dependency for this app; there is no separate server to maintain.
-
-| Setting | Current value |
-| --- | --- |
-| Railway project | [browser-restrictor](https://railway.com/project/da2c70e8-6f57-47a5-bab2-d697888abbae) |
-| Service / environment | `exercise-verifier` / `production` |
-| Service ID | `999755bc-8c57-4fd1-8130-90f0a8106b89` |
-| Environment ID | `558bca8f-abd7-4e06-bd56-9a0acddf275e` |
-| Region | `europe-west4-drams3a`, one replica |
-| Verification endpoint | `https://exercise-verifier-production.up.railway.app/v1/exercise-verify` |
-| Health endpoint | `https://exercise-verifier-production.up.railway.app/health` |
-| Model | `google/gemini-3.8-flash` |
-| Infrastructure definition | `.railway/railway.ts` |
-
-The public verifier address is tracked in `gradle.properties`. The matching
-`VERIFY_SHARED_SECRET` is configured in Railway and GitHub repository secrets;
-local builds use `verifySharedSecret` in the ignored `local.properties` or the
-environment. `OPENROUTER_API_KEY` is configured in Railway.
-
-### Why the build now requires verifier settings
-
-A previous APK built on a new computer had empty verifier settings and could not
-start exercise recording. Packaging now fails when the URL or shared secret is
-missing. GitHub's build supplies the saved settings and signing key, so a new
-computer does not need to reproduce the local setup to obtain an installable APK.
-
-### Verified baseline — 2026-09-06
-
-- 112 Android unit tests, Android test compilation, lint, and APK assembly passed.
-- All 14 server tests passed locally and during the container build.
-- Live health and unauthenticated-upload rejection checks passed.
-- A synthetic MP4 passed through HTTPS upload, FFmpeg, and OpenRouter and returned
-  `unsupported` with zero credit.
-- The [cloud build](https://github.com/bald-ai/browser_restrictor_android/actions/runs/34048306333)
-  passed; its downloaded APK matched the local signing certificate and verifier settings.
-- Physical camera recording and actual pushup counting still need a phone check.
+The single backend is the Railway `friction-v1-api` service in project
+`friction-v1-dev` (`b806bbbd-f21d-4546-a59c-6ebd81802ac9`). Its public origin is
+`https://friction-v1-api-production.up.railway.app`; `/health` reports configuration.
+It requires a persistent volume at `/data` for installation identities, task
+configuration and receipts. Removing code does not decommission the old remote
+service; deployment and remote resource removal are separate operations.
 
 ## Requirements
 
@@ -106,29 +124,18 @@ From this directory:
 ./gradlew assembleDebug
 ```
 
-The verifier address is checked into `gradle.properties`, so every checkout uses
-the Railway service. For a local build, the ignored `local.properties` supplies
-the shared verifier secret:
+The public V1 origin is checked into `gradle.properties` as `v1BackendUrl`.
+Use `-Pv1BackendUrl=https://...` to override it. Packaging requires an HTTPS backend
+and rejects the retired verifier host. Apps register individual installation tokens;
+there is no shared verifier secret in the build.
 
-```properties
-verifySharedSecret=your-shared-secret
-```
+The **Build Android APK** workflow requires only `ANDROID_DEBUG_KEYSTORE_BASE64`
+for consistent signing. It runs unit tests, compiles device tests, runs lint and
+assembles the debug APK. Local builds use the default debug key unless
+`ANDROID_DEBUG_KEYSTORE_PATH` is supplied.
 
-Alternatively, supply `verifyUrl` and `verifySharedSecret` as Gradle properties,
-or use the `VERIFY_URL` and `VERIFY_SHARED_SECRET` environment variables.
-Gradle properties take precedence over `local.properties`, then environment variables.
-APK and bundle packaging fails if either setting is missing, because that build
-would disable exercise recording. Compilation and unit tests still run without
-verifier settings.
-
-The **Build Android APK** GitHub Actions workflow builds an installable APK
-using the repository secrets `VERIFY_SHARED_SECRET` and
-`ANDROID_DEBUG_KEYSTORE_BASE64`. The latter preserves the signing key between
-builds, allowing updates without uninstalling the app. The workflow explicitly
-selects the restored key through `ANDROID_DEBUG_KEYSTORE_PATH` and checks the
-packaged APK certificate before publishing it. Local builds use the Android
-toolchain's default debug key unless that environment variable is supplied. Download the
-`internet-restrictor-android` artifact from the successful workflow run.
+For the separate test installation, build `./gradlew :app:assembleV1Dev`.
+Both variants use the same V1 task UI and evaluator.
 
 The debug APK is written to:
 
@@ -188,7 +195,7 @@ The captures in `validation_artifacts/` predate this redesign and are retained o
 - `ui/`: onboarding, dashboard, settings, gate, badge, reusable components, and theme.
 - `diagnostics/`: bounded, local-only operational events that can be copied from the app.
 - `receivers/`: boot and wall-clock boundary recovery signals.
-- `server/`: the ffmpeg-backed exercise verifier. It accepts one authenticated MP4 upload up to 75 MB and 30 seconds, stretches four source frames per second from the complete clip into Gemini's one-frame-per-playback-second sampling path, and classifies the clip with a typed result. The legacy push-up endpoint remains supported. See [the exercise-verification contract](#exercise-verification-contract).
+- `backend-v1/evidence.mjs`: the only video evaluator. It measures the selected task using strict structured output. See [the exercise-verification contract](#exercise-verification-contract).
 
 The Accessibility service reacts only to window-level changes. It uses the active window package name to distinguish supported browsers, X, YouTube, Internet Restrictor, and other apps. It does not traverse the accessibility tree or read URLs, webpage text, form fields, typing, or screenshots.
 
@@ -217,138 +224,56 @@ Challenge videos are temporarily uploaded to the owner's verifier and sent to Op
 
 ## Verification server
 
-### Railway deployment
-
-The `server/` directory is a self-contained Railway service. Its Dockerfile
-installs Node.js 22 and FFmpeg, runs the server tests, and starts the verifier.
-`.railway/railway.ts` configures a `/health` deployment check and one European replica.
-No database or persistent disk is required; uploaded clips are temporary.
-
-Set these service variables in Railway:
-
-- `OPENROUTER_API_KEY`: the owner's OpenRouter API key.
-- `VERIFY_SHARED_SECRET`: the same verifier secret supplied to the Android build.
-
-The container listens on `0.0.0.0` and Railway's assigned `PORT`.
-The production endpoint is
-`https://exercise-verifier-production.up.railway.app/v1/exercise-verify`.
-The [Railway project](https://railway.com/project/da2c70e8-6f57-47a5-bab2-d697888abbae)
-contains the service `exercise-verifier` in the `production` environment.
-
-Deploy with the Railway CLI from this repository:
+Node.js 22 or newer, FFmpeg and ffprobe are required. From the repository root:
 
 ```bash
-npm ci
-npx railway login
-npx railway link --project da2c70e8-6f57-47a5-bab2-d697888abbae --environment production --service exercise-verifier
-npm run hosting:plan
-npm run hosting:apply
-npm run hosting:deploy
-```
-
-The infrastructure file preserves the credentials already stored in Railway.
-The Docker build uses `server/` as its root, while the project-level hosting
-settings are applied by `hosting:apply` from the repository root.
-
-### Local server development
-
-The server requires Node.js 22 or newer, `ffmpeg`, and `ffprobe`. Run its tests and start it with:
-
-```bash
-cd server
+npm --prefix backend-v1 ci
 npm test
-OPENROUTER_API_KEY=... VERIFY_SHARED_SECRET=... npm start
+npm --prefix backend-v1 start
 ```
 
-Local development defaults to `127.0.0.1:8787`. `VERIFY_HOST` and `VERIFY_PORT`
-can override the listening address for development and tests.
+Environment variables:
 
+- `OPENROUTER_API_KEY`: video measurement provider credentials.
+- `OPENAI_API_KEY`: conversation and voice credentials.
+- `VIDEO_MODEL`: optional model override, default `google/gemini-3.8-flash`.
+- `DATA_DIR`: persistent state directory, `/data` in Docker.
+- `PUBLIC_BASE_URL`: exact public HTTPS origin.
+- `HOST` / `PORT`: listening address and port.
 
-### Live verification check
+The Dockerfile in `backend-v1/` installs FFmpeg. Deploy the existing V1 service with
+`npm run hosting:deploy` after authenticating the Railway CLI. This command targets
+the V1 project explicitly. No legacy deployment definition remains.
 
-With Node.js 22, FFmpeg, and the matching shared secret in the environment:
-
-```bash
-export VERIFY_URL=https://exercise-verifier-production.up.railway.app/v1/exercise-verify
-node server/scripts/smoke.mjs
-```
-
-The script requires `VERIFY_SHARED_SECRET`; `FFMPEG_PATH` optionally selects the
-FFmpeg executable. It checks health and authentication, then makes one paid model
-request with a generated test pattern. The expected result is `unsupported` with
-zero credit. Its temporary video is deleted afterward.
+Backend tests exercise actual FFmpeg preprocessing with a synthetic MP4 and a stubbed
+provider response, including repetitions, seconds, zero activity, malformed results
+and retired JSON formats. They do not incur model charges.
 
 ## Exercise verification contract
 
-The launchable challenge is a picker-less generic recording. The verifier classifies
-the clip, and the Android client converts the raw measurement into shared exercise
-sets.
+Create an authenticated attempt at `POST /api/v1/attempts`, selecting a configured
+`taskId`. Upload one MP4 (up to 75 MB and 30 seconds) to
+`POST /api/v1/attempts/:attemptId/video`, with `endedAt` and `timeZone` fields.
+The backend uses the task definition pinned when the attempt was created.
 
-### Exercise readiness
-
-| Exercise ID | Measurement | Recording limit | Units per set | Current state |
-| --- | --- | ---: | ---: | --- |
-| `push_up` | repetitions | 30 seconds | 5 repetitions | enabled |
-| `plank` | continuous hold seconds | 30 seconds | 15 seconds | enabled |
-| `outdoor_lat_pulldown` | repetitions | 30 seconds | 10 repetitions | enabled |
-| `unsupported` | none | 30 seconds | none | fail-closed classification result |
-| `sit_up` | repetitions | 30 seconds | TBD | waiting; classified as unsupported |
-
-Credit is computed only on the client. 1 push-up = 2 machine reps = 3 plank seconds =
-1 point. Every 5 combined points earns a 3-minute boost (one set). Fractional points
-are stored exactly in sixths and mix across exercises. Any combination of 4 boosts
-unlocks YouTube until 04:00. Shared progress survives the 20:00 spendable-budget reset.
-Schema 11 preserves and combines legacy surplus once during normalization.
-Tapping Start begins a 3-second preparation countdown before the 30-second recording;
-leaving the activity cancels that preparation countdown. The first
-completed set of the logical day enables the emergency unlock (granting 15 elapsed
-minutes of free access without consuming earned budget). Monthly 9th-to-9th
-history remains verified push-ups only.
-
-### Verification contract
-
-New clients use `POST /v1/exercise-verify` with one multipart field:
-
-- `video`: one `video/mp4` file up to 75 MB and 30 seconds.
-
-The endpoint does not take an exercise picker. It classifies among `push_up`,
-`plank`, `outdoor_lat_pulldown`, and `unsupported`. The successful response is a raw
-measurement:
+The model returns exactly:
 
 ```json
-{
-  "exercise_id": "plank",
-  "metric": "hold_seconds",
-  "value": 20,
-  "reason": "..."
-}
+{"measured_units": 8, "confidence": 0.94, "reason": "Eight completed cycles"}
 ```
 
-Business thresholds stay outside the model prompt. Domain code converts `value` into
-earned boosts and combined point progress. `POST /v1/pushup-verify` and its existing
-`{is_success, confidence, reason, repetition_count}` response remain supported for the
-older push-up clients.
+For repetitions the value is an integer. For time tasks the model returns playback
+seconds; the backend divides by four and rounds to one decimal place. Confidence
+must be between zero and one. The backend rejects extra fields, invalid values and
+incomplete responses. It returns a receipt containing `measuredUnits`, the task
+snapshot and reward eligibility. Rewards are calculated outside the model.
 
-The generic contract deliberately has no confidence field. The classifier must either
-return one supported exercise with its raw measurement or return `unsupported`; the
-client does not carry an unused confidence signal.
+There is no classifier or push-up-specific evaluator, and no legacy shared-secret
+endpoint. Historical `repetition_count` and classifier JSON are not accepted.
 
-The preprocessor still samples at `MODEL_SAMPLE_FPS=4` using `fps=4,setpts=N/1/TB`.
-Video is resized proportionally to a 720-pixel short edge (1280×720 for 16:9
-landscape, 720×1280 for portrait), then encoded as H.264 at CRF 23 without audio.
-Gemini 3.8 Flash uses medium reasoning with a 16,384-token output allowance,
-including reasoning tokens. `/health` exposes these active verification settings.
-For planks, the model reports the visually measured densified playback seconds and the
-server divides by four and rounds to the nearest original second. Keeping this simple
-arithmetic out of the model avoids inconsistent duration conversion. Repetition counts
-are not scaled.
+### Historical Android rewards
 
-### Android boundary
-
-`ExerciseChallengeCatalog` remains the client-facing list of stable IDs, metrics,
-recording limits, and set sizes. The camera Activity has no picker: its primary CTA is
-Start exercise, and every upload goes to `/v1/exercise-verify`. Sit-ups and other
-unrecognized clips fail closed without writing credit.
+Existing exercise IDs, saved receipts and correction history remain readable.
 
 Schema v11 stores shared progress in integer sixth-points, retaining legacy remainder fields
 for one-time conversion, plus a dedicated verified-push-up
@@ -375,10 +300,41 @@ IDs reset with the rest of the logical-day state at 04:00.
   - Vibration: Single 500ms haptic pulse fires at each newly reached set boundary (120m, 240m, etc.).
 - **Carryover & persistence (Schema 12):**
   - Unearned qualifying metres carry over across recordings via `DailyCounter.sprintMetersRemainder` (bounds: $0 \dots 119\text{m}$).
-  - Remainder resets to 0 at the logical day boundary (04:00) alongside unfinished exercise progress; persists through the 20:00 evening budget reset.
+  - Remainder resets to 0 at the configured daily boundary (04:00 by default) alongside unfinished exercise progress.
 - **Reward semantics:**
   - Every 120m qualifying distance earns 1 set (+3 browser minutes, counts towards 4 sets for YouTube unlock until 04:00, unlocks emergency skip on set 1).
   - Deduplication: `recordingId` is tracked in `creditedExerciseVerificationIds` to prevent duplicate awards.
   - Unreliable GPS fallback: When GPS was unreliable, user can confirm manual completion to receive exactly 1 set (deduplicated, no double crediting).
   - Destination unlock protection: Reopening YouTube from sprint results is blocked unless $\ge 4$ sets have been unlocked today.
   - Asynchronous save safety: `SprintChallengeActivity` captures immutable `SprintSaveState`, disables navigation and back presses during persistence, and only reflects awards upon confirmed storage commit.
+
+
+### Correcting the latest verified exercise
+
+The review screen and dashboard Last set card offer **Wrong result?** only for a
+saved supported exercise whose original verifier value was greater than zero.
+Zero, unsupported, and failed reviews do not authorize manual entry. The original
+positive measurement is retained even if a later correction reduces the count to zero.
+Opening the editor cancels the two-second automatic return; after closing it, the
+user continues manually. The editor supports ±1/2/3, an exact whole count, changing
+the supported exercise, and a local flag without changing credit.
+
+Schema 13 appends the latest exercise receipt to the existing state format. Edits
+atomically replace its contribution to shared points, earned/spendable rounds,
+YouTube eligibility, daily reports, activity events, and monthly push-up totals.
+Repeated saves of the same count do not add credit. Storage failures retain the
+previous result for retry. Older state files migrate without creating an editable
+receipt. Corrections are limited to the latest saved camera set in the same budget
+period: the configured daily reset closes editing, while the
+Last set card remains visible. A new positive camera result replaces that card.
+
+Schema 14 appends a permanent local correction history to the same state
+transaction. Every saved edit that actually changes the count or the exercise type
+appends an immutable entry recording the correction time in epoch milliseconds,
+the receipt's verification ID, the immutable reviewer count and type, and the
+corrected count and type. Both types are stored as stable wire strings (exercise
+IDs today) so other validation kinds can reuse the entry later. Re-saving
+identical values and flag-only marks add no entry. The history survives restarts,
+newer recordings, both daily resets, and report-history clearing with no age or
+count truncation; only deleting the app's data or uninstalling removes it. There
+is no online sync, export, or history UI yet.

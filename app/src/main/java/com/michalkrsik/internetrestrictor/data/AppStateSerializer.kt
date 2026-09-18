@@ -1,10 +1,14 @@
 package com.michalkrsik.internetrestrictor.data
 
 import androidx.datastore.core.CorruptionException
+import com.michalkrsik.internetrestrictor.domain.ExerciseReceipt
+import com.michalkrsik.internetrestrictor.domain.ExerciseId
+import com.michalkrsik.internetrestrictor.domain.ExercisePolicies
 import androidx.datastore.core.Serializer
 import com.michalkrsik.internetrestrictor.domain.ActivityEvent
 import com.michalkrsik.internetrestrictor.domain.ActivityEventType
 import com.michalkrsik.internetrestrictor.domain.BudgetPeriod
+import com.michalkrsik.internetrestrictor.domain.CorrectionEvent
 import com.michalkrsik.internetrestrictor.domain.DailyCounter
 import com.michalkrsik.internetrestrictor.domain.DailyUsageReport
 import com.michalkrsik.internetrestrictor.domain.DEFAULT_SESSION_MINUTES
@@ -33,6 +37,11 @@ import java.io.DataOutputStream
 import java.io.EOFException
 import java.io.InputStream
 import java.io.OutputStream
+import org.json.JSONObject
+import com.michalkrsik.internetrestrictor.domain.AppConfiguration
+import com.michalkrsik.internetrestrictor.domain.ConfigurationSettings
+import com.michalkrsik.internetrestrictor.domain.validationError
+import com.michalkrsik.internetrestrictor.domain.validTaskMeasurement
 
 object AppStateSerializer : Serializer<PersistedState> {
     private const val MAGIC = 0x49525354 // IRST
@@ -64,7 +73,7 @@ object AppStateSerializer : Serializer<PersistedState> {
             val onboardingCompleted = source.readBoolean()
             val sessionMinutes = if (schema >= 4) {
                 val count = source.readInt()
-                if (count != DEFAULT_SESSION_MINUTES.size) {
+                if (count !in 1..6 || (schema < 15 && count != DEFAULT_SESSION_MINUTES.size)) {
                     throw CorruptionException("Invalid session preset count")
                 }
                 List(count) { source.readLong() }
@@ -135,7 +144,7 @@ object AppStateSerializer : Serializer<PersistedState> {
             val emergencySkipsUsed = source.readLong()
             val pushupRepetitionRemainder = if (schema >= 7) source.readLong() else 0L
             val spendableBudgetRounds = if (schema >= 8) source.readLong() else earnedBudgetRounds
-            val eveningResetApplied = if (schema >= 8) source.readBoolean() else false
+            val legacyEveningResetApplied = if (schema >= 8) source.readBoolean() else false
             val verifiedPushups: Long
             val plankSecondRemainder: Long
             val machineRepetitionRemainder: Long
@@ -165,7 +174,7 @@ object AppStateSerializer : Serializer<PersistedState> {
                 emergencySkipsUsed = emergencySkipsUsed,
                 pushupRepetitionRemainder = pushupRepetitionRemainder,
                 spendableBudgetRounds = spendableBudgetRounds,
-                eveningResetApplied = eveningResetApplied,
+                legacyEveningResetApplied = legacyEveningResetApplied,
                 plankSecondRemainder = plankSecondRemainder,
                 machineRepetitionRemainder = machineRepetitionRemainder,
                 verifiedPushups = verifiedPushups,
@@ -231,7 +240,35 @@ object AppStateSerializer : Serializer<PersistedState> {
                     )
                 }
             } else emptyList()
-            val state = PersistedState(
+            val lastExercise = if (schema >= 13 && source.readBoolean()) ExerciseReceipt(
+                id = source.readUTF(), dayKey = source.readUTF(), recordedAtWallMs = source.readLong(),
+                originalExercise = source.readEnum<ExerciseId>(), originalValue = source.readLong(),
+                exercise = source.readEnum<ExerciseId>(), value = source.readLong(),
+                pointsBefore = source.readLong(), awardedSets = source.readLong(),
+                legacyEveningResetApplied = source.readBoolean(), flagged = source.readBoolean(),
+                corrected = source.readBoolean(),
+            ) else null
+            val correctionHistory = if (schema >= 14) {
+                // The count is untrusted: reject negatives, then decode incrementally so a
+                // corrupt large count fails on EOF instead of preallocating a huge list.
+                val count = source.readBoundedCount("correction events", Int.MAX_VALUE)
+                val events = ArrayList<CorrectionEvent>()
+                repeat(count) {
+                    events += CorrectionEvent(
+                        id = source.readUTF(),
+                        receiptId = source.readUTF(),
+                        correctedAtWallMs = source.readLong(),
+                        originalType = source.readUTF(),
+                        originalValue = source.readLong(),
+                        correctedType = source.readUTF(),
+                        correctedValue = source.readLong(),
+                    )
+                }
+                events
+            } else emptyList()
+            var state = PersistedState(
+                lastExercise = lastExercise,
+                correctionHistory = correctionHistory,
                 schemaVersion = RESTRICTOR_SCHEMA_VERSION,
                 stateRevision = revision,
                 settings = settings,
@@ -246,6 +283,14 @@ object AppStateSerializer : Serializer<PersistedState> {
                 offUsageReminder = reminder,
                 currentVisitGraceActive = currentVisitGraceActive,
             )
+            if (schema >= 15) {
+                val bytes = source.readBoundedCount("v1 state bytes", 32 * 1024 * 1024)
+                val encoded = ByteArray(bytes)
+                source.readFully(encoded)
+                state = ConfigurationJson.withStateJson(state, JSONObject(encoded.toString(Charsets.UTF_8)))
+            } else {
+                state = state.copy(configuration = AppConfiguration(settings = ConfigurationSettings(sessionMinutes = state.settings.sessionMinutes)))
+            }
             validate(state)
             return state
         } catch (error: CorruptionException) {
@@ -296,7 +341,7 @@ object AppStateSerializer : Serializer<PersistedState> {
             target.writeLong(emergencySkipsUsed)
             target.writeLong(pushupRepetitionRemainder)
             target.writeLong(spendableBudgetRounds)
-            target.writeBoolean(eveningResetApplied)
+            target.writeBoolean(legacyEveningResetApplied)
             target.writeLong(verifiedPushups)
             target.writeLong(plankSecondRemainder)
             target.writeLong(machineRepetitionRemainder)
@@ -340,12 +385,59 @@ object AppStateSerializer : Serializer<PersistedState> {
             target.writeUTF(cycle.cycleStartDate)
             target.writeLong(cycle.totalPushups)
         }
+        target.writeBoolean(t.lastExercise != null)
+        t.lastExercise?.let {
+            target.writeUTF(it.id)
+            target.writeUTF(it.dayKey)
+            target.writeLong(it.recordedAtWallMs)
+            target.writeInt(it.originalExercise.ordinal)
+            target.writeLong(it.originalValue)
+            target.writeInt(it.exercise.ordinal)
+            target.writeLong(it.value)
+            target.writeLong(it.pointsBefore)
+            target.writeLong(it.awardedSets)
+            target.writeBoolean(it.legacyEveningResetApplied)
+            target.writeBoolean(it.flagged)
+            target.writeBoolean(it.corrected)
+        }
+        target.writeInt(t.correctionHistory.size)
+        t.correctionHistory.forEach {
+            target.writeUTF(it.id)
+            target.writeUTF(it.receiptId)
+            target.writeLong(it.correctedAtWallMs)
+            target.writeUTF(it.originalType)
+            target.writeLong(it.originalValue)
+            target.writeUTF(it.correctedType)
+            target.writeLong(it.correctedValue)
+        }
+        val v1 = ConfigurationJson.stateJson(t).toString().toByteArray(Charsets.UTF_8)
+        require(v1.size <= 32 * 1024 * 1024) { "V1 state is too large" }
+        target.writeInt(v1.size)
+        target.write(v1)
         target.flush()
     }
 
     private fun validate(state: PersistedState) {
         fun invalid(message: String): Nothing = throw CorruptionException(message)
         if (state.schemaVersion != RESTRICTOR_SCHEMA_VERSION) invalid("Wrong schema")
+        state.lastExercise?.let {
+            if (it.id.isBlank() || it.id.length > 128 || it.dayKey.isBlank() || it.recordedAtWallMs < 0 ||
+                it.originalValue <= 0 || it.value < 0 ||
+                ExercisePolicies.find(it.originalExercise)?.credited != true ||
+                ExercisePolicies.find(it.exercise)?.credited != true ||
+                it.pointsBefore !in 0 until EXERCISE_POINT_SIXTHS_PER_BOOST ||
+                it.awardedSets !in 0..MAX_SAFE_BUDGET_ROUNDS) invalid("Invalid exercise receipt")
+        }
+        state.configuration.validationError()?.let { invalid(it) }
+        if (state.lastRewardResetWallMs < 0 || state.lastDailyRewardResetWallMs < 0 || !state.taskCreditProgress.valid() || state.taskCreditProgress.whole != 0L ||
+            !state.taskProgressBase.valid() || state.taskProgressBase.whole != 0L || state.taskReceipts.size > 10_000 ||
+            state.taskReceipts.map { it.measurement.id }.distinct().size != state.taskReceipts.size ||
+            state.dailyCounter.grantedBudgetMinutes?.let { it !in 0..com.michalkrsik.internetrestrictor.domain.MAX_SAFE_MINUTES } == true) invalid("Invalid task accounting")
+        state.taskReceipts.forEach {
+            if (it.measurement.validationError() != null || !validTaskMeasurement(it.valueText) ||
+                java.math.BigDecimal(it.valueText).toLong() != it.value ||
+                it.value !in 0..1_000_000 || it.awardedCredits < 0 || it.awardedMinutes < 0) invalid("Invalid saved task receipt")
+        }
         if (state.stateRevision < 0) invalid("Negative revision")
         if (!state.settings.enforcementEnabled || state.settings.pauseUntilWallMs != null) {
             invalid("Protection must remain enabled")
@@ -356,7 +448,7 @@ object AppStateSerializer : Serializer<PersistedState> {
             invalid("Invalid setting value")
         }
         if (
-            state.settings.sessionMinutes.size != DEFAULT_SESSION_MINUTES.size ||
+            state.settings.sessionMinutes.size !in 1..6 ||
             state.settings.sessionMinutes.any { it !in MIN_SESSION_MINUTES..MAX_SESSION_MINUTES }
         ) invalid("Invalid session presets")
         if (state.dailyUsage.usedMs < 0) invalid("Negative usage")
@@ -415,6 +507,16 @@ object AppStateSerializer : Serializer<PersistedState> {
             ) {
                 invalid("Invalid activity event")
             }
+        }
+        state.correctionHistory.forEach {
+            if (
+                it.id.isBlank() || it.id.length > 128 ||
+                it.receiptId.isBlank() || it.receiptId.length > 128 ||
+                it.correctedAtWallMs < 0 ||
+                it.originalType.isBlank() || it.originalType.length > 128 ||
+                it.correctedType.isBlank() || it.correctedType.length > 128 ||
+                it.originalValue <= 0 || it.correctedValue < 0
+            ) invalid("Invalid correction event")
         }
         if (state.monthlyPushupCycles.size > 10_000) invalid("Too many monthly cycles")
         var previousCycleStart: String? = null

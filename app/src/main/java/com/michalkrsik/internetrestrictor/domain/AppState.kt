@@ -35,7 +35,7 @@ fun protectedTargetForPackage(packageName: String?): ProtectedTarget? = when {
 
 fun isProtectedTargetPackage(packageName: String?): Boolean =
     protectedTargetForPackage(packageName) != null
-const val RESTRICTOR_SCHEMA_VERSION = 12
+const val RESTRICTOR_SCHEMA_VERSION = 15
 const val MINUTE_MS = 60_000L
 const val HOUR_MS = 60L * MINUTE_MS
 const val DAY_MS = 24L * HOUR_MS
@@ -52,7 +52,6 @@ const val MIN_SPRINT_AVERAGE_SPEED_KMH = 15.0
 const val YOUTUBE_UNLOCK_SETS = 4L
 const val MAX_DAILY_CREDITED_EXERCISE_VERIFICATIONS = 256
 const val EMERGENCY_SKIP_DAILY_LIMIT = 1L
-const val EVENING_BUDGET_RESET_HOUR = 20
 const val DAILY_RESET_HOUR = 4
 const val MIN_SESSION_MINUTES = 1L
 const val MAX_SESSION_MINUTES = 120L
@@ -166,12 +165,15 @@ data class DailyCounter(
     val exercisePointSixths: Long = 0,
     val pushupRepetitionRemainder: Long = 0,
     val spendableBudgetRounds: Long = 0,
-    val eveningResetApplied: Boolean = false,
+    // Inert compatibility marker for old saved balances and exercise receipts.
+    val legacyEveningResetApplied: Boolean = false,
     val plankSecondRemainder: Long = 0,
     val machineRepetitionRemainder: Long = 0,
     val verifiedPushups: Long = 0,
     val creditedExerciseVerificationIds: List<String> = emptyList(),
     val sprintMetersRemainder: Long = 0,
+    // Null keeps old installations' fixed three-minute accounting until v1 is applied.
+    val grantedBudgetMinutes: Long? = null,
 )
 
 data class MonthlyPushupCycle(
@@ -186,8 +188,45 @@ data class RuntimeMetadata(
     val lastKnownForegroundClass: ForegroundClass = ForegroundClass.OTHER,
 )
 
+data class ExerciseReceipt(
+    val id: String,
+    val dayKey: String,
+    val recordedAtWallMs: Long,
+    val originalExercise: ExerciseId,
+    val originalValue: Long,
+    val exercise: ExerciseId = originalExercise,
+    val value: Long = originalValue,
+    val pointsBefore: Long,
+    val awardedSets: Long,
+    val legacyEveningResetApplied: Boolean,
+    val flagged: Boolean = false,
+    val corrected: Boolean = false,
+)
+
+fun ExerciseReceipt.canCorrect(counter: DailyCounter): Boolean =
+    originalValue > 0 && ExercisePolicies.find(originalExercise)?.credited == true &&
+        dayKey == counter.localDayKey && legacyEveningResetApplied == counter.legacyEveningResetApplied &&
+        id in counter.creditedExerciseVerificationIds
+
+/**
+ * Immutable record of one saved correction that actually changed the count or the
+ * validation type. Original fields always mean the reviewer's measurement, never the
+ * previous manual value. Types are stable wire identifiers (ExerciseId.wireId today)
+ * so other validation kinds can reuse the entry later.
+ */
+data class CorrectionEvent(
+    val id: String,
+    val receiptId: String,
+    val correctedAtWallMs: Long,
+    val originalType: String,
+    val originalValue: Long,
+    val correctedType: String,
+    val correctedValue: Long,
+)
+
 data class PersistedState(
     val schemaVersion: Int = RESTRICTOR_SCHEMA_VERSION,
+    val lastExercise: ExerciseReceipt? = null,
     val stateRevision: Long = 0,
     val settings: RestrictorSettings = RestrictorSettings(),
     val dailyUsage: UsagePeriodState = UsagePeriodState(BudgetPeriod.DAILY),
@@ -200,6 +239,15 @@ data class PersistedState(
     val monthlyPushupCycles: List<MonthlyPushupCycle> = emptyList(),
     val offUsageReminder: OffUsageReminderState = OffUsageReminderState(),
     val currentVisitGraceActive: Boolean = false,
+    val correctionHistory: List<CorrectionEvent> = emptyList(),
+    val configuration: AppConfiguration = AppConfiguration(),
+    val hasAppliedServerConfiguration: Boolean = false,
+    val taskReceipts: List<SavedTaskReceipt> = emptyList(),
+    val taskCreditProgress: CreditFraction = CreditFraction(),
+    val taskProgressBase: CreditFraction = CreditFraction(),
+    val taskBudgetKey: String = "",
+    val lastRewardResetWallMs: Long = 0,
+    val lastDailyRewardResetWallMs: Long = 0,
 )
 
 data class RuntimeSignals(
@@ -283,7 +331,19 @@ data class StateSnapshot(
     val wallNowMs: Long,
     val isLoaded: Boolean,
     val lastErrorMessage: String? = null,
+    val lastExercise: ExerciseReceipt? = null,
+    val canCorrectLastExercise: Boolean = false,
+    val configuration: AppConfiguration = AppConfiguration(),
+    val taskReceipts: List<SavedTaskReceipt> = emptyList(),
+    val taskCreditProgress: Double = 0.0,
+    val hasAppliedServerConfiguration: Boolean = false,
+    val recentActivityEvents: List<ActivityEvent> = emptyList(),
+    val recentCorrectionEvents: List<CorrectionEvent> = emptyList(),
+    val lastRewardResetWallMs: Long = 0,
+    val modifiableTaskReceiptIds: Set<String> = emptySet(),
+    val lastDailyRewardResetWallMs: Long = 0,
 ) {
+    val appliedConfigRevision: Long get() = if (hasAppliedServerConfiguration) configuration.revision else -1
     val usesFullGate: Boolean get() = canonicalMode.traits.overlay == ModeOverlay.GATE
     val usesBadge: Boolean get() = canonicalMode.traits.overlay == ModeOverlay.BADGE
 }
