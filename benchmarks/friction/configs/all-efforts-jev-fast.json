@@ -1,0 +1,351 @@
+{
+  "suite": "../suites/actions-v1.json",
+  "seed": 20260920,
+  "repeats": 3,
+  "warmups": 1,
+  "maxUsd": 100,
+  "maxCalls": 8000,
+  "timeoutMs": 180000,
+  "strategies": [
+    {
+      "id": "jev-astra-low-fast",
+      "kind": "cascade",
+      "steps": [
+        {
+          "kind": "evaluator",
+          "model": "typesafe-ai/jev",
+          "threshold": 0.9,
+          "inputPerMillion": 0.04,
+          "outputPerMillion": 0,
+          "timeoutMs": 3000
+        },
+        {
+          "kind": "llm",
+          "model": "gpt-6-astra",
+          "reasoning": "low",
+          "serviceTier": "fast"
+        }
+      ]
+    },
+    {
+      "id": "jev-astra-medium-fast",
+      "kind": "cascade",
+      "steps": [
+        {
+          "kind": "evaluator",
+          "model": "typesafe-ai/jev",
+          "threshold": 0.9,
+          "inputPerMillion": 0.04,
+          "outputPerMillion": 0,
+          "timeoutMs": 3000
+        },
+        {
+          "kind": "llm",
+          "model": "gpt-6-astra",
+          "reasoning": "medium",
+          "serviceTier": "fast"
+        }
+      ]
+    },
+    {
+      "id": "jev-astra-high-fast",
+      "kind": "cascade",
+      "steps": [
+        {
+          "kind": "evaluator",
+          "model": "typesafe-ai/jev",
+          "threshold": 0.9,
+          "inputPerMillion": 0.04,
+          "outputPerMillion": 0,
+          "timeoutMs": 3000
+        },
+        {
+          "kind": "llm",
+          "model": "gpt-6-astra",
+          "reasoning": "high",
+          "serviceTier": "fast"
+        }
+      ]
+    },
+    {
+      "id": "jev-astra-xhigh-fast",
+      "kind": "cascade",
+      "steps": [
+        {
+          "kind": "evaluator",
+          "model": "typesafe-ai/jev",
+          "threshold": 0.9,
+          "inputPerMillion": 0.04,
+          "outputPerMillion": 0,
+          "timeoutMs": 3000
+        },
+        {
+          "kind": "llm",
+          "model": "gpt-6-astra",
+          "reasoning": "xhigh",
+          "serviceTier": "fast"
+        }
+      ]
+    },
+    {
+      "id": "jev-astra-max-fast",
+      "kind": "cascade",
+      "steps": [
+        {
+          "kind": "evaluator",
+          "model": "typesafe-ai/jev",
+          "threshold": 0.9,
+          "inputPerMillion": 0.04,
+          "outputPerMillion": 0,
+          "timeoutMs": 3000
+        },
+        {
+          "kind": "llm",
+          "model": "gpt-6-astra",
+          "reasoning": "max",
+          "serviceTier": "fast"
+        }
+      ]
+    },
+    {
+      "id": "jev-luna-none-fast",
+      "kind": "cascade",
+      "steps": [
+        {
+          "kind": "evaluator",
+          "model": "typesafe-ai/jev",
+          "threshold": 0.9,
+          "inputPerMillion": 0.04,
+          "outputPerMillion": 0,
+          "timeoutMs": 3000
+        },
+        {
+          "kind": "llm",
+          "model": "gpt-5.6-luna",
+          "reasoning": "none",
+          "serviceTier": "fast"
+        }
+      ]
+    },
+    {
+      "id": "jev-luna-low-fast",
+      "kind": "cascade",
+      "steps": [
+        {
+          "kind": "evaluator",
+          "model": "typesafe-ai/jev",
+          "threshold": 0.9,
+          "inputPerMillion": 0.04,
+          "outputPerMillion": 0,
+          "timeoutMs": 3000
+        },
+        {
+          "kind": "llm",
+          "model": "gpt-5.6-luna",
+          "reasoning": "low",
+          "serviceTier": "fast"
+        }
+      ]
+    },
+    {
+      "id": "jev-luna-medium-fast",
+      "kind": "cascade",
+      "steps": [
+        {
+          "kind": "evaluator",
+          "model": "typesafe-ai/jev",
+          "threshold": 0.9,
+          "inputPerMillion": 0.04,
+          "outputPerMillion": 0,
+          "timeoutMs": 3000
+        },
+        {
+          "kind": "llm",
+          "model": "gpt-5.6-luna",
+          "reasoning": "medium",
+          "serviceTier": "fast"
+        }
+      ]
+    },
+    {
+      "id": "jev-luna-high-fast",
+      "kind": "cascade",
+      "steps": [
+        {
+          "kind": "evaluator",
+          "model": "typesafe-ai/jev",
+          "threshold": 0.9,
+          "inputPerMillion": 0.04,
+          "outputPerMillion": 0,
+          "timeoutMs": 3000
+        },
+        {
+          "kind": "llm",
+          "model": "gpt-5.6-luna",
+          "reasoning": "high",
+          "serviceTier": "fast"
+        }
+      ]
+    },
+    {
+      "id": "jev-luna-xhigh-fast",
+      "kind": "cascade",
+      "steps": [
+        {
+          "kind": "evaluator",
+          "model": "typesafe-ai/jev",
+          "threshold": 0.9,
+          "inputPerMillion": 0.04,
+          "outputPerMillion": 0,
+          "timeoutMs": 3000
+        },
+        {
+          "kind": "llm",
+          "model": "gpt-5.6-luna",
+          "reasoning": "xhigh",
+          "serviceTier": "fast"
+        }
+      ]
+    },
+    {
+      "id": "jev-luna-max-fast",
+      "kind": "cascade",
+      "steps": [
+        {
+          "kind": "evaluator",
+          "model": "typesafe-ai/jev",
+          "threshold": 0.9,
+          "inputPerMillion": 0.04,
+          "outputPerMillion": 0,
+          "timeoutMs": 3000
+        },
+        {
+          "kind": "llm",
+          "model": "gpt-5.6-luna",
+          "reasoning": "max",
+          "serviceTier": "fast"
+        }
+      ]
+    },
+    {
+      "id": "jev-terra-none-fast",
+      "kind": "cascade",
+      "steps": [
+        {
+          "kind": "evaluator",
+          "model": "typesafe-ai/jev",
+          "threshold": 0.9,
+          "inputPerMillion": 0.04,
+          "outputPerMillion": 0,
+          "timeoutMs": 3000
+        },
+        {
+          "kind": "llm",
+          "model": "gpt-5.6-terra",
+          "reasoning": "none",
+          "serviceTier": "fast"
+        }
+      ]
+    },
+    {
+      "id": "jev-terra-low-fast",
+      "kind": "cascade",
+      "steps": [
+        {
+          "kind": "evaluator",
+          "model": "typesafe-ai/jev",
+          "threshold": 0.9,
+          "inputPerMillion": 0.04,
+          "outputPerMillion": 0,
+          "timeoutMs": 3000
+        },
+        {
+          "kind": "llm",
+          "model": "gpt-5.6-terra",
+          "reasoning": "low",
+          "serviceTier": "fast"
+        }
+      ]
+    },
+    {
+      "id": "jev-terra-medium-fast",
+      "kind": "cascade",
+      "steps": [
+        {
+          "kind": "evaluator",
+          "model": "typesafe-ai/jev",
+          "threshold": 0.9,
+          "inputPerMillion": 0.04,
+          "outputPerMillion": 0,
+          "timeoutMs": 3000
+        },
+        {
+          "kind": "llm",
+          "model": "gpt-5.6-terra",
+          "reasoning": "medium",
+          "serviceTier": "fast"
+        }
+      ]
+    },
+    {
+      "id": "jev-terra-high-fast",
+      "kind": "cascade",
+      "steps": [
+        {
+          "kind": "evaluator",
+          "model": "typesafe-ai/jev",
+          "threshold": 0.9,
+          "inputPerMillion": 0.04,
+          "outputPerMillion": 0,
+          "timeoutMs": 3000
+        },
+        {
+          "kind": "llm",
+          "model": "gpt-5.6-terra",
+          "reasoning": "high",
+          "serviceTier": "fast"
+        }
+      ]
+    },
+    {
+      "id": "jev-terra-xhigh-fast",
+      "kind": "cascade",
+      "steps": [
+        {
+          "kind": "evaluator",
+          "model": "typesafe-ai/jev",
+          "threshold": 0.9,
+          "inputPerMillion": 0.04,
+          "outputPerMillion": 0,
+          "timeoutMs": 3000
+        },
+        {
+          "kind": "llm",
+          "model": "gpt-5.6-terra",
+          "reasoning": "xhigh",
+          "serviceTier": "fast"
+        }
+      ]
+    },
+    {
+      "id": "jev-terra-max-fast",
+      "kind": "cascade",
+      "steps": [
+        {
+          "kind": "evaluator",
+          "model": "typesafe-ai/jev",
+          "threshold": 0.9,
+          "inputPerMillion": 0.04,
+          "outputPerMillion": 0,
+          "timeoutMs": 3000
+        },
+        {
+          "kind": "llm",
+          "model": "gpt-5.6-terra",
+          "reasoning": "max",
+          "serviceTier": "fast"
+        }
+      ]
+    }
+  ]
+}

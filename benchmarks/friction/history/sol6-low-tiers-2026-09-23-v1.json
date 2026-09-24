@@ -1,0 +1,119 @@
+{
+  "runId": "sol6-low-tiers-2026-09-23-v1",
+  "status": "complete",
+  "startedAt": "2026-09-23T15:18:22.768Z",
+  "finishedAt": "2026-09-23T15:19:50.382Z",
+  "suiteVersion": "friction-actions-v1",
+  "suiteHash": "20acb251e9b8bb7ecf87f2698aa6da689b76b603478d85266ecd2e77f51d89d5",
+  "configHash": "5f259149ece01cd76d36e9d03ef4d27ccffe629395164d2acdcb0b6d4470420d",
+  "sourceHash": "9dea5cb0a7b864a8f09f1f07f41cff00426b42dfe05bfea4fa1227311e9abe83",
+  "resultsHash": "0e49959fa65b4c0483a9360ba5f71e72f9089ffd31b48e875b17c2579ace645f",
+  "config": {
+    "suite": "../suites/actions-v1.json",
+    "seed": 20260920,
+    "repeats": 3,
+    "warmups": 1,
+    "maxUsd": 3,
+    "maxCalls": 350,
+    "timeoutMs": 180000,
+    "strategies": [
+      {
+        "id": "jev-sol6-low-fast",
+        "kind": "cascade",
+        "steps": [
+          {
+            "kind": "evaluator",
+            "model": "typesafe-ai/jev",
+            "threshold": 0.9,
+            "inputPerMillion": 0.04,
+            "outputPerMillion": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "llm",
+            "model": "gpt-6-sol",
+            "reasoning": "low",
+            "serviceTier": "fast"
+          }
+        ]
+      },
+      {
+        "id": "jev-sol6-low-standard",
+        "kind": "cascade",
+        "steps": [
+          {
+            "kind": "evaluator",
+            "model": "typesafe-ai/jev",
+            "threshold": 0.9,
+            "inputPerMillion": 0.04,
+            "outputPerMillion": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "llm",
+            "model": "gpt-6-sol",
+            "reasoning": "low",
+            "serviceTier": "default"
+          }
+        ]
+      }
+    ],
+    "cases": [
+      "rename",
+      "create-complete-task",
+      "mixed-unavailable",
+      "ambiguous",
+      "remove-middle-task",
+      "session-presets"
+    ]
+  },
+  "totalUsd": 0.17312834000000002,
+  "scoredTrials": 36,
+  "summary": [
+    {
+      "id": "jev-sol6-low-fast",
+      "trials": 18,
+      "actions": 12,
+      "passed": 12,
+      "decisionCorrect": 12,
+      "abstained": 0,
+      "errors": 0,
+      "wrong": 0,
+      "auditFailures": 0,
+      "guardSafe": 6,
+      "guards": 6,
+      "humanReview": 6,
+      "coverage": 1,
+      "medianAllMs": 1800.5529160000006,
+      "p95AllMs": 2933.2165000000095,
+      "medianPassedActionMs": 1800.5529160000006,
+      "p95PassedActionMs": 2707.4360829999987,
+      "estimatedUsd": 0.09603224000000002,
+      "costPerPassedAction": 0.008002686666666668,
+      "providerCalls": 36
+    },
+    {
+      "id": "jev-sol6-low-standard",
+      "trials": 18,
+      "actions": 12,
+      "passed": 12,
+      "decisionCorrect": 12,
+      "abstained": 0,
+      "errors": 0,
+      "wrong": 0,
+      "auditFailures": 0,
+      "guardSafe": 6,
+      "guards": 6,
+      "humanReview": 6,
+      "coverage": 1,
+      "medianAllMs": 2343.6489589999983,
+      "p95AllMs": 3807.9640839999993,
+      "medianPassedActionMs": 2290.792957999998,
+      "p95PassedActionMs": 3807.9640839999993,
+      "estimatedUsd": 0.05269707999999999,
+      "costPerPassedAction": 0.0043914233333333325,
+      "providerCalls": 36
+    }
+  ],
+  "evidencePath": "runs/sol6-low-tiers-2026-09-23-v1"
+}

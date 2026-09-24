@@ -47,3 +47,18 @@ user-specific values: prompts receive current app context. Preserve the routing
 rule: answer covered questions directly; retrieve details only when needed;
 always delegate changes, approvals and history requests to the backend.
 The app-docs tests verify that both prompts contain this maintained overview.
+
+
+## Benchmark history
+
+For questions about previous model benchmarks or comparisons, read
+[benchmarks/friction/RESULTS.md](benchmarks/friction/RESULTS.md) first, then the
+linked history record and full evidence as needed. Refer to runs by their saved
+run ID. The runner automatically retains immutable summaries in
+`benchmarks/friction/history/` and updates the index. Preserve existing results;
+never treat smoke tests or partial runs as a reliable model ranking.
+
+For model benchmarks, only non-reasoning (`none`) and `low` reasoning are relevant
+to the user. Do not run higher efforts unless the user explicitly changes this
+preference. The Jev-first Fast comparison for these efforts is saved in
+`benchmarks/friction/configs/jev-up-to-low-fast.json`.

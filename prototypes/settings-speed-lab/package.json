@@ -1,1 +1,27 @@
-{"name":"friction-settings-speed-lab","private":true,"type":"module","scripts":{"freeze":"node freeze.mjs","start":"node serve.mjs","test":"node --test patch.test.mjs","benchmark":"node benchmark.mjs","benchmark:voice":"node voice-benchmark.mjs","report":"node report.mjs"},"devDependencies":{"playwright":"^1.55.0"}}
+{
+  "name": "friction-settings-speed-lab",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "freeze": "node freeze.mjs",
+    "start": "node serve.mjs",
+    "test": "node --test patch.test.mjs",
+    "benchmark": "node benchmark.mjs",
+    "benchmark:voice": "node voice-benchmark.mjs",
+    "report": "node report.mjs",
+    "jev:start": "node jev/serve.mjs",
+    "jev:test": "node --test jev/agent.test.mjs patch.test.mjs",
+    "jev:benchmark": "node jev/benchmark.mjs",
+    "jev:report": "node jev/report.mjs",
+    "jev:wide:test": "node --test jev/wide/*.test.mjs",
+    "jev:wide:run": "node jev/wide/run.mjs",
+    "jev:wide:report": "node jev/wide/report.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.55.0"
+  },
+  "dependencies": {
+    "@ai-sdk/gateway": "^4.0.86",
+    "ai": "^7.0.106"
+  }
+}

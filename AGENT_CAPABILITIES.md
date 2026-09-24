@@ -74,6 +74,57 @@ award the same recording twice. Uploads after the pinned daily period expires
 are history only. Corrections and eligible manual GPS completion also expire
 with the recording's reward period.
 
+## Jev and selected-model request routing
+
+When the server has `AI_GATEWAY_API_KEY`, text and delegated voice requests first
+use `typesafe-ai/jev` for explicit changes to `waitSeconds` (0–600),
+`minutesPerCredit` (1–120), `youtubeCredits` (1–100), `emergencyMinutes` (1–120),
+and pause/resume of existing tasks. Examples: “Set waiting time to 7 seconds”
+and “Pause walking and make each credit worth 6 minutes.” The existing approval
+and cancel paths bypass Jev. Jev only prepares reviews; it cannot save changes.
+
+The tested selection threshold is 0.9. Each numeric field has an explicit-change
+probability: at most 0.1 leaves it alone, at least 0.9 requires a value choice
+at least 0.9; uncertain results go to the selected assistant model. Scope and every task choice also
+require at least 0.9. This threshold is not a reliability guarantee. Numeric
+choices cover permitted integers up to 120 plus larger literal values in the
+request. Unsupported values, questions, ambiguous/mixed requests, new tasks,
+renaming and other fields use the selected assistant model (Astra Low Fast by default).
+
+Jev has a 3-second provider timeout and no retries. Provider errors, rejected
+outputs and unavailable gateway configuration use the selected assistant model. Fallback adds latency;
+there is no guaranteed speed improvement. The fallback prompt explains that Jev
+is a specialized non-generative option selector, and distinguishes unaccepted
+requests from provider failures and requests where Jev was not run. Service
+failure is not evidence of complexity. Rejected guesses and provider error text
+are not forwarded as instructions. The assistant is told to check the entire
+request, clarify missing choices, avoid substituting invalid values, and honor
+explanation-before-proposal conditions. Both routes share one active turn,
+current/pending configuration, validation, stale-review checks, review/approval,
+undo and Android acknowledgement. No additional callable app functions exist.
+
+## Assistant model preferences
+
+In Your setup → Assistant, users can select Sol 6 (`gpt-6-sol`), Astra (`gpt-6-astra`), Luna
+(`gpt-5.6-luna`) or Terra (`gpt-5.6-terra`). Sol 6, Luna and Terra offer Non-reasoning
+(`none`), Low, Medium, High, Extra high (`xhigh`) and Max. Astra offers Low through
+Max; it has no Non-reasoning option. All four support Standard (`default`) and
+Fast (`fast`) processing, verified against official pricing and live API calls.
+The default remains Astra / Low / Fast. Higher effort can take longer; Fast has
+higher token prices. Usage estimates use the actual model and returned tier.
+
+Save assistant settings persists `{model, reasoning, serviceTier}` per
+installation via authenticated `POST /api/v1/assistant-settings`. It takes effect
+on the next text or delegated voice request. Each active request keeps its
+starting selection. These preferences do not change app rules, reset time,
+balances, pending reviews or native configuration revisions, and do not need a
+phone acknowledgement. The selection is included in current agent context.
+This is a manual settings control, not a new callable agent function: the agent
+cannot change its model through `set_setting` or conversation. Jev still runs
+first within its existing scope. GPT-Live/Ripple voice audio and video judging
+keep their separate models. None/Low requests time out after 60 seconds; higher
+efforts after 180 seconds. Jev retains its separate 3-second timeout.
+
 ## Callable agent functions
 
 These five functions are exposed to the configuration agent. Voice delegates
@@ -85,7 +136,7 @@ requests to that same backend agent; it does not have separate settings powers.
 | `read_details` | Retrieves the shipped app guide by topic; `index` lists topics. `history` returns actual device records. See the runtime documentation section below. |
 | `propose_changes` | Creates/amends one grouped review with explicit operations. Keeps unrelated pending edits. Does not activate settings. Requires the expected configuration revision. |
 | `confirm_changes` | Saves the displayed proposal/version only after explicit user approval. Binds approval to the current review; duplicate confirmations do not reapply it. |
-| `cancel_changes` | Cancels pending work/review or undoes a saved group/card following an explicit cancel/undo request. Preserves unrelated later edits and reports conflicts. |
+| `cancel_changes` | Cancels pending work/review or restores the whole latest saved action following an explicit cancel/undo request. Older actions, individual saved cards, and undo itself cannot be undone. Cancel pending reviews first. Restores exact task order. |
 
 Operations accepted by `propose_changes`:
 
@@ -111,7 +162,7 @@ Example: configure 20 minutes at reset and move the daily reset to 06:30:
 
 The revision must come from current app context. The resulting review still
 needs the user's Apply action or explicit text/voice approval. Reviews stay in conversation order, with later replies beneath them. Completed
-reviews collapse to reopenable summaries with details and supported undo controls;
+reviews collapse to reopenable summaries with details and an undo control only for the latest saved action;
 pending reviews stay expanded. Recent earlier reviews remain accessible. The
 labelled microphone button starts voice chat. A short sound marks a ready
 connection; a compact microphone beside Send starts a call and becomes a stop icon to end
@@ -126,7 +177,7 @@ rewards. The agent has no standalone function to start a recording or preview.
 The in-app agent can call `read_details` with `topic: "index"` to discover the
 maintained [app guide](backend-v1/docs/app-guide.md), then retrieve a relevant
 topic. Topics: `purpose`, `settings`, `daily_budget`, `sessions`, `rewards`,
-`tasks`, `video`, `gps`, `corrections`, `youtube`, `emergency`, `review`, `offline`,
+`tasks`, `video`, `gps`, `corrections`, `youtube`, `emergency`, `assistant_settings`, `assistant_routing`, `review`, `offline`,
 `troubleshooting`, and `privacy`. `history` remains the separate live-data lookup.
 
 The backend packages and loads this guide through `backend-v1/app-docs.mjs`.
@@ -166,8 +217,9 @@ There is one conversation per installation, retaining at most 100 recent message
 (the UI receives the latest 30 and 12 reviews). Every configuration-agent request,
 including voice delegations and follow-up tool calls, has a conservative
 100,000-token context ceiling. It includes the full request, instructions,
-settings/reviews, tool definitions/results, framing and the 2,400-token output
-allowance. UTF-8 byte accounting deliberately overestimates text token usage.
+settings/reviews, tool definitions/results, framing and the output
+allowance (2,400 for None/Low, 8,192 for Medium, 16,384 for High and 32,768
+for Extra high/Max). UTF-8 byte accounting deliberately overestimates text token usage.
 Oldest complete exchanges are removed first, preserving the current request and
 fresh app state. Oversized required context is rejected before a provider call;
 manual controls remain usable. No additional threads or persistent model-side
@@ -209,3 +261,11 @@ ambiguous, or there is evidence of a code/document mismatch.
 - `app/src/main/java/com/michalkrsik/internetrestrictor/domain/RestrictionEngine.kt`, `PeriodCalculator.kt`: reset/budget enforcement.
 - `app/src/main/java/com/michalkrsik/internetrestrictor/data/ConfigurationJson.kt`, `AppStateSerializer.kt`: migration and saved state.
 - `app/src/main/java/com/michalkrsik/internetrestrictor/data/AgentStatistics.kt`: actual readable statistics and limitations.
+
+Undo is one level only: a saved request is one action even with several cards.
+The backend exposes `undoableChangeId` only for the latest saved action when no
+review is pending. Undo restores the previous saved configuration exactly,
+including task order. Afterwards older actions remain viewable but cannot be
+restored; a new save enables undo for that new action. Repeated requests are
+idempotent. Sol 6 supports Standard/Fast and none, low, medium, high, xhigh, max;
+the factory assistant default remains Astra Low Fast.

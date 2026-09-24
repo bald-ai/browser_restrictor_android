@@ -15,7 +15,7 @@ export async function createApp({dataDir=process.env.DATA_DIR||path.join(root,'d
   const url=new URL(req.url,'http://localhost'),json=(status,data)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(data));};
   try{
    const origin=req.headers.origin;if(origin){const expected=process.env.PUBLIC_BASE_URL||`${req.headers['x-forwarded-proto']==='https'?'https':'http'}://${req.headers.host}`;fail(origin===expected,'This request must come from the Friction app.',403);}
-   if(url.pathname==='/health'){json(200,{ok:true,service:'friction-v1',schema:1,models:{agent:'gpt-6-astra',voice:'gpt-live-1'},configured:{conversation:Boolean(openaiKey),video:Boolean(openrouterKey)},persistence:'file',time:Date.now()});return;}
+   if(url.pathname==='/health'){json(200,{ok:true,service:'friction-v1',schema:1,models:{agent:'gpt-6-astra',fastEdit:agent.jevEvaluator?'typesafe-ai/jev':null,voice:'gpt-live-1'},configured:{conversation:Boolean(openaiKey),video:Boolean(openrouterKey)},persistence:'file',time:Date.now()});return;}
    const files={'/':'index.html','/app':'index.html','/app.js':'app.js','/style.css':'style.css','/voice-client.js':'voice-client.js','/voice-cue.js':'voice-cue.js','/live-updates.js':'live-updates.js'};
    if(req.method==='GET'&&files[url.pathname]){const name=files[url.pathname];res.writeHead(200,{'Content-Type':name.endsWith('.html')?'text/html; charset=utf-8':name.endsWith('.css')?'text/css':'text/javascript','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' https://api.openai.com; media-src 'self' blob:; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"});res.end(await fs.readFile(path.join(root,'public',name)));return;}
    fail(url.pathname.startsWith('/api/v1/'),'Endpoint not found.',404);
@@ -33,6 +33,7 @@ export async function createApp({dataDir=process.env.DATA_DIR||path.join(root,'d
    const videoRoute=route.match(/^\/attempts\/([a-zA-Z0-9_-]+)\/video$/),raw=await readBody(req,videoRoute?76*1024*1024:12*1024*1024),body=videoRoute?null:JSON.parse(raw.toString()||'{}');
    if(route==='/ack'){json(200,await store.ack(install,body.revision,body.configHash));return;}
    if(route==='/statistics'){json(200,await store.statistics(install,body));return;}
+   if(route==='/assistant-settings'){json(200,await store.setAssistantSettings(install,body));return;}
    if(route==='/context'){json(200,await store.context(install,body.selectedCardId));return;}
    if(route==='/proposals'){json(201,await store.stage(install,body));return;}
    if(route==='/cancel'){json(200,await store.cancel(install,body));return;}

@@ -1,0 +1,111 @@
+{
+  "runId": "luna6-handoff-jev-fast-2026-09-23-v1",
+  "status": "complete",
+  "startedAt": "2026-09-23T14:58:30.094Z",
+  "finishedAt": "2026-09-23T15:01:16.822Z",
+  "suiteVersion": "friction-actions-v1",
+  "suiteHash": "20acb251e9b8bb7ecf87f2698aa6da689b76b603478d85266ecd2e77f51d89d5",
+  "configHash": "6fc3228cd9e63e0548175aaefe9d3502a194c6149546d49562e423ca464381ea",
+  "sourceHash": "1627f993616d3297089af407b987a14bb970e9668625a659fa7db24cc41574a1",
+  "resultsHash": "f92d3a59aacc34044dd893380c434db3f8c83fa5476eeaab442079da34752ec1",
+  "config": {
+    "suite": "../suites/actions-v1.json",
+    "seed": 20260920,
+    "repeats": 1,
+    "warmups": 1,
+    "maxUsd": 2,
+    "maxCalls": 350,
+    "timeoutMs": 180000,
+    "strategies": [
+      {
+        "id": "jev-luna6-none-fast",
+        "kind": "cascade",
+        "steps": [
+          {
+            "kind": "evaluator",
+            "model": "typesafe-ai/jev",
+            "threshold": 0.9,
+            "inputPerMillion": 0.04,
+            "outputPerMillion": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "llm",
+            "model": "gpt-6-luna",
+            "reasoning": "none",
+            "serviceTier": "fast"
+          }
+        ]
+      },
+      {
+        "id": "jev-luna6-low-fast",
+        "kind": "cascade",
+        "steps": [
+          {
+            "kind": "evaluator",
+            "model": "typesafe-ai/jev",
+            "threshold": 0.9,
+            "inputPerMillion": 0.04,
+            "outputPerMillion": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "llm",
+            "model": "gpt-6-luna",
+            "reasoning": "low",
+            "serviceTier": "fast"
+          }
+        ]
+      }
+    ]
+  },
+  "totalUsd": 0.06029942000000003,
+  "scoredTrials": 74,
+  "summary": [
+    {
+      "id": "jev-luna6-none-fast",
+      "trials": 37,
+      "actions": 26,
+      "passed": 25,
+      "decisionCorrect": 26,
+      "abstained": 0,
+      "errors": 0,
+      "wrong": 3,
+      "auditFailures": 1,
+      "guardSafe": 8,
+      "guards": 11,
+      "humanReview": 8,
+      "coverage": 1,
+      "medianAllMs": 1997.8542920000036,
+      "p95AllMs": 4664.843500000003,
+      "medianPassedActionMs": 1858.2679169999974,
+      "p95PassedActionMs": 4653.105333000003,
+      "estimatedUsd": 0.02853966,
+      "costPerPassedAction": 0.0011415864000000001,
+      "providerCalls": 75
+    },
+    {
+      "id": "jev-luna6-low-fast",
+      "trials": 37,
+      "actions": 26,
+      "passed": 25,
+      "decisionCorrect": 26,
+      "abstained": 0,
+      "errors": 0,
+      "wrong": 3,
+      "auditFailures": 1,
+      "guardSafe": 8,
+      "guards": 11,
+      "humanReview": 8,
+      "coverage": 1,
+      "medianAllMs": 2351.9165829999984,
+      "p95AllMs": 4154.660499999998,
+      "medianPassedActionMs": 1916.9724170000045,
+      "p95PassedActionMs": 2573.5210829999996,
+      "estimatedUsd": 0.029941459999999996,
+      "costPerPassedAction": 0.0011976583999999998,
+      "providerCalls": 73
+    }
+  ],
+  "evidencePath": "runs/luna6-handoff-jev-fast-2026-09-23-v1"
+}

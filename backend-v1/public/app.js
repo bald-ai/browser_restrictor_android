@@ -26,6 +26,7 @@ function stopUpdates(){updates?.stop();updates=null;clearInterval(pollTimer);cle
 window.addEventListener('pageshow',()=>{if(identity){startUpdates();refresh().catch(()=>{});}});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&identity){startUpdates();refresh().catch(()=>{});}});
 function render(){
+ renderAssistantSettings();
  $('application').textContent=state.applicationStatus==='applied'?'Applied on your phone · revision '+state.revision:window.FrictionNative?'Saved · waiting for your phone to apply revision '+state.revision:'Browser preview · changes wait for a connected Android installation';
  if(window.FrictionNative?.configChanged&&state.appliedRevision<state.revision&&(lastNativeRevision!==state.revision||Date.now()-lastNativeAt>5000)){lastNativeRevision=state.revision;lastNativeAt=Date.now();try{window.FrictionNative.configChanged();}catch{}}
  const p=currentProposal(),key=JSON.stringify({proposals:state.proposals,changes:state.changes,appliedRevision:state.appliedRevision,previewResults:state.previewResults});
@@ -51,33 +52,33 @@ function renderTimeline(){
  const events=[...state.messages.map(m=>({at:m.at,rank:m.role==='user'?0:2,message:m})),...state.proposals.map(p=>({at:p.createdAt,rank:1,proposal:p}))].sort((a,b)=>a.at-b.at||a.rank-b.rank);
  $('messages').innerHTML=events.map(e=>e.message?`<article class="message ${e.message.role==='user'?'user':'assistant'}"><span class="role">${e.message.role==='user'?'YOU':'FRICTION'}</span>${esc(e.message.text)}</article>`:e.proposal.id===currentProposal()?.id?'<div id="reviewSlot"></div>':historyReview(e.proposal,expanded.has(e.proposal.id))).join('');
  const slot=$('reviewSlot');if(slot)slot.replaceWith(review);else $('conversation').append(review);
- for(const d of document.querySelectorAll('[data-history-id]'))for(const b of d.querySelectorAll('[data-undo], [data-undo-request]'))b.onclick=()=>action(()=>api('/cancel',{proposalId:d.dataset.historyId,...(b.dataset.undo?{cardId:b.dataset.undo}:{}),operationId:crypto.randomUUID()}));
+ for(const d of document.querySelectorAll('[data-history-id]'))for(const b of d.querySelectorAll('[data-undo-request]'))b.onclick=()=>action(()=>api('/cancel',{proposalId:d.dataset.historyId,operationId:crypto.randomUUID()}));
 }
 function reviewStatus(p){const active=state.appliedRevision>=((state.changes||[]).find(c=>c.id===p.changeId)?.revision??Infinity);return p.status==='undone'?'UNDONE':p.status==='cancelled'?'CANCELLED':p.status==='saved'?(active?'APPLIED ON YOUR PHONE':'SAVED · WAITING FOR YOUR PHONE'):'REVIEW BEFORE APPLYING';}
-function historyReview(p,open){return `<details class="history-review" data-history-id="${esc(p.id)}" ${open?'open':''}><summary><span><span class="eyebrow">${reviewStatus(p)}</span><strong>${esc(p.title)}</strong><small>View changes${p.status==='saved'?' &amp; undo':''}</small></span><span class="disclosure" aria-hidden="true">⌄</span></summary><div class="history-cards">${reviewCards(p)}</div>${p.status==='saved'?'<button class="secondary wide" data-undo-request>Undo this request</button>':''}</details>`;}
+function canUndo(p){return p.status==='saved'&&p.changeId===state.undoableChangeId;}
+function historyReview(p,open){return `<details class="history-review" data-history-id="${esc(p.id)}" ${open?'open':''}><summary><span><span class="eyebrow">${reviewStatus(p)}</span><strong>${esc(p.title)}</strong><small>View changes${canUndo(p)?' &amp; undo':''}</small></span><span class="disclosure" aria-hidden="true">⌄</span></summary><div class="history-cards">${reviewCards(p)}</div>${canUndo(p)?'<button class="secondary wide" data-undo-request>Undo this request</button>':''}</details>`;}
 let reviewState='';
 function renderReview(p){$('review').hidden=!p;if(!p)return;const saved=p.status==='saved',undone=p.status==='undone';
  const status=reviewStatus(p);$('reviewTitle').textContent=p.title;$('reviewStatus').textContent=status;
  $('reviewSummaryStatus').textContent=status;$('reviewSummaryTitle').textContent=p.title;
  $('reviewDetails').classList.toggle('pending',p.status==='pending');
  const next=p.id+':'+p.status;if(reviewState!==next){$('reviewDetails').open=p.status==='pending';reviewState=next;}
- $('reviewDetails').querySelector('small').textContent=saved?'View changes & undo':'View changes';
+ $('reviewDetails').querySelector('small').textContent=canUndo(p)?'View changes & undo':'View changes';
  $('cards').innerHTML=reviewCards(p);
- $('reviewActions').innerHTML=p.status==='pending'?`<button class="primary wide" id="applyChanges">Apply ${p.cards.length===1?'change':`all ${p.cards.length} changes`}</button><button class="text-button" id="discardChanges">Cancel request</button><span class="status-note">You can also confirm by voice. Nothing changes until you approve.</span>`:saved?'<button class="secondary wide" id="undoChanges">Undo this request</button>':`<span class="status-note">${undone?'Previous values restored. Android will confirm when active.':'These changes were discarded.'}</span>`;
+ $('reviewActions').innerHTML=p.status==='pending'?`<button class="primary wide" id="applyChanges">Apply ${p.cards.length===1?'change':`all ${p.cards.length} changes`}</button><button class="text-button" id="discardChanges">Cancel request</button><span class="status-note">You can also confirm by voice. Nothing changes until you approve.</span>`:canUndo(p)?'<button class="secondary wide" id="undoChanges">Undo this request</button>':`<span class="status-note">${undone?'Previous values restored. Android will confirm when active.':saved?'Only the latest saved action can be undone.':'These changes were discarded.'}</span>`;
  $('applyChanges')?.addEventListener('click',()=>action(async()=>{const b=$('applyChanges');b.disabled=true;b.textContent='Applying…';await api(`/proposals/${p.id}/confirm`,{version:p.version,operationId:crypto.randomUUID()});}));
  $('discardChanges')?.addEventListener('click',()=>action(()=>api('/cancel',{proposalId:p.id,operationId:crypto.randomUUID()})));$('undoChanges')?.addEventListener('click',()=>action(()=>api('/cancel',{proposalId:p.id,operationId:crypto.randomUUID()})));
  for(const b of $('review').querySelectorAll('[data-preview]'))b.onclick=()=>openPreview(p.cards.find(c=>c.id===b.dataset.preview));
  for(const b of $('review').querySelectorAll('[data-test-task]'))b.onclick=()=>action(async()=>{if(!window.FrictionNative?.testTask)throw Error('Open this review in your Android app to make a test recording. It will verify the task without earning or spending rewards.');window.FrictionNative.testTask(p.id,p.version,b.dataset.testTask);});
  for(const b of $('review').querySelectorAll('[data-remove]'))b.onclick=()=>action(()=>api(`/proposals/${p.id}/remove`,{version:p.version,cardId:b.dataset.remove}));
  for(const b of $('review').querySelectorAll('[data-adjust]'))b.onclick=()=>{const c=p.cards.find(c=>c.id===b.dataset.adjust);c.kind==='setting'?openSettings(c.key):openTask(c.key);};
- for(const b of $('review').querySelectorAll('[data-undo]'))b.onclick=()=>action(()=>api('/cancel',{proposalId:p.id,cardId:b.dataset.undo,operationId:crypto.randomUUID()}));
  cardIndex=Math.min(cardIndex,Math.max(0,p.cards.length-1));$('dots').innerHTML=p.cards.map((_,i)=>`<span class="dot ${i===cardIndex?'active':''}"></span>`).join('');observeCardSizes();updateCardPosition();requestAnimationFrame(()=>{const c=$('cards').children[cardIndex];if(c)$('cards').scrollLeft=c.offsetLeft-$('cards').firstElementChild.offsetLeft;fitSelectedCard();presentPendingReview(p);});
 }
 function reviewCards(p){const saved=p.status==='saved',undone=p.status==='undone',cancelled=p.status==='cancelled';return p.cards.map((card,i)=>{
   const change=state.changes?.find(c=>c.id===p.changeId),cardUndone=change?.undoneCardIds?.includes(card.id);if(cardUndone)card={...card,before:card.after,after:card.before};
   let rows='';if(card.kind==='setting')rows=`<div class="change-row primary-value"><div class="before">${esc(value(card.before,card.key))}</div><span class="arrow">→</span><div class="after">${esc(value(card.after,card.key))}</div></div>`;
   else{const before=card.before||{},after=card.after||{},fields={name:'Name',verifier:'Verification',metric:'Measurement',unitsPerCredit:'Units per credit',correctionMinimum:'Minimum for correction',instructions:'What counts',paused:'Paused',gpsMode:'GPS activity'};if(card.after===null)rows='<p class="muted">Remove this task from your available activities. Its history stays.</p>';else for(const [k,label]of Object.entries(fields))if(JSON.stringify(before[k])!==JSON.stringify(after[k])&&!(k==='gpsMode'&&after[k]===null)&&!(k==='paused'&&!after[k]&&!card.before))rows+=`<div class="change-row"><label>${label}</label><div class="before">${esc(before[k]===undefined?'New':before[k]===null?'—':before[k])}</div><span class="arrow">→</span><div class="after">${esc(after[k]===null?'—':after[k])}</div></div>`;}
-  return`<article class="change-card ${p.cards.length===1?'single':''} ${saved||undone?'completed':''} ${cancelled||cardUndone?'cancelled':''}" data-card-id="${esc(card.id)}"><p class="eyebrow">${card.kind==='task'?'TASK':'SETTING'} · ${i+1} OF ${p.cards.length}${cardUndone?' · UNDONE':''}</p><h3>${esc(card.title)}</h3>${rows}${testResult(p,card)}<div class="card-actions">${p.status==='pending'?`<button data-preview="${esc(card.id)}">Try it</button>${card.kind==='task'&&card.after?`<button data-test-task="${esc(card.key)}">Test recording</button>`:''}<button data-adjust="${esc(card.id)}">Adjust</button><button data-remove="${esc(card.id)}">Remove</button>`:saved&&!cardUndone?`<button data-undo="${esc(card.id)}">Undo this change</button>`:''}</div></article>`;
+  return`<article class="change-card ${p.cards.length===1?'single':''} ${saved||undone?'completed':''} ${cancelled||cardUndone?'cancelled':''}" data-card-id="${esc(card.id)}"><p class="eyebrow">${card.kind==='task'?'TASK':'SETTING'} · ${i+1} OF ${p.cards.length}${cardUndone?' · UNDONE':''}</p><h3>${esc(card.title)}</h3>${rows}${testResult(p,card)}<div class="card-actions">${p.status==='pending'?`<button data-preview="${esc(card.id)}">Try it</button>${card.kind==='task'&&card.after?`<button data-test-task="${esc(card.key)}">Test recording</button>`:''}<button data-adjust="${esc(card.id)}">Adjust</button><button data-remove="${esc(card.id)}">Remove</button>`:''}</div></article>`;
  }).join('');
 }
 function presentPendingReview(p=currentProposal()){if(!p)return;const key=p.id+':'+p.version;if(p.status==='pending'&&lastPresentedReview!==key&&view==='talk'&&!$('editor').open&&!$('previewDialog').open){lastPresentedReview=key;$('review').scrollIntoView({block:'start',behavior:'smooth'});}}
@@ -124,4 +125,31 @@ $('composerVoice').onclick=$('voice').onclick=()=>action(async()=>{if(voice)retu
 window.addEventListener('pagehide',()=>{clearInterval(previewTimer);stopUpdates();stopVoice().catch(()=>{});});
 window.FrictionNativeUpdate=()=>refresh().catch(error);
 async function init(){try{if(window.FrictionNative?.bootstrap){identity=JSON.parse(window.FrictionNative.bootstrap());}else{try{identity=JSON.parse(localStorage.getItem('friction.v1.identity'));}catch{}if(!identity){const r=await fetch('/api/v1/installations',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});identity=await r.json();if(!r.ok)throw Error(identity.error);localStorage.setItem('friction.v1.identity',JSON.stringify({installationId:identity.installationId,token:identity.token}));}$('back').hidden=true;}await refresh();startUpdates();}catch(e){error(e);$('connection').textContent='Could not connect';}}
+
+const effortLabels={none:'Non-reasoning',low:'Low',medium:'Medium',high:'High',xhigh:'Extra high',max:'Max'};
+let lastAssistantSettings='';
+function renderAssistantChoices(preferred){
+ const model=state.assistantOptions.find(m=>m.id===$('assistantModel').value);
+ if(!model)return;
+ $('assistantReasoning').innerHTML=model.efforts.map(e=>`<option value="${esc(e)}">${esc(effortLabels[e]||e)}</option>`).join('');
+ $('assistantReasoning').value=model.efforts.includes(preferred.reasoning)?preferred.reasoning:'low';
+ $('assistantSpeed').innerHTML=model.serviceTiers.map(t=>`<option value="${esc(t)}">${t==='fast'?'Fast':'Standard'}</option>`).join('');
+ $('assistantSpeed').value=model.serviceTiers.includes(preferred.serviceTier)?preferred.serviceTier:'default';
+}
+function renderAssistantSettings(){
+ if(!state.assistantSettings||!state.assistantOptions)return;
+ const key=JSON.stringify(state.assistantSettings);if(key===lastAssistantSettings)return;
+ lastAssistantSettings=key;
+ $('assistantModel').innerHTML=state.assistantOptions.map(m=>`<option value="${esc(m.id)}">${esc(m.label)}</option>`).join('');
+ $('assistantModel').value=state.assistantSettings.model;renderAssistantChoices(state.assistantSettings);
+}
+$('assistantModel').addEventListener('change',()=>{renderAssistantChoices({reasoning:$('assistantReasoning').value,serviceTier:$('assistantSpeed').value});$('assistantStatus').textContent='Unsaved changes';});
+for(const id of ['assistantReasoning','assistantSpeed'])$(id).addEventListener('change',()=>{$('assistantStatus').textContent='Unsaved changes';});
+$('assistantForm').addEventListener('submit',async event=>{
+ event.preventDefault();const button=$('saveAssistant');button.disabled=true;$('assistantStatus').textContent='Saving…';
+ try{state=await api('/assistant-settings',{model:$('assistantModel').value,reasoning:$('assistantReasoning').value,serviceTier:$('assistantSpeed').value});render();$('assistantStatus').textContent='Saved. Applies to your next request.';}
+ catch(e){$('assistantStatus').textContent=e.message||'Could not save. Please try again.';}
+ finally{button.disabled=false;}
+});
+
 init();

@@ -1,9 +1,10 @@
+import {assistantSettingsFor,assistantOptions,validateAssistantSettings} from './assistant-settings.mjs';
 import {captureBase,expandChanges} from './edits.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {EventEmitter} from 'node:events';
 import {AsyncLocalStorage} from 'node:async_hooks';
-import {AppError,fail,id,seed,clone,hash,validateConfig,diff,applyCards,restoreCards,periodKey} from './domain.mjs';
+import {AppError,fail,id,seed,clone,hash,validateConfig,diff,applyCards,periodKey} from './domain.mjs';
 export class Store extends EventEmitter {
  constructor(dir,{clock=Date.now,beforeWrite=null}={}){super();this.dir=dir;this.file=path.join(dir,'friction-v1.json');this.clock=clock;this.beforeWrite=beforeWrite;this.queue=Promise.resolve();this.runtime=new Map();this.transactionContext=new AsyncLocalStorage();}
  async init(){await fs.mkdir(this.dir,{recursive:true});try{this.db=JSON.parse(await fs.readFile(this.file,'utf8'));}catch(e){if(e.code!=='ENOENT')throw e;this.db={schema:1,installations:{},usage:[],reservations:{}};await this.persist();}this.db.reservations??={};if(this.migrateDailyBudget())await this.persist();return this;}
@@ -27,8 +28,9 @@ export class Store extends EventEmitter {
  get(install){const database=this.transactionContext.getStore()||this.db;const s=database.installations[install];fail(s,'Installation not found.',401);return s;}
  authenticate(token){fail(typeof token==='string'&&token.length>=32,'Installation credentials required.',401);const tokenHash=hash(token);const s=Object.values(this.db.installations).find(s=>s.tokenHash===tokenHash);fail(s,'Installation credentials are invalid.',401);return s.installationId;}
  async register(requested){const result=await this.transaction(db=>{const installationId=requested||id();fail(/^[a-zA-Z0-9_-]{8,80}$/.test(installationId),'Invalid installation ID.');fail(!db.installations[installationId],'This installation is already registered; use its saved credentials.',409);fail(Object.keys(db.installations).length<10000,'Installation limit reached.',429);const token=id()+id();const config=seed();db.installations[installationId]={installationId,tokenHash:hash(token),createdAt:this.clock(),config,revision:0,appliedRevision:-1,revisions:[{revision:0,at:this.clock(),config:clone(config)}],proposals:[],changes:[],operations:{},messages:[],statistics:{summary:null,events:[],updatedAt:null},attempts:{},selectedCardId:null};return{installationId,token,config,revision:0};});return result;}
- envelope(s){return{config:clone(s.config),revision:s.revision,configHash:hash(s.config),appliedRevision:s.appliedRevision,applicationStatus:s.appliedRevision===s.revision?'applied':'awaiting_device'};}
- snapshot(install){const s=this.get(install),r=this.runtime.get(install);return{installationId:install,...this.envelope(s),proposals:clone(s.proposals.slice(-12)),changes:clone(s.changes.slice(-15)),messages:clone(s.messages.slice(-30)),statistics:clone(s.statistics),selectedCardId:s.selectedCardId,previewResults:clone(Object.values(s.attempts).filter(a=>a.preview&&a.receipt).map(a=>a.receipt).slice(-10)),busy:Boolean(r?.turn),cancelling:Boolean(r?.turn?.cancelled),voiceActive:Boolean(r?.voice),lastVoiceEnd:r?.lastVoiceEnd||null,model:'gpt-6-astra',reasoning:'low',serviceTier:'fast',voice:'ripple',usage:this.usage(install),budget:null};}
+ envelope(s){const latest=s.changes.at(-1);const undoableChangeId=latest&&!latest.undoOf&&latest.revision===s.revision&&!s.proposals.some(p=>p.status==='pending')?latest.id:null;return{undoableChangeId,config:clone(s.config),revision:s.revision,configHash:hash(s.config),appliedRevision:s.appliedRevision,applicationStatus:s.appliedRevision===s.revision?'applied':'awaiting_device'};}
+ snapshot(install){const s=this.get(install),r=this.runtime.get(install);return{installationId:install,...this.envelope(s),proposals:clone(s.proposals.slice(-12)),changes:clone(s.changes.slice(-15)),messages:clone(s.messages.slice(-30)),statistics:clone(s.statistics),selectedCardId:s.selectedCardId,previewResults:clone(Object.values(s.attempts).filter(a=>a.preview&&a.receipt).map(a=>a.receipt).slice(-10)),busy:Boolean(r?.turn),cancelling:Boolean(r?.turn?.cancelled),voiceActive:Boolean(r?.voice),lastVoiceEnd:r?.lastVoiceEnd||null,...assistantSettingsFor(s),assistantSettings:assistantSettingsFor(s),assistantOptions:clone(assistantOptions),voice:'ripple',usage:this.usage(install),budget:null};}
+ async setAssistantSettings(install,value){const settings=validateAssistantSettings(value);await this.transaction(()=>{this.get(install).assistantSettings=settings;return{};});this.notify(install,'assistant_settings');return this.snapshot(install);}
  usage(install=null){const usage=this.db.usage.filter(u=>!install||u.installationId===install);return{usd:usage.reduce((a,u)=>a+u.usd,0),estimated:usage.some(u=>u.estimated||['astra','voice'].includes(u.type)),calls:usage.length,entries:clone(usage.slice(-10))};}
  getRuntime(install){if(!this.runtime.has(install))this.runtime.set(install,{});return this.runtime.get(install);}
  notify(install,kind='state',detail=null){this.emit('change',{installationId:install,kind,detail});}
@@ -71,9 +73,13 @@ export class Store extends EventEmitter {
   if(!c&&p?.changeId)c=s.changes.find(c=>c.id===p.changeId);
   if(!c&&inflight)c=s.changes.findLast(c=>c.originTurn===inflight.id&&!c.undoOf);
   if(!c)return finish({cancelled:true,restored:false,...this.envelope(s)});
-  const cards=c.cards.filter(card=>(!cardId||card.id===cardId)&&!c.undoneCardIds.includes(card.id));if(cardId)fail(c.cards.some(card=>card.id===cardId),'Card not found in this change.',404);
-  if(!cards.length)return finish({cancelled:true,restored:true,alreadyCancelled:true,...this.envelope(s)});
-  const restored=restoreCards(s.config,cards),undo=this.commit(s,restored,{undoOf:c.id});c.undoneCardIds.push(...cards.map(c=>c.id));const linked=s.proposals.find(p=>p.id===c.proposalId);if(linked){linked.undoChangeId=undo.id;if(c.undoneCardIds.length===c.cards.length)linked.status='undone';}
+  fail(!cardId,'Undo restores the whole latest action; individual saved changes cannot be undone.',409);
+  if(c.undoneCardIds.length===c.cards.length)return finish({cancelled:true,restored:true,alreadyCancelled:true,...this.envelope(s)});
+  fail(s.changes.at(-1)?.id===c.id&&!c.undoOf&&c.revision===s.revision,'Only the latest saved action can be undone.',409);
+  fail(!s.proposals.some(p=>p.status==='pending'),'Cancel the pending review before undoing the latest saved action.',409);
+  const before=s.revisions.find(r=>r.revision===c.revision-1);
+  fail(before,'The previous configuration is unavailable; this action cannot be undone.',409);
+  const undo=this.commit(s,clone(before.config),{undoOf:c.id});c.undoneCardIds=c.cards.map(card=>card.id);const linked=s.proposals.find(p=>p.id===c.proposalId);if(linked){linked.undoChangeId=undo.id;linked.status='undone';}
   return finish({cancelled:true,restored:true,change:undo,...this.envelope(s)});
  });await this.verifySaved(install,out);this.notify(install,'cancelled',out);return out;
  }

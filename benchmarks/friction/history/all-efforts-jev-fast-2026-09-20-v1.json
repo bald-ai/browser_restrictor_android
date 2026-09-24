@@ -1,0 +1,741 @@
+{
+  "runId": "all-efforts-jev-fast-2026-09-20-v1",
+  "status": "interrupted",
+  "startedAt": "2026-09-20T00:50:20.400Z",
+  "finishedAt": "2026-09-20T01:24:33.354Z",
+  "suiteVersion": "friction-actions-v1",
+  "suiteHash": "20acb251e9b8bb7ecf87f2698aa6da689b76b603478d85266ecd2e77f51d89d5",
+  "configHash": "66d24b3a5cb7f5a7fb7545affe4ab6d615484fcf1a1d0eaf5abbc29110d3da6a",
+  "sourceHash": "d3a0012c990f3559b39544fb58a1b731c106c115ace85d90032c7956b176c0f7",
+  "resultsHash": "08ae6f02b8f6da37a8530b8b2beb579a2ff2e3efb5a3765f6607d3ea6018ac30",
+  "config": {
+    "suite": "../suites/actions-v1.json",
+    "seed": 20260920,
+    "repeats": 3,
+    "warmups": 1,
+    "maxUsd": 100,
+    "maxCalls": 8000,
+    "timeoutMs": 180000,
+    "strategies": [
+      {
+        "id": "jev-astra-low-fast",
+        "kind": "cascade",
+        "steps": [
+          {
+            "kind": "evaluator",
+            "model": "typesafe-ai/jev",
+            "threshold": 0.9,
+            "inputPerMillion": 0.04,
+            "outputPerMillion": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "llm",
+            "model": "gpt-6-astra",
+            "reasoning": "low",
+            "serviceTier": "fast"
+          }
+        ]
+      },
+      {
+        "id": "jev-astra-medium-fast",
+        "kind": "cascade",
+        "steps": [
+          {
+            "kind": "evaluator",
+            "model": "typesafe-ai/jev",
+            "threshold": 0.9,
+            "inputPerMillion": 0.04,
+            "outputPerMillion": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "llm",
+            "model": "gpt-6-astra",
+            "reasoning": "medium",
+            "serviceTier": "fast"
+          }
+        ]
+      },
+      {
+        "id": "jev-astra-high-fast",
+        "kind": "cascade",
+        "steps": [
+          {
+            "kind": "evaluator",
+            "model": "typesafe-ai/jev",
+            "threshold": 0.9,
+            "inputPerMillion": 0.04,
+            "outputPerMillion": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "llm",
+            "model": "gpt-6-astra",
+            "reasoning": "high",
+            "serviceTier": "fast"
+          }
+        ]
+      },
+      {
+        "id": "jev-astra-xhigh-fast",
+        "kind": "cascade",
+        "steps": [
+          {
+            "kind": "evaluator",
+            "model": "typesafe-ai/jev",
+            "threshold": 0.9,
+            "inputPerMillion": 0.04,
+            "outputPerMillion": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "llm",
+            "model": "gpt-6-astra",
+            "reasoning": "xhigh",
+            "serviceTier": "fast"
+          }
+        ]
+      },
+      {
+        "id": "jev-astra-max-fast",
+        "kind": "cascade",
+        "steps": [
+          {
+            "kind": "evaluator",
+            "model": "typesafe-ai/jev",
+            "threshold": 0.9,
+            "inputPerMillion": 0.04,
+            "outputPerMillion": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "llm",
+            "model": "gpt-6-astra",
+            "reasoning": "max",
+            "serviceTier": "fast"
+          }
+        ]
+      },
+      {
+        "id": "jev-luna-none-fast",
+        "kind": "cascade",
+        "steps": [
+          {
+            "kind": "evaluator",
+            "model": "typesafe-ai/jev",
+            "threshold": 0.9,
+            "inputPerMillion": 0.04,
+            "outputPerMillion": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "llm",
+            "model": "gpt-5.6-luna",
+            "reasoning": "none",
+            "serviceTier": "fast"
+          }
+        ]
+      },
+      {
+        "id": "jev-luna-low-fast",
+        "kind": "cascade",
+        "steps": [
+          {
+            "kind": "evaluator",
+            "model": "typesafe-ai/jev",
+            "threshold": 0.9,
+            "inputPerMillion": 0.04,
+            "outputPerMillion": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "llm",
+            "model": "gpt-5.6-luna",
+            "reasoning": "low",
+            "serviceTier": "fast"
+          }
+        ]
+      },
+      {
+        "id": "jev-luna-medium-fast",
+        "kind": "cascade",
+        "steps": [
+          {
+            "kind": "evaluator",
+            "model": "typesafe-ai/jev",
+            "threshold": 0.9,
+            "inputPerMillion": 0.04,
+            "outputPerMillion": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "llm",
+            "model": "gpt-5.6-luna",
+            "reasoning": "medium",
+            "serviceTier": "fast"
+          }
+        ]
+      },
+      {
+        "id": "jev-luna-high-fast",
+        "kind": "cascade",
+        "steps": [
+          {
+            "kind": "evaluator",
+            "model": "typesafe-ai/jev",
+            "threshold": 0.9,
+            "inputPerMillion": 0.04,
+            "outputPerMillion": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "llm",
+            "model": "gpt-5.6-luna",
+            "reasoning": "high",
+            "serviceTier": "fast"
+          }
+        ]
+      },
+      {
+        "id": "jev-luna-xhigh-fast",
+        "kind": "cascade",
+        "steps": [
+          {
+            "kind": "evaluator",
+            "model": "typesafe-ai/jev",
+            "threshold": 0.9,
+            "inputPerMillion": 0.04,
+            "outputPerMillion": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "llm",
+            "model": "gpt-5.6-luna",
+            "reasoning": "xhigh",
+            "serviceTier": "fast"
+          }
+        ]
+      },
+      {
+        "id": "jev-luna-max-fast",
+        "kind": "cascade",
+        "steps": [
+          {
+            "kind": "evaluator",
+            "model": "typesafe-ai/jev",
+            "threshold": 0.9,
+            "inputPerMillion": 0.04,
+            "outputPerMillion": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "llm",
+            "model": "gpt-5.6-luna",
+            "reasoning": "max",
+            "serviceTier": "fast"
+          }
+        ]
+      },
+      {
+        "id": "jev-terra-none-fast",
+        "kind": "cascade",
+        "steps": [
+          {
+            "kind": "evaluator",
+            "model": "typesafe-ai/jev",
+            "threshold": 0.9,
+            "inputPerMillion": 0.04,
+            "outputPerMillion": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "llm",
+            "model": "gpt-5.6-terra",
+            "reasoning": "none",
+            "serviceTier": "fast"
+          }
+        ]
+      },
+      {
+        "id": "jev-terra-low-fast",
+        "kind": "cascade",
+        "steps": [
+          {
+            "kind": "evaluator",
+            "model": "typesafe-ai/jev",
+            "threshold": 0.9,
+            "inputPerMillion": 0.04,
+            "outputPerMillion": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "llm",
+            "model": "gpt-5.6-terra",
+            "reasoning": "low",
+            "serviceTier": "fast"
+          }
+        ]
+      },
+      {
+        "id": "jev-terra-medium-fast",
+        "kind": "cascade",
+        "steps": [
+          {
+            "kind": "evaluator",
+            "model": "typesafe-ai/jev",
+            "threshold": 0.9,
+            "inputPerMillion": 0.04,
+            "outputPerMillion": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "llm",
+            "model": "gpt-5.6-terra",
+            "reasoning": "medium",
+            "serviceTier": "fast"
+          }
+        ]
+      },
+      {
+        "id": "jev-terra-high-fast",
+        "kind": "cascade",
+        "steps": [
+          {
+            "kind": "evaluator",
+            "model": "typesafe-ai/jev",
+            "threshold": 0.9,
+            "inputPerMillion": 0.04,
+            "outputPerMillion": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "llm",
+            "model": "gpt-5.6-terra",
+            "reasoning": "high",
+            "serviceTier": "fast"
+          }
+        ]
+      },
+      {
+        "id": "jev-terra-xhigh-fast",
+        "kind": "cascade",
+        "steps": [
+          {
+            "kind": "evaluator",
+            "model": "typesafe-ai/jev",
+            "threshold": 0.9,
+            "inputPerMillion": 0.04,
+            "outputPerMillion": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "llm",
+            "model": "gpt-5.6-terra",
+            "reasoning": "xhigh",
+            "serviceTier": "fast"
+          }
+        ]
+      },
+      {
+        "id": "jev-terra-max-fast",
+        "kind": "cascade",
+        "steps": [
+          {
+            "kind": "evaluator",
+            "model": "typesafe-ai/jev",
+            "threshold": 0.9,
+            "inputPerMillion": 0.04,
+            "outputPerMillion": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "llm",
+            "model": "gpt-5.6-terra",
+            "reasoning": "max",
+            "serviceTier": "fast"
+          }
+        ]
+      }
+    ]
+  },
+  "totalUsd": 8.53724963999998,
+  "scoredTrials": 958,
+  "summary": [
+    {
+      "id": "jev-astra-low-fast",
+      "trials": 56,
+      "actions": 41,
+      "passed": 39,
+      "decisionCorrect": 40,
+      "abstained": 0,
+      "errors": 0,
+      "wrong": 3,
+      "auditFailures": 1,
+      "guardSafe": 13,
+      "guards": 15,
+      "humanReview": 13,
+      "coverage": 1,
+      "medianAllMs": 2088.0355829999316,
+      "p95AllMs": 4695.640040999977,
+      "medianPassedActionMs": 1947.7576249999693,
+      "p95PassedActionMs": 4695.640040999977,
+      "estimatedUsd": 0.9585647199999998,
+      "costPerPassedAction": 0.024578582564102558,
+      "providerCalls": 98
+    },
+    {
+      "id": "jev-astra-medium-fast",
+      "trials": 56,
+      "actions": 41,
+      "passed": 38,
+      "decisionCorrect": 39,
+      "abstained": 0,
+      "errors": 0,
+      "wrong": 4,
+      "auditFailures": 1,
+      "guardSafe": 13,
+      "guards": 15,
+      "humanReview": 13,
+      "coverage": 1,
+      "medianAllMs": 2384.0656669999007,
+      "p95AllMs": 4455.160375000094,
+      "medianPassedActionMs": 2187.917040999979,
+      "p95PassedActionMs": 3767.3209999999963,
+      "estimatedUsd": 0.9453323600000001,
+      "costPerPassedAction": 0.024877167368421056,
+      "providerCalls": 98
+    },
+    {
+      "id": "jev-astra-high-fast",
+      "trials": 56,
+      "actions": 41,
+      "passed": 40,
+      "decisionCorrect": 41,
+      "abstained": 0,
+      "errors": 0,
+      "wrong": 2,
+      "auditFailures": 1,
+      "guardSafe": 13,
+      "guards": 15,
+      "humanReview": 13,
+      "coverage": 1,
+      "medianAllMs": 2204.3880420001224,
+      "p95AllMs": 5956.7848330000415,
+      "medianPassedActionMs": 1930.4381669999566,
+      "p95PassedActionMs": 4723.794540999996,
+      "estimatedUsd": 1.1061022799999998,
+      "costPerPassedAction": 0.027652556999999994,
+      "providerCalls": 102
+    },
+    {
+      "id": "jev-astra-xhigh-fast",
+      "trials": 57,
+      "actions": 42,
+      "passed": 40,
+      "decisionCorrect": 41,
+      "abstained": 0,
+      "errors": 0,
+      "wrong": 3,
+      "auditFailures": 1,
+      "guardSafe": 13,
+      "guards": 15,
+      "humanReview": 13,
+      "coverage": 1,
+      "medianAllMs": 2233.484832999995,
+      "p95AllMs": 6688.498041999992,
+      "medianPassedActionMs": 1942.6635839999944,
+      "p95PassedActionMs": 2560.3465829999186,
+      "estimatedUsd": 1.32408332,
+      "costPerPassedAction": 0.033102083,
+      "providerCalls": 99
+    },
+    {
+      "id": "jev-astra-max-fast",
+      "trials": 57,
+      "actions": 42,
+      "passed": 41,
+      "decisionCorrect": 42,
+      "abstained": 0,
+      "errors": 0,
+      "wrong": 2,
+      "auditFailures": 1,
+      "guardSafe": 13,
+      "guards": 15,
+      "humanReview": 13,
+      "coverage": 1,
+      "medianAllMs": 4373.388625000021,
+      "p95AllMs": 14460.797499999986,
+      "medianPassedActionMs": 3481.962499999907,
+      "p95PassedActionMs": 5876.929375000065,
+      "estimatedUsd": 2.3671797600000004,
+      "costPerPassedAction": 0.05773609170731708,
+      "providerCalls": 100
+    },
+    {
+      "id": "jev-luna-none-fast",
+      "trials": 57,
+      "actions": 42,
+      "passed": 41,
+      "decisionCorrect": 42,
+      "abstained": 0,
+      "errors": 0,
+      "wrong": 4,
+      "auditFailures": 1,
+      "guardSafe": 11,
+      "guards": 15,
+      "humanReview": 11,
+      "coverage": 1,
+      "medianAllMs": 1580.7141249999404,
+      "p95AllMs": 3114.7692080000415,
+      "medianPassedActionMs": 1509.5782500000205,
+      "p95PassedActionMs": 2296.6357499998994,
+      "estimatedUsd": 0.04274994,
+      "costPerPassedAction": 0.001042681463414634,
+      "providerCalls": 100
+    },
+    {
+      "id": "jev-luna-low-fast",
+      "trials": 57,
+      "actions": 42,
+      "passed": 40,
+      "decisionCorrect": 41,
+      "abstained": 0,
+      "errors": 0,
+      "wrong": 2,
+      "auditFailures": 1,
+      "guardSafe": 14,
+      "guards": 15,
+      "humanReview": 14,
+      "coverage": 1,
+      "medianAllMs": 1656.9127080000471,
+      "p95AllMs": 3605.058083000127,
+      "medianPassedActionMs": 1526.8855000000003,
+      "p95PassedActionMs": 3605.058083000127,
+      "estimatedUsd": 0.041660280000000015,
+      "costPerPassedAction": 0.0010415070000000003,
+      "providerCalls": 96
+    },
+    {
+      "id": "jev-luna-medium-fast",
+      "trials": 57,
+      "actions": 42,
+      "passed": 39,
+      "decisionCorrect": 40,
+      "abstained": 0,
+      "errors": 0,
+      "wrong": 3,
+      "auditFailures": 1,
+      "guardSafe": 14,
+      "guards": 15,
+      "humanReview": 14,
+      "coverage": 1,
+      "medianAllMs": 1511.4942080000183,
+      "p95AllMs": 4467.158458000049,
+      "medianPassedActionMs": 1364.4423330000136,
+      "p95PassedActionMs": 4256.959458000027,
+      "estimatedUsd": 0.044642460000000016,
+      "costPerPassedAction": 0.0011446784615384618,
+      "providerCalls": 98
+    },
+    {
+      "id": "jev-luna-high-fast",
+      "trials": 57,
+      "actions": 42,
+      "passed": 40,
+      "decisionCorrect": 41,
+      "abstained": 0,
+      "errors": 0,
+      "wrong": 3,
+      "auditFailures": 1,
+      "guardSafe": 13,
+      "guards": 15,
+      "humanReview": 13,
+      "coverage": 1,
+      "medianAllMs": 1663.3614580000285,
+      "p95AllMs": 4539.551584000001,
+      "medianPassedActionMs": 1462.8852500000503,
+      "p95PassedActionMs": 3026.996665999992,
+      "estimatedUsd": 0.048563120000000015,
+      "costPerPassedAction": 0.0012140780000000004,
+      "providerCalls": 102
+    },
+    {
+      "id": "jev-luna-xhigh-fast",
+      "trials": 56,
+      "actions": 41,
+      "passed": 39,
+      "decisionCorrect": 40,
+      "abstained": 0,
+      "errors": 0,
+      "wrong": 3,
+      "auditFailures": 1,
+      "guardSafe": 13,
+      "guards": 15,
+      "humanReview": 13,
+      "coverage": 1,
+      "medianAllMs": 1742.5940419998951,
+      "p95AllMs": 4840.495041999966,
+      "medianPassedActionMs": 1589.8644159999676,
+      "p95PassedActionMs": 2155.464583000052,
+      "estimatedUsd": 0.048612340000000004,
+      "costPerPassedAction": 0.0012464702564102565,
+      "providerCalls": 98
+    },
+    {
+      "id": "jev-luna-max-fast",
+      "trials": 56,
+      "actions": 41,
+      "passed": 39,
+      "decisionCorrect": 40,
+      "abstained": 0,
+      "errors": 0,
+      "wrong": 3,
+      "auditFailures": 1,
+      "guardSafe": 13,
+      "guards": 15,
+      "humanReview": 13,
+      "coverage": 1,
+      "medianAllMs": 1879.9578329999931,
+      "p95AllMs": 4663.628707999946,
+      "medianPassedActionMs": 1688.1804580001626,
+      "p95PassedActionMs": 3452.847749999957,
+      "estimatedUsd": 0.0548388,
+      "costPerPassedAction": 0.0014061230769230769,
+      "providerCalls": 97
+    },
+    {
+      "id": "jev-terra-none-fast",
+      "trials": 56,
+      "actions": 41,
+      "passed": 38,
+      "decisionCorrect": 39,
+      "abstained": 0,
+      "errors": 0,
+      "wrong": 2,
+      "auditFailures": 1,
+      "guardSafe": 15,
+      "guards": 15,
+      "humanReview": 15,
+      "coverage": 1,
+      "medianAllMs": 1668.7788750000764,
+      "p95AllMs": 3062.362417000113,
+      "medianPassedActionMs": 1513.437084000092,
+      "p95PassedActionMs": 2261.7130829999223,
+      "estimatedUsd": 0.19524371999999998,
+      "costPerPassedAction": 0.005137992631578947,
+      "providerCalls": 95
+    },
+    {
+      "id": "jev-terra-low-fast",
+      "trials": 56,
+      "actions": 41,
+      "passed": 40,
+      "decisionCorrect": 41,
+      "abstained": 0,
+      "errors": 0,
+      "wrong": 0,
+      "auditFailures": 1,
+      "guardSafe": 15,
+      "guards": 15,
+      "humanReview": 15,
+      "coverage": 1,
+      "medianAllMs": 1561.0014590001665,
+      "p95AllMs": 4651.9406660000095,
+      "medianPassedActionMs": 1431.8226659999928,
+      "p95PassedActionMs": 4185.385875000153,
+      "estimatedUsd": 0.23345327999999999,
+      "costPerPassedAction": 0.005836332,
+      "providerCalls": 100
+    },
+    {
+      "id": "jev-terra-medium-fast",
+      "trials": 56,
+      "actions": 41,
+      "passed": 39,
+      "decisionCorrect": 40,
+      "abstained": 0,
+      "errors": 0,
+      "wrong": 1,
+      "auditFailures": 1,
+      "guardSafe": 15,
+      "guards": 15,
+      "humanReview": 15,
+      "coverage": 1,
+      "medianAllMs": 1686.275667000038,
+      "p95AllMs": 3117.040457999916,
+      "medianPassedActionMs": 1624.905250000069,
+      "p95PassedActionMs": 2173.6934159999946,
+      "estimatedUsd": 0.2334718,
+      "costPerPassedAction": 0.005986456410256411,
+      "providerCalls": 100
+    },
+    {
+      "id": "jev-terra-high-fast",
+      "trials": 56,
+      "actions": 41,
+      "passed": 39,
+      "decisionCorrect": 40,
+      "abstained": 0,
+      "errors": 0,
+      "wrong": 2,
+      "auditFailures": 1,
+      "guardSafe": 14,
+      "guards": 15,
+      "humanReview": 14,
+      "coverage": 1,
+      "medianAllMs": 1484.9550840000156,
+      "p95AllMs": 2825.9723750001285,
+      "medianPassedActionMs": 1375.4938750001602,
+      "p95PassedActionMs": 2070.463500000071,
+      "estimatedUsd": 0.22738528,
+      "costPerPassedAction": 0.005830391794871795,
+      "providerCalls": 97
+    },
+    {
+      "id": "jev-terra-xhigh-fast",
+      "trials": 56,
+      "actions": 41,
+      "passed": 38,
+      "decisionCorrect": 39,
+      "abstained": 0,
+      "errors": 0,
+      "wrong": 3,
+      "auditFailures": 1,
+      "guardSafe": 14,
+      "guards": 15,
+      "humanReview": 14,
+      "coverage": 1,
+      "medianAllMs": 1749.2706669999752,
+      "p95AllMs": 3764.1524999999674,
+      "medianPassedActionMs": 1565.7858329999726,
+      "p95PassedActionMs": 3620.449583000038,
+      "estimatedUsd": 0.25614684,
+      "costPerPassedAction": 0.0067407063157894735,
+      "providerCalls": 100
+    },
+    {
+      "id": "jev-terra-max-fast",
+      "trials": 56,
+      "actions": 41,
+      "passed": 40,
+      "decisionCorrect": 41,
+      "abstained": 0,
+      "errors": 0,
+      "wrong": 2,
+      "auditFailures": 1,
+      "guardSafe": 13,
+      "guards": 15,
+      "humanReview": 13,
+      "coverage": 1,
+      "medianAllMs": 2020.59612500004,
+      "p95AllMs": 4906.524208000046,
+      "medianPassedActionMs": 1848.7697079999998,
+      "p95PassedActionMs": 2814.921458000026,
+      "estimatedUsd": 0.32779364000000005,
+      "costPerPassedAction": 0.008194841000000001,
+      "providerCalls": 99
+    }
+  ],
+  "evidencePath": "runs/all-efforts-jev-fast-2026-09-20-v1"
+}

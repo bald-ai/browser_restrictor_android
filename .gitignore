@@ -35,3 +35,8 @@ node_modules/
 # Runtime app guide retrieved by the in-app assistant.
 !/backend-v1/docs/app-guide.md
 !/backend-v1/docs/app-overview.md
+
+# Maintained reproducible assistant benchmark; generated runs stay local.
+!/benchmarks/friction/README.md
+/benchmarks/friction/runs/
+!/benchmarks/friction/RESULTS.md

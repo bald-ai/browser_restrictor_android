@@ -44,17 +44,6 @@ export function diff(before,after){
  return cards;
 }
 export function applyCards(config,cards){const result=clone(config);for(const c of cards){if(c.kind==='setting')result.settings[c.key]=clone(c.after);else{const index=result.tasks.findIndex(t=>t.id===c.key);if(c.after===null){if(index>=0)result.tasks.splice(index,1);}else if(index>=0)result.tasks[index]=clone(c.after);else result.tasks.push(clone(c.after));}}return validateConfig(result);}
-export function restoreCards(config,cards){
- const result=clone(config);
- for(const c of cards){
-  if(c.kind==='setting'){fail(equal(result.settings[c.key],c.after),`${c.title} changed again. Review its current value before undoing.`,409);result.settings[c.key]=clone(c.before);continue;}
-  const current=result.tasks.find(t=>t.id===c.key);
-  if(!c.before){fail(equal(current,c.after),`${c.title} changed again; it cannot be removed by this undo.`,409);result.tasks=result.tasks.filter(t=>t.id!==c.key);}
-  else if(!c.after){fail(!current,`${c.title} was recreated; undo would overwrite it.`,409);result.tasks.push(clone(c.before));}
-  else{fail(current,`${c.title} no longer exists.`,409);for(const k of Object.keys(c.after))if(!equal(c.before[k],c.after[k])){fail(equal(current[k],c.after[k]),`${c.title}: ${k} changed again.`,409);current[k]=clone(c.before[k]);}}
- }
- return validateConfig(result);
-}
 const resetCache=new Map(),formatters=new Map();
 export function periodKey(time,reset,timeZone='UTC'){
  let formatter;try{formatter=formatters.get(timeZone)||new Intl.DateTimeFormat('en-CA',{timeZone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});formatters.set(timeZone,formatter);}catch{throw new AppError('Use a valid IANA time zone.');}

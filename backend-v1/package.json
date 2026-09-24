@@ -1,1 +1,1 @@
-{"name":"friction-v1","private":true,"type":"module","engines":{"node":">=22"},"scripts":{"start":"node server.mjs","test":"node --test test/*.test.mjs"},"dependencies":{"ws":"^8.18.0"}}
+{"name":"friction-v1","private":true,"type":"module","engines":{"node":">=22"},"scripts":{"start":"node server.mjs","test":"node --test test/*.test.mjs"},"dependencies":{"@ai-sdk/gateway":"4.0.86","ai":"7.0.106","ws":"^8.18.0"}}

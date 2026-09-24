@@ -1,0 +1,195 @@
+{
+  "runId": "luna6-sol6-jev-fast-2026-09-23-v1",
+  "status": "complete",
+  "startedAt": "2026-09-23T14:42:09.493Z",
+  "finishedAt": "2026-09-23T14:47:43.380Z",
+  "suiteVersion": "friction-actions-v1",
+  "suiteHash": "20acb251e9b8bb7ecf87f2698aa6da689b76b603478d85266ecd2e77f51d89d5",
+  "configHash": "701d4004c4af06697c96d82a0e39e0f9fedb143beb96890eaaec9ea79337c28a",
+  "sourceHash": "f82e947cdca9c1e3c7b5b1e4bc54e5507db20908d2c67feb9ef9ceb63d28ae88",
+  "resultsHash": "e7d0590c4888466214f6f32a18102f51538e2eaf535c8754c07479c87bcd456e",
+  "config": {
+    "suite": "../suites/actions-v1.json",
+    "seed": 20260920,
+    "repeats": 1,
+    "warmups": 1,
+    "maxUsd": 5,
+    "maxCalls": 700,
+    "timeoutMs": 180000,
+    "strategies": [
+      {
+        "id": "jev-luna6-none-fast",
+        "kind": "cascade",
+        "steps": [
+          {
+            "kind": "evaluator",
+            "model": "typesafe-ai/jev",
+            "threshold": 0.9,
+            "inputPerMillion": 0.04,
+            "outputPerMillion": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "llm",
+            "model": "gpt-6-luna",
+            "reasoning": "none",
+            "serviceTier": "fast"
+          }
+        ]
+      },
+      {
+        "id": "jev-luna6-low-fast",
+        "kind": "cascade",
+        "steps": [
+          {
+            "kind": "evaluator",
+            "model": "typesafe-ai/jev",
+            "threshold": 0.9,
+            "inputPerMillion": 0.04,
+            "outputPerMillion": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "llm",
+            "model": "gpt-6-luna",
+            "reasoning": "low",
+            "serviceTier": "fast"
+          }
+        ]
+      },
+      {
+        "id": "jev-sol6-none-fast",
+        "kind": "cascade",
+        "steps": [
+          {
+            "kind": "evaluator",
+            "model": "typesafe-ai/jev",
+            "threshold": 0.9,
+            "inputPerMillion": 0.04,
+            "outputPerMillion": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "llm",
+            "model": "gpt-6-sol",
+            "reasoning": "none",
+            "serviceTier": "fast"
+          }
+        ]
+      },
+      {
+        "id": "jev-sol6-low-fast",
+        "kind": "cascade",
+        "steps": [
+          {
+            "kind": "evaluator",
+            "model": "typesafe-ai/jev",
+            "threshold": 0.9,
+            "inputPerMillion": 0.04,
+            "outputPerMillion": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "llm",
+            "model": "gpt-6-sol",
+            "reasoning": "low",
+            "serviceTier": "fast"
+          }
+        ]
+      }
+    ]
+  },
+  "totalUsd": 0.4255900299999996,
+  "scoredTrials": 148,
+  "summary": [
+    {
+      "id": "jev-luna6-none-fast",
+      "trials": 37,
+      "actions": 26,
+      "passed": 25,
+      "decisionCorrect": 26,
+      "abstained": 0,
+      "errors": 0,
+      "wrong": 5,
+      "auditFailures": 1,
+      "guardSafe": 6,
+      "guards": 11,
+      "humanReview": 6,
+      "coverage": 1,
+      "medianAllMs": 1764.3723340000142,
+      "p95AllMs": 6581.936791999993,
+      "medianPassedActionMs": 1676.9058749999967,
+      "p95PassedActionMs": 2499.8200420000067,
+      "estimatedUsd": 0.028412629999999998,
+      "costPerPassedAction": 0.0011365052,
+      "providerCalls": 75
+    },
+    {
+      "id": "jev-luna6-low-fast",
+      "trials": 37,
+      "actions": 26,
+      "passed": 25,
+      "decisionCorrect": 26,
+      "abstained": 0,
+      "errors": 0,
+      "wrong": 4,
+      "auditFailures": 1,
+      "guardSafe": 7,
+      "guards": 11,
+      "humanReview": 7,
+      "coverage": 1,
+      "medianAllMs": 1870.5312920000288,
+      "p95AllMs": 8177.899915999995,
+      "medianPassedActionMs": 1616.5625,
+      "p95PassedActionMs": 3504.0877919999766,
+      "estimatedUsd": 0.02786476,
+      "costPerPassedAction": 0.0011145903999999999,
+      "providerCalls": 73
+    },
+    {
+      "id": "jev-sol6-none-fast",
+      "trials": 37,
+      "actions": 26,
+      "passed": 25,
+      "decisionCorrect": 26,
+      "abstained": 0,
+      "errors": 0,
+      "wrong": 1,
+      "auditFailures": 1,
+      "guardSafe": 10,
+      "guards": 11,
+      "humanReview": 10,
+      "coverage": 1,
+      "medianAllMs": 2128.919500000018,
+      "p95AllMs": 4461.383457999997,
+      "medianPassedActionMs": 1937.5960000000196,
+      "p95PassedActionMs": 4259.511957999988,
+      "estimatedUsd": 0.1657446,
+      "costPerPassedAction": 0.006629784,
+      "providerCalls": 71
+    },
+    {
+      "id": "jev-sol6-low-fast",
+      "trials": 37,
+      "actions": 26,
+      "passed": 25,
+      "decisionCorrect": 26,
+      "abstained": 0,
+      "errors": 0,
+      "wrong": 1,
+      "auditFailures": 1,
+      "guardSafe": 10,
+      "guards": 11,
+      "humanReview": 10,
+      "coverage": 1,
+      "medianAllMs": 1890.0546669999603,
+      "p95AllMs": 3942.9120840000105,
+      "medianPassedActionMs": 1861.332166999986,
+      "p95PassedActionMs": 3917.2474999999686,
+      "estimatedUsd": 0.17366284,
+      "costPerPassedAction": 0.006946513600000001,
+      "providerCalls": 73
+    }
+  ],
+  "evidencePath": "runs/luna6-sol6-jev-fast-2026-09-23-v1"
+}

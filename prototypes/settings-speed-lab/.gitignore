@@ -4,3 +4,7 @@ candidate-agent.mjs
 data/
 results/
 *.env
+
+# Keep the runnable Jev experiment instructions.
+!jev/README.md
+!jev/wide/README.md

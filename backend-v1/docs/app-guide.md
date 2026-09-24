@@ -242,6 +242,55 @@ applies to new emergency sessions, not one already running. Daily reset clears
 the daily use/earning counters; another credit must be earned for that day's
 emergency eligibility. It does not bypass YouTube's credit threshold.
 
+## assistant_settings: Model, reasoning and processing speed
+
+Sol 6 (`gpt-6-sol`) is also available in Assistant settings with non-reasoning,
+low, medium, high, xhigh and max efforts and Standard or Fast processing.
+
+Open Your setup → Assistant. Choose Sol 6, Astra, Luna or Terra, a reasoning effort,
+and Standard or Fast processing, then tap Save assistant settings. Luna and
+Terra support Non-reasoning, Low, Medium, High, Extra high and Max. Astra supports
+Low through Max, with no Non-reasoning choice. All three support Fast mode.
+The default is Astra / Low / Fast. More reasoning may take longer, while Fast
+uses higher pricing. Preferences persist for this installation and apply to the
+next request, including backend work delegated from voice. Requests already
+running keep their original selection. Jev still handles confident common edits
+first; other work uses the selected model. Voice audio remains GPT-Live/Ripple;
+video verification uses its separate model.
+
+Saving these preferences does not alter app rules, rewards, pending reviews or
+the phone's configuration revision. It needs no review or Android acknowledgement.
+The assistant can read the current selection but cannot change it by conversation;
+use these controls. None/Low requests have a 60-second provider timeout and a
+2,400-token output allowance; Medium/High/Extra high/Max have 180 seconds and
+8,192/16,384/32,768/32,768 output tokens respectively. The total context ceiling
+remains 100,000 tokens including the allowance. Jev's timeout remains 3 seconds.
+
+## assistant_routing: Jev and selected model
+
+With the server's AI Gateway key configured, Jev first interprets explicit
+waiting-time, minutes-per-credit, YouTube-threshold and emergency-duration edits,
+plus pause/resume of existing tasks. For example: “Set waiting time to 7 seconds”
+or “Pause walking.” The settings limits above still apply. Jev needs confident
+scope, target and value selections (threshold 0.9); uncertain results and requests
+outside that scope go to the selected assistant model. This includes questions, renaming,
+new tasks, allowance/reset edits and mixed requests needing unsupported changes.
+The threshold does not guarantee correctness; users still review every change.
+
+The provider timeout is 3 seconds, with no Jev retry. Provider failures or missing
+gateway configuration fall back to the selected assistant model. Fallback requests can take longer.
+The assistant receives a brief explanation of Jev as a specialized decision model
+that selects predefined options, plus the handoff reason: an evaluated request
+was not accepted, the provider failed/timed out, or Jev was not run. Provider
+failure does not imply complexity. Rejected guesses are not recommendations.
+The assistant checks the whole original request, clarifies missing choices,
+avoids replacing invalid values, and respects a requirement to explain an
+unavailable action before proposing changes.
+Text and delegated voice use this same route. Approval and cancellation keep
+their direct paths. Pending edits survive follow-ups, newer reviews cannot be
+overwritten by late results, and phone acknowledgement is still required after
+saving. Routing adds no permissions or new controls.
+
 ## review: Review, approval, previews, cancellation and undo
 
 The assistant proposes requested changes together in a review, with a card for
@@ -251,8 +300,11 @@ rewards. Merely asking to change a setting creates a proposal, not approval.
 
 In the conversation, reviews appear where they were created, with subsequent
 messages and the live voice transcript underneath. Saved, cancelled and undone reviews collapse to a compact
-summary. Tap the summary to reopen the details; saved reviews retain individual
-and whole-request undo. Recent earlier reviews remain accessible when a new
+summary. Tap the summary to reopen the details; only the latest saved action offers whole-request undo. Older actions and
+individual saved cards cannot be restored. Cancel any pending review first.
+Undo restores the exact previous configuration, including task order. Undo
+cannot itself be undone and does not unlock older actions; a new save enables
+undo for that new action. Recent earlier reviews remain accessible when a new
 request is created. Pending reviews stay expanded for inspection and approval.
 The main screen says "Change your app by voice": tell the AI what you want,
 then review and approve. The conversation screen explains that speaking can add
@@ -275,9 +327,9 @@ receives and persists them. Say "saved; waiting for your phone" until Android
 acknowledges them. For allowances, active configuration still waits until reset
 to affect the balance.
 
-An explicit cancel discards pending work. Undo can restore saved values for a
-whole group or an individual card while preserving unrelated newer edits.
-Conflicting edits must be reviewed rather than overwritten. Undoing configuration
+An explicit cancel discards pending work. Undo restores only the entire latest
+saved action, once; older actions and individual saved cards are unavailable.
+Undoing configuration
 does not reverse browsing already used or recreate expired rewards. Interrupting
 voice speech alone does not cancel a pending app change; ask to cancel it.
 
@@ -285,7 +337,7 @@ The app keeps one conversation per installation. It retains at most 100 recent
 messages; the UI shows the latest 30 messages and 12 reviews. Model requests use
 recent saved messages within a conservative 100,000-token context ceiling,
 including instructions, app state, tool definitions, tool results, framing and
-room for up to 2,400 output tokens. The check runs before every configuration-agent
+room for the selected reasoning effort’s output allowance (2,400–32,768 tokens). The check runs before every configuration-agent
 call, including requests delegated from voice. Oldest complete exchanges leave
 the model context first. The current request and authoritative app state are
 kept intact. If those alone exceed the budget, the request stops before calling

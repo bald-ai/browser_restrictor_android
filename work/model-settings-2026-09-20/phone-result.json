@@ -1,0 +1,34 @@
+{
+  "passed": true,
+  "results": [
+    {
+      "settings": {
+        "model": "gpt-5.6-luna",
+        "reasoning": "none",
+        "serviceTier": "fast"
+      },
+      "actualModel": "gpt-5.6-luna",
+      "actualTier": "priority",
+      "elapsedMs": 3624,
+      "answered": true
+    },
+    {
+      "settings": {
+        "model": "gpt-5.6-terra",
+        "reasoning": "max",
+        "serviceTier": "default"
+      },
+      "actualModel": "gpt-5.6-terra",
+      "actualTier": "default",
+      "elapsedMs": 3509,
+      "answered": true
+    }
+  ],
+  "restored": {
+    "model": "gpt-6-astra",
+    "reasoning": "low",
+    "serviceTier": "fast"
+  },
+  "appRulesUnchanged": true,
+  "revision": 7
+}

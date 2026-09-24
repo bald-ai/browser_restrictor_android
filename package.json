@@ -3,7 +3,10 @@
   "private": true,
   "scripts": {
     "test": "npm --prefix backend-v1 test",
-    "hosting:deploy": "railway up backend-v1 --path-as-root --project b806bbbd-f21d-4546-a59c-6ebd81802ac9 --environment production --service friction-v1-api"
+    "hosting:deploy": "railway up backend-v1 --path-as-root --project b806bbbd-f21d-4546-a59c-6ebd81802ac9 --environment production --service friction-v1-api",
+    "benchmark": "node benchmarks/friction/run.mjs",
+    "benchmark:test": "node --test benchmarks/friction/test/*.test.mjs",
+    "benchmark:report": "node benchmarks/friction/report.mjs"
   },
   "devDependencies": {
     "@railway/cli": "5.49.2"

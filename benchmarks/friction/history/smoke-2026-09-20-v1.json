@@ -1,0 +1,135 @@
+{
+  "runId": "smoke-2026-09-20-v1",
+  "status": "complete",
+  "startedAt": "2026-09-20T00:11:20.007Z",
+  "finishedAt": "2026-09-20T00:11:41.288Z",
+  "suiteVersion": "friction-actions-v1",
+  "suiteHash": "20acb251e9b8bb7ecf87f2698aa6da689b76b603478d85266ecd2e77f51d89d5",
+  "configHash": "2bd3ecece99758bb1a70580da239edf72a23a4b70136602f623a328159d99cfc",
+  "sourceHash": "5d8f60063104d78ba641e09fb62db6d0486825f661c031eca687ae3aee3af64b",
+  "resultsHash": "5779d91a628e38c45020b950a4e19f53c1f1df52f2562ef4cff1aa4871a3bd89",
+  "config": {
+    "suite": "../suites/actions-v1.json",
+    "seed": 20260920,
+    "cases": [
+      "wait",
+      "rename",
+      "hypothetical",
+      "edit-correct-approve-undo"
+    ],
+    "repeats": 1,
+    "warmups": 0,
+    "maxUsd": 3,
+    "maxCalls": 40,
+    "timeoutMs": 60000,
+    "strategies": [
+      {
+        "id": "luna-none",
+        "kind": "llm",
+        "model": "gpt-5.6-luna",
+        "reasoning": "none",
+        "serviceTier": "default"
+      },
+      {
+        "id": "jev-only",
+        "kind": "evaluator",
+        "model": "typesafe-ai/jev",
+        "threshold": 0.9,
+        "inputPerMillion": 0.04,
+        "outputPerMillion": 0,
+        "timeoutMs": 3000
+      },
+      {
+        "id": "jev-then-luna",
+        "kind": "cascade",
+        "steps": [
+          {
+            "kind": "evaluator",
+            "model": "typesafe-ai/jev",
+            "threshold": 0.9,
+            "inputPerMillion": 0.04,
+            "outputPerMillion": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "llm",
+            "model": "gpt-5.6-luna",
+            "reasoning": "none",
+            "serviceTier": "default"
+          }
+        ]
+      }
+    ]
+  },
+  "totalUsd": 0.0065095299999999995,
+  "scoredTrials": 12,
+  "summary": [
+    {
+      "id": "luna-none",
+      "trials": 4,
+      "actions": 3,
+      "passed": 3,
+      "decisionCorrect": 3,
+      "abstained": 0,
+      "errors": 0,
+      "wrong": 0,
+      "auditFailures": 0,
+      "guardSafe": 1,
+      "guards": 1,
+      "humanReview": 1,
+      "coverage": 1,
+      "medianAllMs": 2009.3478329999998,
+      "p95AllMs": 3958.9894999999997,
+      "medianPassedActionMs": 2104.870500000001,
+      "p95PassedActionMs": 3958.9894999999997,
+      "estimatedUsd": 0.0016455,
+      "costPerPassedAction": 0.0005485,
+      "providerCalls": 5
+    },
+    {
+      "id": "jev-only",
+      "trials": 4,
+      "actions": 3,
+      "passed": 1,
+      "decisionCorrect": 1,
+      "abstained": 2,
+      "errors": 1,
+      "wrong": 0,
+      "auditFailures": 0,
+      "guardSafe": 1,
+      "guards": 1,
+      "humanReview": 0,
+      "coverage": 0.25,
+      "medianAllMs": 344.1218750000007,
+      "p95AllMs": 3014.955791,
+      "medianPassedActionMs": 344.1218750000007,
+      "p95PassedActionMs": 344.1218750000007,
+      "estimatedUsd": 0.0022358,
+      "costPerPassedAction": 0.0022358,
+      "providerCalls": 5
+    },
+    {
+      "id": "jev-then-luna",
+      "trials": 4,
+      "actions": 3,
+      "passed": 3,
+      "decisionCorrect": 3,
+      "abstained": 0,
+      "errors": 0,
+      "wrong": 0,
+      "auditFailures": 0,
+      "guardSafe": 1,
+      "guards": 1,
+      "humanReview": 1,
+      "coverage": 1,
+      "medianAllMs": 1521.9943330000024,
+      "p95AllMs": 2427.137999999999,
+      "medianPassedActionMs": 1521.9943330000024,
+      "p95PassedActionMs": 2427.137999999999,
+      "estimatedUsd": 0.00262823,
+      "costPerPassedAction": 0.0008760766666666667,
+      "providerCalls": 8
+    }
+  ],
+  "evidencePath": "runs/smoke-2026-09-20-v1"
+}

@@ -1,0 +1,111 @@
+{
+  "runId": "sol6-handoff-jev-fast-2026-09-23-v1",
+  "status": "complete",
+  "startedAt": "2026-09-23T15:04:19.560Z",
+  "finishedAt": "2026-09-23T15:06:57.385Z",
+  "suiteVersion": "friction-actions-v1",
+  "suiteHash": "20acb251e9b8bb7ecf87f2698aa6da689b76b603478d85266ecd2e77f51d89d5",
+  "configHash": "017f5d382dc23aaad3de89249cb307012e1c27434cc2d56cea0fa34f30c91e95",
+  "sourceHash": "43ccc3ab2a10e5ca6a5351e307a64a425065331121a7ab53053db5e97eb9b069",
+  "resultsHash": "79aec3f5cf7bc762b8272010bbfec499121aff2979bd06645d992a6ffefe4843",
+  "config": {
+    "suite": "../suites/actions-v1.json",
+    "seed": 20260920,
+    "repeats": 1,
+    "warmups": 1,
+    "maxUsd": 5,
+    "maxCalls": 350,
+    "timeoutMs": 180000,
+    "strategies": [
+      {
+        "id": "jev-sol6-none-fast",
+        "kind": "cascade",
+        "steps": [
+          {
+            "kind": "evaluator",
+            "model": "typesafe-ai/jev",
+            "threshold": 0.9,
+            "inputPerMillion": 0.04,
+            "outputPerMillion": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "llm",
+            "model": "gpt-6-sol",
+            "reasoning": "none",
+            "serviceTier": "fast"
+          }
+        ]
+      },
+      {
+        "id": "jev-sol6-low-fast",
+        "kind": "cascade",
+        "steps": [
+          {
+            "kind": "evaluator",
+            "model": "typesafe-ai/jev",
+            "threshold": 0.9,
+            "inputPerMillion": 0.04,
+            "outputPerMillion": 0,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "llm",
+            "model": "gpt-6-sol",
+            "reasoning": "low",
+            "serviceTier": "fast"
+          }
+        ]
+      }
+    ]
+  },
+  "totalUsd": 0.3818998799999997,
+  "scoredTrials": 74,
+  "summary": [
+    {
+      "id": "jev-sol6-none-fast",
+      "trials": 37,
+      "actions": 26,
+      "passed": 25,
+      "decisionCorrect": 26,
+      "abstained": 0,
+      "errors": 0,
+      "wrong": 0,
+      "auditFailures": 1,
+      "guardSafe": 11,
+      "guards": 11,
+      "humanReview": 11,
+      "coverage": 1,
+      "medianAllMs": 1900.0954580000107,
+      "p95AllMs": 5169.714500000002,
+      "medianPassedActionMs": 1823.2331249999988,
+      "p95PassedActionMs": 4010.3779579999973,
+      "estimatedUsd": 0.17873156000000004,
+      "costPerPassedAction": 0.007149262400000002,
+      "providerCalls": 71
+    },
+    {
+      "id": "jev-sol6-low-fast",
+      "trials": 37,
+      "actions": 26,
+      "passed": 25,
+      "decisionCorrect": 26,
+      "abstained": 0,
+      "errors": 0,
+      "wrong": 0,
+      "auditFailures": 1,
+      "guardSafe": 11,
+      "guards": 11,
+      "humanReview": 11,
+      "coverage": 1,
+      "medianAllMs": 1970.0443340000056,
+      "p95AllMs": 4370.144042,
+      "medianPassedActionMs": 1946.6455829999977,
+      "p95PassedActionMs": 4039.7571669999998,
+      "estimatedUsd": 0.17176752000000003,
+      "costPerPassedAction": 0.0068707008000000016,
+      "providerCalls": 69
+    }
+  ],
+  "evidencePath": "runs/sol6-handoff-jev-fast-2026-09-23-v1"
+}
