@@ -26,80 +26,78 @@ data class HealthCopy(
     val positive: Boolean,
 )
 
-fun healthCopy(
-    health: ProtectionHealth,
-    usageAccessGranted: Boolean = false,
-): HealthCopy = when (health) {
-    ProtectionHealth.READY -> HealthCopy(
+private val healthMessages = mapOf(
+    ProtectionHealth.READY to HealthCopy(
         "Protection ready",
         "Supported browsers and X are protected, and recovery access is available.",
         null,
         true,
-    )
-    ProtectionHealth.READY_LIMITED_RECOVERY -> if (usageAccessGranted) {
+    ),
+    ProtectionHealth.READY_LIMITED_RECOVERY to HealthCopy(
+            "Protected with limited recovery",
+            "The real-time browser and X gate is working. A process interruption may leave a small usage gap uncounted.",
+            "Improve recovery",
+            true,
+        ),
+    ProtectionHealth.ENFORCEMENT_OFF to HealthCopy(
+        "Enforcement is off",
+        "Browsers and X are not gated, but their active use is still counted in your report.",
+        "Turn on",
+        false,
+    ),
+    ProtectionHealth.ACCESSIBILITY_REQUIRED to HealthCopy(
+        "Accessibility access required",
+        "Internet Restrictor cannot protect browsers or X until its service is enabled in Android Settings.",
+        "Open Accessibility",
+        false,
+    ),
+    ProtectionHealth.USAGE_ACCESS_RECOMMENDED to HealthCopy(
+        "Usage access recommended",
+        "Real-time protection works, but recovery after an interruption is limited.",
+        "Open Usage Access",
+        false,
+    ),
+    ProtectionHealth.SERVICE_DISCONNECTED to HealthCopy(
+        "Protection service disconnected",
+        "Android shows the service as enabled, but it is not running. Reopen Accessibility settings to repair it.",
+        "Repair service",
+        false,
+    ),
+    ProtectionHealth.BROWSERS_NOT_FOUND to HealthCopy(
+        "No supported app found",
+        "Install or enable Chrome, Firefox, Edge, Opera, or X.",
+        "Get a supported app",
+        false,
+    ),
+    ProtectionHealth.STORAGE_ERROR to HealthCopy(
+        "Stored state needs repair",
+        "Usage was not reset. Protection is visibly open until the local state can be trusted again.",
+        "Open app info",
+        false,
+    ),
+    ProtectionHealth.RESTRICTED_SETTINGS_BLOCKED to HealthCopy(
+        "Restricted setting blocked",
+        "Open app info, use the three-dot menu, choose Allow restricted settings, then return to Accessibility.",
+        "Open app info",
+        false,
+    ),
+    ProtectionHealth.ADVANCED_PROTECTION_BLOCKED to HealthCopy(
+        "Advanced Protection blocks setup",
+        "This device mode does not allow the non-accessibility-tool service, so browsers and X cannot be protected here.",
+        "Open Android help",
+        false,
+    ),
+)
+
+fun healthCopy(health: ProtectionHealth, usageAccessGranted: Boolean = false): HealthCopy =
+    if (health == ProtectionHealth.READY_LIMITED_RECOVERY && usageAccessGranted) {
         HealthCopy(
             "Protection ready",
             "Usage access is enabled and the real-time browser and X gate is working. Recovery after a process interruption remains limited in this build.",
             null,
             true,
         )
-    } else {
-        HealthCopy(
-            "Protected with limited recovery",
-            "The real-time browser and X gate is working. A process interruption may leave a small usage gap uncounted.",
-            "Improve recovery",
-            true,
-        )
-    }
-    ProtectionHealth.ENFORCEMENT_OFF -> HealthCopy(
-        "Enforcement is off",
-        "Browsers and X are not gated, but their active use is still counted in your report.",
-        "Turn on",
-        false,
-    )
-    ProtectionHealth.ACCESSIBILITY_REQUIRED -> HealthCopy(
-        "Accessibility access required",
-        "Internet Restrictor cannot protect browsers or X until its service is enabled in Android Settings.",
-        "Open Accessibility",
-        false,
-    )
-    ProtectionHealth.USAGE_ACCESS_RECOMMENDED -> HealthCopy(
-        "Usage access recommended",
-        "Real-time protection works, but recovery after an interruption is limited.",
-        "Open Usage Access",
-        false,
-    )
-    ProtectionHealth.SERVICE_DISCONNECTED -> HealthCopy(
-        "Protection service disconnected",
-        "Android shows the service as enabled, but it is not running. Reopen Accessibility settings to repair it.",
-        "Repair service",
-        false,
-    )
-    ProtectionHealth.BROWSERS_NOT_FOUND -> HealthCopy(
-        "No supported app found",
-        "Install or enable Chrome, Firefox, Edge, Opera, or X.",
-        "Get a supported app",
-        false,
-    )
-    ProtectionHealth.STORAGE_ERROR -> HealthCopy(
-        "Stored state needs repair",
-        "Usage was not reset. Protection is visibly open until the local state can be trusted again.",
-        "Open app info",
-        false,
-    )
-    ProtectionHealth.RESTRICTED_SETTINGS_BLOCKED -> HealthCopy(
-        "Restricted setting blocked",
-        "Open app info, use the three-dot menu, choose Allow restricted settings, then return to Accessibility.",
-        "Open app info",
-        false,
-    )
-    ProtectionHealth.ADVANCED_PROTECTION_BLOCKED -> HealthCopy(
-        "Advanced Protection blocks setup",
-        "This device mode does not allow the non-accessibility-tool service, so browsers and X cannot be protected here.",
-        "Open Android help",
-        false,
-    )
-}
+    } else healthMessages.getValue(health)
 
 @Composable
 fun HealthCard(

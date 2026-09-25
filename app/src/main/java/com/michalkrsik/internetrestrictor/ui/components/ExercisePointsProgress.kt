@@ -83,15 +83,7 @@ fun ExercisePointsProgress(sixths: Long, modifier: Modifier = Modifier) {
                     progressBarRangeInfo = ProgressBarRangeInfo(progress * 5, 0f..5f)
                 },
         ) {
-            val y = size.height / 2
-            drawLine(track, Offset(0f, y), Offset(size.width, y), 6.dp.toPx(), StrokeCap.Round)
-            if (progress > 0f) {
-                drawLine(fill, Offset(0f, y), Offset(size.width * progress, y), 6.dp.toPx(), StrokeCap.Round)
-            }
-            for (point in 0..5) {
-                val x = size.width * point / 5
-                drawLine(ticks, Offset(x, y - 7.dp.toPx()), Offset(x, y + 7.dp.toPx()), 1.dp.toPx())
-            }
+            drawExercisePointTrack(progress, track, ticks, fill)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             for (point in 0..5) {
@@ -101,5 +93,23 @@ fun ExercisePointsProgress(sixths: Long, modifier: Modifier = Modifier) {
                 )
             }
         }
+    }
+}
+
+/** Geometry is independent of composition and uses the caller's size and density. */
+internal fun androidx.compose.ui.graphics.drawscope.DrawScope.drawExercisePointTrack(
+    progress: Float,
+    track: androidx.compose.ui.graphics.Color,
+    ticks: androidx.compose.ui.graphics.Color,
+    fill: androidx.compose.ui.graphics.Color,
+) {
+    val y = size.height / 2
+    drawLine(track, Offset(0f, y), Offset(size.width, y), 6.dp.toPx(), StrokeCap.Round)
+    if (progress > 0f) {
+        drawLine(fill, Offset(0f, y), Offset(size.width * progress, y), 6.dp.toPx(), StrokeCap.Round)
+    }
+    for (point in 0..5) {
+        val x = size.width * point / 5
+        drawLine(ticks, Offset(x, y - 7.dp.toPx()), Offset(x, y + 7.dp.toPx()), 1.dp.toPx())
     }
 }

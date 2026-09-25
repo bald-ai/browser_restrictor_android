@@ -111,10 +111,7 @@ fun BadgeContent(
                         abs(totalDragX) >= horizontalSwipeThresholdPx &&
                         abs(totalDragX) > abs(totalDragY)
                     ) {
-                        when {
-                            totalDragX < 0f && !expanded -> expanded = true
-                            totalDragX > 0f && expanded -> expanded = false
-                        }
+                        expanded = totalDragX < 0f
                         horizontalActionTaken = true
                     }
                 },

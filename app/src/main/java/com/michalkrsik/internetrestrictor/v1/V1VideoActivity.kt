@@ -64,8 +64,7 @@ class V1VideoActivity : ComponentActivity() {
             android.widget.Toast.makeText(this, "Test recording unavailable. Start a new test from the review card.", android.widget.Toast.LENGTH_LONG).show()
             finish(); return
         }
-        task = previewSpec?.getJSONObject("task")?.let(com.michalkrsik.internetrestrictor.data.ConfigurationJson::parseTask)
-            ?: appContainer.repository.snapshot.value.configuration.tasks.firstOrNull { it.id == intent.getStringExtra("taskId") && !it.paused && it.verifier == "video" }
+        task = requestedVideoTask()
         attempt = previewSpec
         if (task == null) { finish(); return }
         val recoveredPreview = refreshPreviewState()
@@ -73,31 +72,16 @@ class V1VideoActivity : ComponentActivity() {
         setContent {
             val snapshot by appContainer.repository.snapshot.collectAsState()
             RestrictorTheme(snapshot.settings.theme) {
-                Surface(Modifier.fillMaxSize()) {
-                    Column(Modifier.fillMaxSize().systemBarsPadding().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        TextButton(onClick = { if (phase == "recording") stopRecording() else finish() }) { Text(if (previewSpec != null) "‹ Back to review" else "‹ Back") }
-                        Text(task!!.name, style = MaterialTheme.typography.headlineMedium)
-                        Text(if (previewSpec != null) "Test recording · your setup and rewards stay unchanged" else "${task!!.unitsPerCredit} ${task!!.metric} = 1 ${snapshot.configuration.settings.creditName}", style = MaterialTheme.typography.bodyMedium)
-                        Text(task!!.instructions, maxLines = 4, style = MaterialTheme.typography.bodySmall)
-                        AndroidView(factory = { preview }, modifier = Modifier.fillMaxWidth().weight(1f))
-                        Text(status)
-                        when (phase) {
-                            "recording" -> Button(onClick = ::stopRecording, modifier = Modifier.fillMaxWidth()) { Text("Stop & verify · ${seconds}s left") }
-                            "busy", "countdown" -> { LinearProgressIndicator(Modifier.fillMaxWidth()); Text(if (phase == "countdown") "Starting in $seconds…" else "Checking your activity…") }
-                            "result" -> Button(onClick = { finish() }, modifier = Modifier.fillMaxWidth()) { Text(if (previewSpec != null) "Back to review" else "Back to your day") }
-                            "preview_waiting" -> {
-                                Button(onClick = ::retryPreview, modifier = Modifier.fillMaxWidth()) { Text("Retry saved recording") }
-                                OutlinedButton(onClick = { finish() }, modifier = Modifier.fillMaxWidth()) { Text("Back to review") }
-                            }
-                            "preview_interrupted" -> Button(onClick = { finish() }, modifier = Modifier.fillMaxWidth()) { Text("Back to review") }
-                            else -> {
-                                Button(onClick = ::begin, modifier = Modifier.fillMaxWidth()) { Text("Record · up to 30 seconds") }
-                                OutlinedButton(onClick = { front = !front; startCamera() }, modifier = Modifier.fillMaxWidth()) { Text("Switch camera") }
-                                if (currentFile?.exists() == true && attempt != null) TextButton(onClick = ::submit) { Text("Retry saved recording") }
-                            }
-                        }
-                    }
-                }
+                VideoRecordingScreen(
+                    VideoScreenState(task!!, snapshot.configuration.settings.creditName, previewSpec != null,
+                        phase, status, seconds, currentFile?.exists() == true && attempt != null),
+                    VideoScreenActions(
+                        back = { if (phase == "recording") stopRecording() else finish() },
+                        stop = ::stopRecording, finish = { finish() }, retryPreview = ::retryPreview,
+                        begin = ::begin, switchCamera = { front = !front; startCamera() }, submit = ::submit,
+                    ),
+                    cameraPreview = { modifier -> AndroidView(factory = { preview }, modifier = modifier) },
+                )
             }
         }
         if (!recoveredPreview) {
@@ -143,6 +127,12 @@ class V1VideoActivity : ComponentActivity() {
             runOnUiThread { refreshPreviewState() }
         }
     }
+
+    private fun requestedVideoTask(): TaskDefinition? =
+        previewSpec?.getJSONObject("task")?.let(com.michalkrsik.internetrestrictor.data.ConfigurationJson::parseTask)
+            ?: appContainer.repository.snapshot.value.configuration.tasks.firstOrNull {
+                it.id == intent.getStringExtra("taskId") && !it.paused && it.verifier == "video"
+            }
 
     private fun startCamera() {
         if (phase == "recording") return

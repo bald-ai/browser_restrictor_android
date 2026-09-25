@@ -26,19 +26,41 @@ export function buildQuestions(config,message){
  for(const task of config.tasks)questions['task_'+task.id]={type:'choice',instructions:`What does the latest request explicitly ask to do to availability of task ${JSON.stringify({id:task.id,name:task.name,paused:task.paused})}? Resolve references from current selected card and conversation.`,criteria:{unchanged:'No availability change requested for this task',pause:'Pause this task',resume:'Resume this task',unclear:'An intended availability change cannot be resolved'}};
  return questions;
 }
-export function decodeChanges(answers,questions,config,threshold=.9){
- const chosen=key=>{const a=answers[key];if(!a||a.type!=='choice'||!Object.hasOwn(questions[key].criteria,a.choice)||!Number.isFinite(a.probabilities?.[a.choice])||a.probabilities[a.choice]>1||a.probabilities[a.choice]<threshold)return null;return a.choice;};
- if(chosen('scope')!=='edit')return null;
+function chosenOption(answers,questions,key,threshold){
+ const answer=answers[key];
+ if(!answer||answer.type!=='choice'||!Object.hasOwn(questions[key].criteria,answer.choice)||!Number.isFinite(answer.probabilities?.[answer.choice])||answer.probabilities[answer.choice]>1||answer.probabilities[answer.choice]<threshold)return null;
+ return answer.choice;
+}
+function numericIntent(flag,threshold){
+ if(flag?.type!=='boolean'||!Number.isFinite(flag.probability)||flag.probability<0||flag.probability>1)return 'invalid';
+ if(flag.probability<=1-threshold+1e-9)return 'unchanged';
+ return flag.probability<threshold?'invalid':'change';
+}
+function numericChanges(answers,chosen,threshold){
  const changes=[];
  for(const field of Object.keys(numericFields)){
-  const flag=answers['change_'+field];if(flag?.type!=='boolean'||!Number.isFinite(flag.probability)||flag.probability<0||flag.probability>1)return null;
-  if(flag.probability<=1-threshold+1e-9)continue;
-  if(flag.probability<threshold)return null;
+  const intent=numericIntent(answers['change_'+field],threshold);
+  if(intent==='unchanged')continue;
+  if(intent==='invalid')return null;
   const value=chosen(field);if(!value||value==='unclear'||value==='unchanged')return null;
-  if(value!=='unchanged')changes.push({action:'set_setting',field,value:Number(value.slice(1))});
+  changes.push({action:'set_setting',field,value:Number(value.slice(1))});
  }
- for(const task of config.tasks){const value=chosen('task_'+task.id);if(!value||value==='unclear')return null;if(value!=='unchanged')changes.push({action:'set_task_field',taskId:task.id,field:'paused',value:value==='pause'});}
- return changes.length?changes:null;
+ return changes;
+}
+function taskChanges(config,chosen){
+ const changes=[];
+ for(const task of config.tasks){
+  const value=chosen('task_'+task.id);if(!value||value==='unclear')return null;
+  if(value!=='unchanged')changes.push({action:'set_task_field',taskId:task.id,field:'paused',value:value==='pause'});
+ }
+ return changes;
+}
+export function decodeChanges(answers,questions,config,threshold=.9){
+ const chosen=key=>chosenOption(answers,questions,key,threshold);
+ if(chosen('scope')!=='edit')return null;
+ const numeric=numericChanges(answers,chosen,threshold);if(!numeric)return null;
+ const tasks=taskChanges(config,chosen);if(!tasks)return null;
+ const changes=[...numeric,...tasks];return changes.length?changes:null;
 }
 // Keep the evaluated prototype's question set and 0.9 threshold. Only the
 // provider adapter is new; Agent owns concurrency, review validation and fallback.

@@ -1,6 +1,7 @@
 package com.michalkrsik.internetrestrictor.data
 
 import android.content.Context
+import com.michalkrsik.internetrestrictor.domain.DailyCounter
 import com.michalkrsik.internetrestrictor.domain.AppConfiguration
 import com.michalkrsik.internetrestrictor.domain.TaskMeasurementReceipt
 import com.michalkrsik.internetrestrictor.domain.applyConfiguration
@@ -26,7 +27,6 @@ import com.michalkrsik.internetrestrictor.domain.StateSnapshot
 import com.michalkrsik.internetrestrictor.domain.ThemePreference
 import com.michalkrsik.internetrestrictor.domain.TimeSource
 import com.michalkrsik.internetrestrictor.domain.UnlockSource
-import com.michalkrsik.internetrestrictor.domain.traits
 import java.io.File
 import kotlin.math.abs
 import kotlinx.coroutines.CompletableDeferred
@@ -172,33 +172,41 @@ class RestrictorRepository(
                 keyguardUnlocked = keyguardUnlocked,
                 serviceConnected = serviceConnected,
             )
-            if (serviceConnected && !old.serviceConnected) {
-                persistedState = persistedState.copy(
-                    runtimeMetadata = persistedState.runtimeMetadata.copy(
-                        serviceLastConnectedWallMs = timeSource.wallTimeMs(),
-                    ),
-                )
-            }
-            persistedState = persistedState.copy(
-                runtimeMetadata = persistedState.runtimeMetadata.copy(
-                    lastKnownForegroundClass = persistedForegroundAfterServiceUpdate(
-                        previous = persistedState.runtimeMetadata.lastKnownForegroundClass,
-                        observed = foregroundClass,
-                        serviceConnected = serviceConnected,
-                    ),
-                ),
-            )
+            updateServiceMetadata(old)
             manageGateTokensLocked()
             if (old.policyFingerprint() != runtime.policyFingerprint() || waitAborted) {
                 bumpRevisionLocked()
             }
             if (waitAborted) diagnosticSink("Focused wait aborted after leaving the browser")
-            if (old.foregroundClass != runtime.foregroundClass || old.activeTarget != runtime.activeTarget) {
-                diagnosticSink(
-                    "Foreground transition: ${runtime.activeTarget?.name ?: runtime.foregroundClass.name}",
-                )
-            }
+            recordForegroundTransition(old)
             publishLocked()
+        }
+    }
+
+    private fun updateServiceMetadata(old: RuntimeSignals) {
+        if (runtime.serviceConnected && !old.serviceConnected) {
+            persistedState = persistedState.copy(
+                runtimeMetadata = persistedState.runtimeMetadata.copy(
+                    serviceLastConnectedWallMs = timeSource.wallTimeMs(),
+                ),
+            )
+        }
+        persistedState = persistedState.copy(
+            runtimeMetadata = persistedState.runtimeMetadata.copy(
+                lastKnownForegroundClass = persistedForegroundAfterServiceUpdate(
+                    previous = persistedState.runtimeMetadata.lastKnownForegroundClass,
+                    observed = runtime.foregroundClass,
+                    serviceConnected = runtime.serviceConnected,
+                ),
+            ),
+        )
+    }
+
+    private fun recordForegroundTransition(old: RuntimeSignals) {
+        if (old.foregroundClass != runtime.foregroundClass || old.activeTarget != runtime.activeTarget) {
+            diagnosticSink(
+                "Foreground transition: ${runtime.activeTarget?.name ?: runtime.foregroundClass.name}",
+            )
         }
     }
 
@@ -328,9 +336,7 @@ class RestrictorRepository(
             )
             val valid = current.stateRevision == expectedRevision &&
                 current.canonicalMode in setOf(GateMode.OUT_OF_TIME, GateMode.OUT_OF_TIME_LATCHED) &&
-                runtime.gateSessionId != null && runtime.gateSessionId == expectedGateSessionId &&
-                runtime.outOfTimeLatchToken != null &&
-                runtime.outOfTimeLatchToken == expectedLatchToken
+                runtime.hasMatchingGateTokens(expectedGateSessionId, expectedLatchToken)
             if (!valid) {
                 lastError = "Browser state changed. The latest gate is still active."
                 publishLocked()
@@ -348,6 +354,10 @@ class RestrictorRepository(
             true
         }
     }
+
+    private fun RuntimeSignals.hasMatchingGateTokens(sessionId: String?, latchToken: String?): Boolean =
+        gateSessionId != null && gateSessionId == sessionId &&
+            outOfTimeLatchToken != null && outOfTimeLatchToken == latchToken
 
     suspend fun saveSettings(expectedRevision: Long, settings: RestrictorSettings): Boolean = command(
         clearOutOfTimeLatch = true,
@@ -424,42 +434,36 @@ class RestrictorRepository(
         return mutationMutex.withLock {
             advanceLocked(timeSource.elapsedRealtimeMs(), timeSource.wallTimeMs(), forceUsageFlush = true)
             when (val result = transition()) {
-                is CommandResult.Applied -> {
-                    val before = persistedState
-                    if (!persistLocked(result.state)) return@withLock false
-                    persistedState = result.state
-                    if (clearOutOfTimeLatch) {
-                        runtime = runtime.copy(outOfTimeLatchToken = null, latchedBlockers = emptySet())
-                    }
-                    manageGateTokensLocked()
-                    recordTransition(before, result.state)
-                    lastError = null
-                    publishLocked()
-                    true
-                }
-                is CommandResult.NormalCompletionWon -> {
-                    val before = persistedState
-                    if (!persistLocked(result.state)) return@withLock false
-                    persistedState = result.state
-                    manageGateTokensLocked()
-                    recordTransition(before, result.state)
-                    lastError = null
-                    publishLocked()
-                    true
-                }
-                is CommandResult.Rejected -> {
-                    if (result.state != persistedState) {
-                        if (!persistLocked(result.state)) return@withLock false
-                        persistedState = result.state
-                    }
-                    lastError = result.reason
-                    diagnosticSink("Action rejected: ${result.reason}")
-                    manageGateTokensLocked()
-                    publishLocked()
-                    false
-                }
+                is CommandResult.Applied -> commitCommandLocked(result.state, clearOutOfTimeLatch)
+                is CommandResult.NormalCompletionWon -> commitCommandLocked(result.state, false)
+                is CommandResult.Rejected -> rejectCommandLocked(result)
+
             }
         }
+    }
+
+    private suspend fun commitCommandLocked(next: PersistedState, clearOutOfTimeLatch: Boolean): Boolean {
+        val before = persistedState
+        if (!persistLocked(next)) return false
+        persistedState = next
+        if (clearOutOfTimeLatch) runtime = runtime.copy(outOfTimeLatchToken = null, latchedBlockers = emptySet())
+        manageGateTokensLocked()
+        recordTransition(before, next)
+        lastError = null
+        publishLocked()
+        return true
+    }
+
+    private suspend fun rejectCommandLocked(result: CommandResult.Rejected): Boolean {
+        if (result.state != persistedState) {
+            if (!persistLocked(result.state)) return false
+            persistedState = result.state
+        }
+        lastError = result.reason
+        diagnosticSink("Action rejected: ${result.reason}")
+        manageGateTokensLocked()
+        publishLocked()
+        return false
     }
 
     private suspend fun immediateMutation(
@@ -492,14 +496,7 @@ class RestrictorRepository(
         lastTickElapsedMs = elapsedRealtimeMs
         lastTickWallMs = wallTimeMs
         if (previousElapsed == null || previousWall == null) {
-            val normalized = engine.normalize(persistedState, wallTimeMs, timeSource.zoneId())
-            if (normalized != persistedState) {
-                val before = persistedState
-                if (persistLocked(normalized)) {
-                    persistedState = normalized
-                    recordTransition(before, normalized)
-                }
-            }
+            normalizeAccountingLocked(wallTimeMs)
             manageGateTokensLocked()
             return
         }
@@ -507,17 +504,14 @@ class RestrictorRepository(
         val rawDelta = elapsedRealtimeMs - previousElapsed
         if (rawDelta <= 0) {
             if (forceUsageFlush) flushUsageBufferLocked(forceSummaryFlush = true)
-            val normalized = engine.normalize(persistedState, wallTimeMs, timeSource.zoneId())
-            if (normalized != persistedState) {
-                val before = persistedState
-                if (persistLocked(normalized)) {
-                    persistedState = normalized
-                    recordTransition(before, normalized)
-                }
-            }
+            normalizeAccountingLocked(wallTimeMs)
             manageGateTokensLocked()
             return
         }
+        advanceIntervalLocked(previousWall, rawDelta, wallTimeMs, forceUsageFlush)
+    }
+
+    private suspend fun advanceIntervalLocked(previousWall: Long, rawDelta: Long, wallTimeMs: Long, forceUsageFlush: Boolean) {
         val elapsedDelta = rawDelta.coerceAtMost(MAX_UNRECONCILED_INTERVAL_MS)
         if (rawDelta > MAX_UNRECONCILED_INTERVAL_MS) {
             diagnosticSink("Long accounting gap left uncounted: ${rawDelta}ms")
@@ -530,49 +524,8 @@ class RestrictorRepository(
         val mode = engine.underlyingMode(persistedState, runtime, intervalStart)
 
         when {
-            mode == GateMode.WAITING -> {
-                flushUsageBufferLocked(forceSummaryFlush = true)
-                val result = engine.advanceWait(
-                    input = persistedState,
-                    runtime = runtime,
-                    elapsedMs = elapsedDelta,
-                    nowWallMs = intervalEnd,
-                    zoneId = timeSource.zoneId(),
-                    expectedGateSessionId = runtime.gateSessionId,
-                )
-                val next = when (result) {
-                    is CommandResult.Applied -> result.state
-                    is CommandResult.NormalCompletionWon -> result.state
-                    is CommandResult.Rejected -> result.state
-                }
-                if (next != persistedState) {
-                    val before = persistedState
-                    if (persistLocked(next)) {
-                        persistedState = next
-                        recordTransition(before, next)
-                    }
-                }
-            }
-            mode.traits.recordsUsage -> {
-                val cappedEnd = persistedState.activeUnlock?.expiresAtWallMs
-                    ?.coerceAtMost(intervalEnd)
-                    ?.coerceAtLeast(intervalStart)
-                    ?: intervalEnd
-                if (cappedEnd > intervalStart) {
-                    if (bufferedUsageStartWallMs == null) bufferedUsageStartWallMs = intervalStart
-                    bufferedUsageEndWallMs = cappedEnd
-                }
-                val bufferedDuration = (bufferedUsageEndWallMs ?: 0) - (bufferedUsageStartWallMs ?: 0)
-                val tightRemaining = engine.budgetSnapshots(persistedState)
-                    .filter { it.enabled }
-                    .minOfOrNull { it.remainingMs ?: Long.MAX_VALUE }
-                val isEmergency = persistedState.activeUnlock?.source == UnlockSource.EMERGENCY
-                val boundaryReached = !isEmergency && tightRemaining != null && bufferedDuration >= tightRemaining
-                val unlockReached = persistedState.activeUnlock?.expiresAtWallMs?.let { it <= wallTimeMs } == true
-                if (forceUsageFlush || bufferedDuration >= USAGE_HEARTBEAT_MS || boundaryReached || unlockReached) {
-                    flushUsageBufferLocked(forceSummaryFlush = forceUsageFlush || boundaryReached || unlockReached)
-                }
-            }
+            mode == GateMode.WAITING -> advanceFocusedWaitLocked(elapsedDelta, intervalEnd)
+            mode.traits.recordsUsage -> bufferBrowsingUsageLocked(intervalStart, intervalEnd, wallTimeMs, forceUsageFlush)
             else -> flushUsageBufferLocked(forceSummaryFlush = true)
         }
 
@@ -580,6 +533,13 @@ class RestrictorRepository(
         val zone = timeSource.zoneId()
         val periodChanged = PeriodCalculator.keysAt(previousWall, zone, persistedState.configuration.settings) != PeriodCalculator.keysAt(wallTimeMs, zone, persistedState.configuration.settings)
         if (clockChanged || periodChanged) flushUsageBufferLocked(forceSummaryFlush = true)
+        normalizeAccountingLocked(wallTimeMs)
+
+        manageGateTokensLocked()
+    }
+
+    /** Publish accounting changes only after their durable write succeeds. */
+    private suspend fun normalizeAccountingLocked(wallTimeMs: Long) {
         val normalized = engine.normalize(persistedState, wallTimeMs, timeSource.zoneId())
         if (normalized != persistedState) {
             val before = persistedState
@@ -588,8 +548,65 @@ class RestrictorRepository(
                 recordTransition(before, normalized)
             }
         }
+    }
 
-        manageGateTokensLocked()
+    private suspend fun advanceFocusedWaitLocked(elapsedDelta: Long, intervalEnd: Long) {
+        flushUsageBufferLocked(forceSummaryFlush = true)
+        val result = engine.advanceWait(
+            input = persistedState,
+            runtime = runtime,
+            elapsedMs = elapsedDelta,
+            nowWallMs = intervalEnd,
+            zoneId = timeSource.zoneId(),
+            expectedGateSessionId = runtime.gateSessionId,
+        )
+        val next = when (result) {
+            is CommandResult.Applied -> result.state
+            is CommandResult.NormalCompletionWon -> result.state
+            is CommandResult.Rejected -> result.state
+        }
+        if (next != persistedState) {
+            val before = persistedState
+            if (persistLocked(next)) {
+                persistedState = next
+                recordTransition(before, next)
+            }
+        }
+    }
+
+    private suspend fun bufferBrowsingUsageLocked(
+        intervalStart: Long,
+        intervalEnd: Long,
+        wallTimeMs: Long,
+        forceUsageFlush: Boolean,
+    ) {
+        appendBrowsingInterval(intervalStart, intervalEnd)
+        val bufferedDuration = (bufferedUsageEndWallMs ?: 0) - (bufferedUsageStartWallMs ?: 0)
+        val boundaryReached = browsingBudgetBoundaryReached(bufferedDuration)
+        val unlockReached = persistedState.activeUnlock?.expiresAtWallMs?.let { it <= wallTimeMs } == true
+        val forceSummary = forceUsageFlush || boundaryReached || unlockReached
+        if (forceSummary || bufferedDuration >= USAGE_HEARTBEAT_MS) {
+            flushUsageBufferLocked(forceSummaryFlush = forceSummary)
+        }
+    }
+
+    private fun appendBrowsingInterval(intervalStart: Long, intervalEnd: Long) {
+        val cappedEnd = persistedState.activeUnlock?.expiresAtWallMs
+            ?.coerceAtMost(intervalEnd)
+            ?.coerceAtLeast(intervalStart)
+            ?: intervalEnd
+        if (cappedEnd > intervalStart) {
+            if (bufferedUsageStartWallMs == null) bufferedUsageStartWallMs = intervalStart
+            bufferedUsageEndWallMs = cappedEnd
+        }
+    }
+
+    private fun browsingBudgetBoundaryReached(bufferedDuration: Long): Boolean {
+        val tightRemaining = engine.budgetSnapshots(persistedState)
+            .filter { it.enabled }
+            .minOfOrNull { it.remainingMs ?: Long.MAX_VALUE }
+        val isEmergency = persistedState.activeUnlock?.source == UnlockSource.EMERGENCY
+        return !isEmergency && tightRemaining != null && bufferedDuration >= tightRemaining
     }
 
     private suspend fun flushUsageBufferLocked(forceSummaryFlush: Boolean = false) {
@@ -599,26 +616,31 @@ class RestrictorRepository(
         bufferedUsageEndWallMs = null
         var previousWasEmergency = false
         if (start != null && end != null && end > start) {
-            val before = persistedState
-            val wasEmergency = before.activeUnlock?.source == UnlockSource.EMERGENCY
-            previousWasEmergency = wasEmergency
-            val consumption = engine.consumeUsageDetailed(before, runtime, start, end, timeSource.zoneId())
-            val next = consumption.state
-            if (next != before && persistLocked(next)) {
-                val becameExhausted = !engine.budgetSnapshots(before).any { it.exhausted } &&
-                    engine.budgetSnapshots(next).any { it.exhausted }
-                accumulatedRecordedMs = Math.addExact(accumulatedRecordedMs, consumption.recordedMs)
-                accumulatedChargedMs = Math.addExact(accumulatedChargedMs, consumption.chargedMs)
-                recordTransition(before, next)
-                if (becameExhausted) {
-                    flushUsageSummaryLocked(wasEmergency)
-                    diagnosticSink("Browser budget exhausted")
-                }
-            }
+            previousWasEmergency = consumeBufferedIntervalLocked(start, end)
+
         }
         if (forceSummaryFlush || accumulatedRecordedMs >= USAGE_SUMMARY_INTERVAL_MS) {
             flushUsageSummaryLocked(previousWasEmergency || persistedState.activeUnlock?.source == UnlockSource.EMERGENCY)
         }
+    }
+
+    private suspend fun consumeBufferedIntervalLocked(start: Long, end: Long): Boolean {
+        val before = persistedState
+        val wasEmergency = before.activeUnlock?.source == UnlockSource.EMERGENCY
+        val consumption = engine.consumeUsageDetailed(before, runtime, start, end, timeSource.zoneId())
+        val next = consumption.state
+        if (next != before && persistLocked(next)) {
+            val becameExhausted = !engine.budgetSnapshots(before).any { it.exhausted } &&
+                engine.budgetSnapshots(next).any { it.exhausted }
+            accumulatedRecordedMs = Math.addExact(accumulatedRecordedMs, consumption.recordedMs)
+            accumulatedChargedMs = Math.addExact(accumulatedChargedMs, consumption.chargedMs)
+            recordTransition(before, next)
+            if (becameExhausted) {
+                flushUsageSummaryLocked(wasEmergency)
+                diagnosticSink("Browser budget exhausted")
+            }
+        }
+        return wasEmergency
     }
 
     private fun flushUsageSummaryLocked(emergencyActive: Boolean) {
@@ -660,18 +682,23 @@ class RestrictorRepository(
             )
             return
         }
-        if (runtime.activeTarget != ProtectedTarget.BROWSER_POOL) {
-            runtime = runtime.copy(
-                outOfTimeLatchToken = null,
-                latchedBlockers = emptySet(),
-            )
-            if (!underlying.traits.gateSession) {
-                runtime = runtime.copy(gateSessionId = null, gateFocused = false)
-            } else if (runtime.gateSessionId == null) {
-                runtime = runtime.copy(gateSessionId = idGenerator.nextId())
-            }
-            return
+        if (runtime.activeTarget == ProtectedTarget.BROWSER_POOL) manageBrowserGateTokens(underlying)
+        else manageOtherTargetGateTokens(underlying)
+    }
+
+    private fun manageOtherTargetGateTokens(underlying: GateMode) {
+        runtime = runtime.copy(
+            outOfTimeLatchToken = null,
+            latchedBlockers = emptySet(),
+        )
+        if (!underlying.traits.gateSession) {
+            runtime = runtime.copy(gateSessionId = null, gateFocused = false)
+        } else if (runtime.gateSessionId == null) {
+            runtime = runtime.copy(gateSessionId = idGenerator.nextId())
         }
+    }
+
+    private fun manageBrowserGateTokens(underlying: GateMode) {
         if (runtime.outOfTimeLatchToken != null) {
             if (runtime.gateSessionId == null) runtime = runtime.copy(gateSessionId = idGenerator.nextId())
             return
@@ -718,6 +745,12 @@ class RestrictorRepository(
         if (before.activeUnlock == null && after.activeUnlock?.source == UnlockSource.NORMAL) {
             diagnosticSink("Normal unlock granted")
         }
+        recordUnlockTransition(before, after)
+        recordDailyRewardTransition(before, after)
+        if (before.settings != after.settings) diagnosticSink("Settings changed")
+    }
+
+    private fun recordUnlockTransition(before: PersistedState, after: PersistedState) {
         if (before.activeUnlock?.source != UnlockSource.EMERGENCY && after.activeUnlock?.source == UnlockSource.EMERGENCY) {
             diagnosticSink("Emergency access granted (15m free window, spendable=${after.dailyCounter.spendableBudgetRounds} sets, used=${after.dailyUsage.usedMs}ms)")
         }
@@ -727,23 +760,23 @@ class RestrictorRepository(
         if (before.activeUnlock?.source == UnlockSource.NORMAL && after.activeUnlock == null) {
             diagnosticSink("Normal unlock expired (spendable=${after.dailyCounter.spendableBudgetRounds} sets, used=${after.dailyUsage.usedMs}ms)")
         }
+    }
+
+    private fun recordDailyRewardTransition(before: PersistedState, after: PersistedState) {
         if (before.dailyCounter.localDayKey.isNotBlank() && before.dailyCounter.localDayKey != after.dailyCounter.localDayKey) {
             diagnosticSink("Daily ${after.configuration.settings.dayReset} reset applied for day ${after.dailyCounter.localDayKey} (previous earned=${before.dailyCounter.earnedBudgetRounds}, usedMs=${before.dailyUsage.usedMs})")
         }
         if (before.dailyCounter.earnedBudgetRounds < after.dailyCounter.earnedBudgetRounds) {
             diagnosticSink("Exercise sets added budget for today")
         }
-        if (before.dailyCounter.exercisePointSixths != after.dailyCounter.exercisePointSixths ||
-            before.dailyCounter.pushupRepetitionRemainder != after.dailyCounter.pushupRepetitionRemainder ||
-            before.dailyCounter.plankSecondRemainder != after.dailyCounter.plankSecondRemainder ||
-            before.dailyCounter.machineRepetitionRemainder != after.dailyCounter.machineRepetitionRemainder
-        ) {
+        if (before.dailyCounter.partialExerciseProgress() != after.dailyCounter.partialExerciseProgress()) {
             diagnosticSink("Partial exercise progress saved for today")
         }
-        if (before.settings != after.settings) {
-            diagnosticSink("Settings changed")
-        }
     }
+
+    private fun DailyCounter.partialExerciseProgress() = listOf(
+        exercisePointSixths, pushupRepetitionRemainder, plankSecondRemainder, machineRepetitionRemainder,
+    )
 
     private fun RuntimeSignals.policyFingerprint() = listOf(
         foregroundClass,

@@ -12,6 +12,18 @@ class AgentStatisticsTest {
     private val engine = RestrictionEngine()
     private fun snapshot() = engine.snapshot(engine.normalize(PersistedState(), now, zone), RuntimeSignals(), now, zone)
 
+    @Test fun absentBudgetAndResetMarkersRemainExplicitlyEmpty() {
+        val summary = AgentStatistics.build(snapshot().copy(budgetSnapshots = emptyList(),
+            lastRewardResetWallMs = 0, lastDailyRewardResetWallMs = 0), zone).getJSONObject("summary")
+        assertEquals(0.0, summary.getDouble("remainingBrowsingMinutes"), 0.0)
+        assertEquals(0.0, summary.getDouble("usedBrowsingMinutes"), 0.0)
+        assertEquals(0L, summary.getLong("grantedBrowsingMinutesThisBudget"))
+        assertTrue(summary.isNull("lastAppliedRewardResetAt"))
+        assertTrue(summary.isNull("lastAppliedDayResetAt"))
+        val known = AgentStatistics.build(snapshot().copy(lastDailyRewardResetWallMs = now), zone).getJSONObject("summary")
+        assertEquals(now, known.getLong("lastAppliedDayResetAt"))
+    }
+
     @Test fun preservesActualBrowsingIntervalsAndDistinguishesChargedBudgetFromRecordedUse() {
         val snapshot = snapshot().copy(
             usageReports = listOf(DailyUsageReport("2026-09-01", 99 * MINUTE_MS), DailyUsageReport("2026-09-15", 8 * MINUTE_MS, exerciseSets = 2)),

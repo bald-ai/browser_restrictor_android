@@ -67,7 +67,11 @@ instructions from the user's description for review.
 | `gpsMode` | GPS: `walk` or `sprint`. Video: null. GPS thresholds are fixed runtime rules. |
 
 Video recordings are capped at 30 seconds. GPS supports walking and sprinting,
-with a four-hour cap and manual stop. The agent cannot introduce new recording
+with a four-hour cap and manual stop. Live distance uses the verification movement
+filters. Mock locations or repeated/backwards GPS timestamps invalidate the whole
+recording: live distance clears to zero with an explanation, and the retained
+evidence is still rejected during verification.
+The agent cannot introduce new recording
 methods, change GPS speed/accuracy rules or replace verification with its own
 claim. Task and reward rules are pinned when recording begins. Retries do not
 award the same recording twice. Uploads after the pinned daily period expires

@@ -15,24 +15,33 @@ export const seed=()=>({settings:{waitSeconds:12,minutesPerCredit:3,sessionMinut
 const plain=x=>x&&typeof x==='object'&&!Array.isArray(x);
 const allowed=(x,keys)=>fail(Object.keys(x).every(k=>keys.includes(k)),'Unsupported configuration field.');
 const integer=(v,a,b)=>Number.isInteger(v)&&v>=a&&v<=b;
-export function validateConfig(c){
- fail(plain(c)&&plain(c.settings)&&Array.isArray(c.tasks),'Settings and tasks required.');allowed(c,['settings','tasks']);
- const s=c.settings;allowed(s,Object.keys(labels));
+function validateSettings(s){
+ allowed(s,Object.keys(labels));
  for(const [k,min,max] of [['waitSeconds',0,600],['minutesPerCredit',1,120],['dailyBudgetMinutes',0,30],['youtubeCredits',1,100],['emergencyMinutes',1,120]])fail(integer(s[k],min,max),`${labels[k]} must be ${min}–${max}.`);
  fail(Array.isArray(s.sessionMinutes)&&s.sessionMinutes.length===3&&s.sessionMinutes.every(n=>integer(n,1,120)),'Choose three session lengths from 1 to 120 minutes.');
- for(const k of ['dayReset'])fail(/^([01]\d|2[0-3]):[0-5]\d$/.test(s[k]),'Reset times must be HH:mm.');
- for(const k of ['creditName','unlockLabel','youtubeUnlockLabel','emergencyUnlockLabel'])fail(typeof s[k]==='string'&&s[k].trim().length>0&&s[k].length<=60,'Names and button labels must contain 1–60 characters.');
- fail(c.tasks.length<=50,'Up to 50 tasks are supported.');const ids=new Set();
- for(const t of c.tasks){
-  fail(plain(t),'Task must be an object.');allowed(t,['id','name','verifier','metric','unitsPerCredit','correctionMinimum','instructions','paused','gpsMode']);
-  fail(typeof t.id==='string'&&/^[a-z][a-z0-9_-]{0,63}$/.test(t.id)&&!ids.has(t.id),'Task IDs must be unique lowercase identifiers.');ids.add(t.id);
-  fail(typeof t.name==='string'&&t.name.trim()&&t.name.length<=80,'Task name must contain 1–80 characters.');
-  fail(t.verifier==='video'&&['repetitions','seconds'].includes(t.metric)&&(t.gpsMode===null||t.gpsMode===undefined)||t.verifier==='gps'&&t.metric==='meters'&&['walk','sprint'].includes(t.gpsMode),'Choose video with repetitions/seconds, or GPS with walking/sprint metres.');
-  fail(integer(t.unitsPerCredit,1,100000)&&integer(t.correctionMinimum,1,100000),'Reward and correction minimum must be positive whole numbers.');
-  fail(typeof t.instructions==='string'&&t.instructions.trim().length&&t.instructions.length<=2000,'Describe what the verifier should measure (up to 2,000 characters).');
-  if(t.verifier==='video')fail(t.correctionMinimum<=(t.metric==='seconds'?30:150),'Video correction minimum must be achievable within 30 seconds.');
-  fail(typeof t.paused==='boolean','Paused must be true or false.');
- }
+ fail(/^([01]\d|2[0-3]):[0-5]\d$/.test(s.dayReset),'Reset times must be HH:mm.');
+ for(const k of ['creditName','unlockLabel','youtubeUnlockLabel','emergencyUnlockLabel'])fail(validText(s[k],60),'Names and button labels must contain 1–60 characters.');
+}
+function validText(value,maximum){return typeof value==='string'&&value.trim().length>0&&value.length<=maximum;}
+function validTaskMethod(t){
+ if(t.verifier==='video')return ['repetitions','seconds'].includes(t.metric)&&(t.gpsMode===null||t.gpsMode===undefined);
+ return t.verifier==='gps'&&t.metric==='meters'&&['walk','sprint'].includes(t.gpsMode);
+}
+function validateTask(t,ids){
+ fail(plain(t),'Task must be an object.');allowed(t,['id','name','verifier','metric','unitsPerCredit','correctionMinimum','instructions','paused','gpsMode']);
+ fail(typeof t.id==='string'&&/^[a-z][a-z0-9_-]{0,63}$/.test(t.id)&&!ids.has(t.id),'Task IDs must be unique lowercase identifiers.');ids.add(t.id);
+ fail(validText(t.name,80),'Task name must contain 1–80 characters.');
+ fail(validTaskMethod(t),'Choose video with repetitions/seconds, or GPS with walking/sprint meters.');
+ fail(integer(t.unitsPerCredit,1,100000)&&integer(t.correctionMinimum,1,100000),'Reward and correction minimum must be positive whole numbers.');
+ fail(validText(t.instructions,2000),'Describe what the verifier should measure (up to 2,000 characters).');
+ if(t.verifier==='video')fail(t.correctionMinimum<=(t.metric==='seconds'?30:150),'Video correction minimum must be achievable within 30 seconds.');
+ fail(typeof t.paused==='boolean','Paused must be true or false.');
+}
+export function validateConfig(c){
+ fail(plain(c)&&plain(c.settings)&&Array.isArray(c.tasks),'Settings and tasks required.');allowed(c,['settings','tasks']);
+ validateSettings(c.settings);
+ fail(c.tasks.length<=50,'Up to 50 tasks are supported.');
+ const ids=new Set();for(const task of c.tasks)validateTask(task,ids);
  return clone(c);
 }
 export const taskSchema={type:'object',properties:{id:{type:'string'},name:{type:'string'},verifier:{type:'string',enum:['video','gps']},metric:{type:'string',enum:['repetitions','seconds','meters']},unitsPerCredit:{type:'integer'},correctionMinimum:{type:'integer'},instructions:{type:'string'},paused:{type:'boolean'},gpsMode:{type:['string','null'],enum:['walk','sprint',null]}},required:['id','name','verifier','metric','unitsPerCredit','correctionMinimum','instructions','paused','gpsMode'],additionalProperties:false};
@@ -45,8 +54,12 @@ export function diff(before,after){
 }
 export function applyCards(config,cards){const result=clone(config);for(const c of cards){if(c.kind==='setting')result.settings[c.key]=clone(c.after);else{const index=result.tasks.findIndex(t=>t.id===c.key);if(c.after===null){if(index>=0)result.tasks.splice(index,1);}else if(index>=0)result.tasks[index]=clone(c.after);else result.tasks.push(clone(c.after));}}return validateConfig(result);}
 const resetCache=new Map(),formatters=new Map();
-export function periodKey(time,reset,timeZone='UTC'){
+function formatterFor(timeZone){
  let formatter;try{formatter=formatters.get(timeZone)||new Intl.DateTimeFormat('en-CA',{timeZone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});formatters.set(timeZone,formatter);}catch{throw new AppError('Use a valid IANA time zone.');}
+ return formatter;
+}
+export function periodKey(time,reset,timeZone='UTC'){
+ const formatter=formatterFor(timeZone);
  const partsAt=instant=>Object.fromEntries(formatter.formatToParts(new Date(instant)).map(p=>[p.type,p.value])),parts=partsAt(time),dateKey=`${parts.year}-${parts.month}-${parts.day}`,cacheKey=timeZone+'|'+dateKey+'|'+reset;
  let boundary=resetCache.get(cacheKey);const midnight=Date.UTC(+parts.year,+parts.month-1,+parts.day);
  if(boundary===undefined){const[h,m]=reset.split(':').map(Number),target=h*60+m;

@@ -23,9 +23,42 @@ import java.time.ZoneId
 import java.time.ZonedDateTime
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AppStateSerializerTest {
+    @Test fun invalidCurrentAndLegacyPresetCountsAreRejectedBeforeReadingTheRestOfState() = runTest {
+        for ((schema, count) in listOf(15 to 0, 15 to 7, 14 to 1, 14 to 2, 14 to 4)) {
+            val bytes = ByteArrayOutputStream().also { output -> DataOutputStream(output).use { data ->
+                data.writeInt(0x49525354); data.writeInt(schema); data.writeLong(1)
+                data.writeBoolean(true)
+                data.writeBoolean(true); data.writeLong(100) // retired pause remains readable
+                data.writeBoolean(true); data.writeBoolean(true); data.writeLong(1)
+                data.writeInt(ThemePreference.DARK.ordinal); data.writeBoolean(true)
+                data.writeInt(count)
+            } }.toByteArray()
+            val error = runCatching { AppStateSerializer.readFrom(ByteArrayInputStream(bytes)) }.exceptionOrNull()
+            assertTrue("schema=$schema, count=$count: $error", error is CorruptionException)
+            assertEquals("Invalid session preset count", error!!.message)
+        }
+    }
+
+    @Test
+    fun everyTruncatedCurrentStateFailsInsteadOfRestoringPartialBalances() = runTest {
+        val state = PersistedState(
+            activeUnlock = UnlockSession("active", UnlockSource.NORMAL, 1000, 2000),
+            dailyCounter = DailyCounter(earnedBudgetRounds = 2, spendableBudgetRounds = 1),
+        )
+        val output = ByteArrayOutputStream()
+        AppStateSerializer.writeTo(state, output)
+        val bytes = output.toByteArray()
+        for (length in bytes.indices) {
+            val failure = runCatching { AppStateSerializer.readFrom(ByteArrayInputStream(bytes.copyOf(length))) }.exceptionOrNull()
+            assertTrue("Truncated at $length/${bytes.size}: $failure", failure is CorruptionException)
+        }
+        assertEquals(state, AppStateSerializer.readFrom(ByteArrayInputStream(bytes)))
+    }
+
     @Test
     fun corruptListCountsAreRejectedBeforeAllocation() = runTest {
         val output = ByteArrayOutputStream()

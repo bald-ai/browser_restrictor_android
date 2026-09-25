@@ -29,11 +29,6 @@ fun BudgetBar(
     if (!budget.enabled) return
     val exhausted = budget.exhausted || forceExhausted
     val percent = if (forceExhausted) 100 else budget.percentage
-    val color = when {
-        exhausted -> EditorialTheme.colors.low
-        percent >= 80 -> EditorialTheme.colors.warn
-        else -> EditorialTheme.colors.go
-    }
     val remaining = if (forceExhausted) 0L else budget.remainingMs ?: 0
     Column(
         modifier = modifier.semantics {
@@ -57,18 +52,29 @@ fun BudgetBar(
                 color = if (exhausted) EditorialTheme.colors.low else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        BudgetUsageTrack(exhausted, percent)
+
+    }
+}
+
+@Composable
+private fun BudgetUsageTrack(exhausted: Boolean, percent: Int) {
+    val color = when {
+        exhausted -> EditorialTheme.colors.low
+        percent >= 80 -> EditorialTheme.colors.warn
+        else -> EditorialTheme.colors.go
+    }
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(4.dp)
+            .background(EditorialTheme.colors.hairlineSoft, RoundedCornerShape(100)),
+    ) {
         Box(
             Modifier
-                .fillMaxWidth()
+                .fillMaxWidth((percent / 100f).coerceIn(0f, 1f))
                 .height(4.dp)
-                .background(EditorialTheme.colors.hairlineSoft, RoundedCornerShape(100)),
-        ) {
-            Box(
-                Modifier
-                    .fillMaxWidth((percent / 100f).coerceIn(0f, 1f))
-                    .height(4.dp)
-                    .background(color, RoundedCornerShape(100)),
-            )
-        }
+                .background(color, RoundedCornerShape(100)),
+        )
     }
 }

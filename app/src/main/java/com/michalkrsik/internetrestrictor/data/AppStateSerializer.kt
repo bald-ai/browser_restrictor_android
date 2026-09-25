@@ -57,215 +57,24 @@ object AppStateSerializer : Serializer<PersistedState> {
                 throw CorruptionException("Unsupported state schema: $schema")
             }
             val revision = source.readLong()
-            source.readBoolean() // Retired enforcement toggle. Protection is always on.
-            if (schema >= 2 && source.readBoolean()) source.readLong() // Retired pause end.
-            source.readBoolean() // Retired wait toggle. The focused wait is always required.
-            if (schema <= 2) {
-                // Legacy builds stored configurable daily, weekly, and monthly limits.
-                repeat(3) {
-                    source.readBoolean()
-                    source.readLong()
-                }
-            }
-            source.readBoolean() // Retired emergency-skip toggle. Skips are always enabled.
-            source.readLong() // Retired configurable emergency-skip limit.
-            val theme = source.readEnum<ThemePreference>()
-            val onboardingCompleted = source.readBoolean()
-            val sessionMinutes = if (schema >= 4) {
-                val count = source.readInt()
-                if (count !in 1..6 || (schema < 15 && count != DEFAULT_SESSION_MINUTES.size)) {
-                    throw CorruptionException("Invalid session preset count")
-                }
-                List(count) { source.readLong() }
-            } else {
-                DEFAULT_SESSION_MINUTES
-            }
-            val settings = RestrictorSettings(
-                enforcementEnabled = true,
-                pauseUntilWallMs = null,
-                delayEnabled = true,
-                emergencySkipsEnabled = true,
-                emergencySkipDailyLimit = EMERGENCY_SKIP_DAILY_LIMIT,
-                theme = theme,
-                onboardingCompleted = onboardingCompleted,
-                sessionMinutes = sessionMinutes,
-            )
-            val daily = source.readUsage(BudgetPeriod.DAILY)
-            if (schema <= 2) {
-                // Consume the retired weekly and monthly usage records.
-                source.readUTF()
-                source.readLong()
-                source.readUTF()
-                source.readLong()
-            }
-            val unlock = if (source.readBoolean()) {
-                val id = source.readUTF()
-                val sourceOrdinal = source.readInt()
-                val grantedAtWallMs = source.readLong()
-                val expiresAtWallMs = source.readLong()
-                val unlockSource = UnlockSource.entries.getOrNull(sourceOrdinal)
-                if (schema <= 2 && sourceOrdinal == 2) {
-                    // A legacy push-up unlock is deliberately not migrated into earned budget.
-                    null
-                } else {
-                    UnlockSession(
-                        id = id,
-                        source = unlockSource
-                            ?: throw CorruptionException("Invalid unlock source"),
-                        grantedAtWallMs = grantedAtWallMs,
-                        expiresAtWallMs = expiresAtWallMs,
-                    )
-                }
-            } else null
-            val pending = if (source.readBoolean()) {
-                val storedPending = PendingWait(
-                    id = source.readUTF(),
-                    selectedDurationMs = source.readLong(),
-                    requiredFocusMs = source.readLong(),
-                    accumulatedFocusMs = source.readLong(),
-                    createdAtWallMs = source.readLong(),
-                    updatedAtWallMs = source.readLong(),
-                )
-                if (schema <= 2) {
-                    // Legacy waits used the retired escalating formula. Restart at the fixed
-                    // 12-second gate instead of carrying an incompatible partial wait forward.
-                    null
-                } else {
-                    storedPending
-                }
-            } else null
-            val localDayKey = source.readUTF()
-            val earnedBudgetRounds = if (schema >= 3) {
-                source.readLong()
-            } else {
-                source.readLong() // Retired completed-normal-unlock count.
-                0L
-            }
-            val emergencySkipsUsed = source.readLong()
-            val pushupRepetitionRemainder = if (schema >= 7) source.readLong() else 0L
-            val spendableBudgetRounds = if (schema >= 8) source.readLong() else earnedBudgetRounds
-            val legacyEveningResetApplied = if (schema >= 8) source.readBoolean() else false
-            val verifiedPushups: Long
-            val plankSecondRemainder: Long
-            val machineRepetitionRemainder: Long
-            val creditedExerciseVerificationIds: List<String>
-            if (schema >= 10) {
-                verifiedPushups = source.readLong()
-                plankSecondRemainder = source.readLong()
-                machineRepetitionRemainder = source.readLong()
-                val creditedVerificationCount = source.readInt()
-                if (creditedVerificationCount !in 0..MAX_DAILY_CREDITED_EXERCISE_VERIFICATIONS) {
-                    throw CorruptionException("Invalid credited exercise verification count")
-                }
-                creditedExerciseVerificationIds = List(creditedVerificationCount) { source.readUTF() }
-            } else {
-                verifiedPushups = Math.addExact(
-                    Math.multiplyExact(earnedBudgetRounds, 5L), // Historical schemas used five push-ups per set.
-                    pushupRepetitionRemainder,
-                )
-                plankSecondRemainder = 0L
-                machineRepetitionRemainder = 0L
-                creditedExerciseVerificationIds = emptyList()
-            }
-            val counter = DailyCounter(
-                localDayKey = localDayKey,
-                exercisePointSixths = if (schema >= 11) source.readLong() else 0L,
-                earnedBudgetRounds = earnedBudgetRounds,
-                emergencySkipsUsed = emergencySkipsUsed,
-                pushupRepetitionRemainder = pushupRepetitionRemainder,
-                spendableBudgetRounds = spendableBudgetRounds,
-                legacyEveningResetApplied = legacyEveningResetApplied,
-                plankSecondRemainder = plankSecondRemainder,
-                machineRepetitionRemainder = machineRepetitionRemainder,
-                verifiedPushups = verifiedPushups,
-                creditedExerciseVerificationIds = creditedExerciseVerificationIds,
-                sprintMetersRemainder = if (schema >= 12) source.readLong() else 0L,
-            )
+            val settings = readSettings(source, schema)
+            val daily = readDailyUsage(source, schema)
+            val unlock = readUnlock(source, schema)
+            val pending = readPendingWait(source, schema)
+            val counter = readDailyCounter(source, schema)
             val metadata = RuntimeMetadata(
                 lastCommittedWallMs = source.readLong(),
                 recoveryEpochId = source.readUTF(),
                 serviceLastConnectedWallMs = source.readLong(),
                 lastKnownForegroundClass = source.readEnum<ForegroundClass>(),
             )
-            val reports = if (schema >= 2) {
-                List(source.readBoundedCount("usage reports", RestrictionEngine.MAX_REPORT_DAYS)) {
-                    val localDayKey = source.readUTF()
-                    val protectedUsageMs = source.readLong()
-                    source.readLong() // Retired protection-off usage is deliberately discarded.
-                    val exerciseSets = if (schema >= 5) source.readLong() else 0L
-                    DailyUsageReport(
-                        localDayKey = localDayKey,
-                        protectedUsageMs = protectedUsageMs,
-                        offUsageMs = 0,
-                        exerciseSets = exerciseSets,
-                    )
-                }
-            } else emptyList()
-            val reminder = if (schema >= 2) {
-                OffUsageReminderState(
-                    sessionStartedAtWallMs = source.readLong(),
-                    qualifyingUsageMs = source.readLong(),
-                    firstNotificationSent = source.readBoolean(),
-                    lastNotificationWallMs = source.readLong(),
-                    usageAtLastNotificationMs = source.readLong(),
-                )
-            } else OffUsageReminderState()
-            val currentVisitGraceActive = if (schema == 2) {
-                try {
-                    source.readBoolean()
-                } catch (_: EOFException) {
-                    // Early schema-v2 development builds ended after the reminder state.
-                    false
-                }
-            } else if (schema >= 3) {
-                source.readBoolean()
-            } else false
-            val activityEvents = if (schema >= 6) {
-                List(source.readBoundedCount("activity events", RestrictionEngine.MAX_ACTIVITY_EVENTS)) {
-                    ActivityEvent(
-                        id = source.readUTF(),
-                        localDayKey = source.readUTF(),
-                        type = source.readEnum<ActivityEventType>(),
-                        startedAtWallMs = source.readLong(),
-                        endedAtWallMs = source.readLong(),
-                        valueMs = source.readLong(),
-                    )
-                }
-            } else emptyList()
-            val monthlyPushupCycles = if (schema >= 9) {
-                List(source.readBoundedCount("monthly cycles", 10_000)) {
-                    MonthlyPushupCycle(
-                        cycleStartDate = source.readUTF(),
-                        totalPushups = source.readLong(),
-                    )
-                }
-            } else emptyList()
-            val lastExercise = if (schema >= 13 && source.readBoolean()) ExerciseReceipt(
-                id = source.readUTF(), dayKey = source.readUTF(), recordedAtWallMs = source.readLong(),
-                originalExercise = source.readEnum<ExerciseId>(), originalValue = source.readLong(),
-                exercise = source.readEnum<ExerciseId>(), value = source.readLong(),
-                pointsBefore = source.readLong(), awardedSets = source.readLong(),
-                legacyEveningResetApplied = source.readBoolean(), flagged = source.readBoolean(),
-                corrected = source.readBoolean(),
-            ) else null
-            val correctionHistory = if (schema >= 14) {
-                // The count is untrusted: reject negatives, then decode incrementally so a
-                // corrupt large count fails on EOF instead of preallocating a huge list.
-                val count = source.readBoundedCount("correction events", Int.MAX_VALUE)
-                val events = ArrayList<CorrectionEvent>()
-                repeat(count) {
-                    events += CorrectionEvent(
-                        id = source.readUTF(),
-                        receiptId = source.readUTF(),
-                        correctedAtWallMs = source.readLong(),
-                        originalType = source.readUTF(),
-                        originalValue = source.readLong(),
-                        correctedType = source.readUTF(),
-                        correctedValue = source.readLong(),
-                    )
-                }
-                events
-            } else emptyList()
+            val reports = readUsageReports(source, schema)
+            val reminder = readReminder(source, schema)
+            val currentVisitGraceActive = readVisitGrace(source, schema)
+            val activityEvents = readActivityEvents(source, schema)
+            val monthlyPushupCycles = readMonthlyCycles(source, schema)
+            val lastExercise = readExerciseReceipt(source, schema)
+            val correctionHistory = readCorrectionHistory(source, schema)
             var state = PersistedState(
                 lastExercise = lastExercise,
                 correctionHistory = correctionHistory,
@@ -283,20 +92,279 @@ object AppStateSerializer : Serializer<PersistedState> {
                 offUsageReminder = reminder,
                 currentVisitGraceActive = currentVisitGraceActive,
             )
-            if (schema >= 15) {
-                val bytes = source.readBoundedCount("v1 state bytes", 32 * 1024 * 1024)
-                val encoded = ByteArray(bytes)
-                source.readFully(encoded)
-                state = ConfigurationJson.withStateJson(state, JSONObject(encoded.toString(Charsets.UTF_8)))
-            } else {
-                state = state.copy(configuration = AppConfiguration(settings = ConfigurationSettings(sessionMinutes = state.settings.sessionMinutes)))
-            }
+            state = readConfiguration(source, schema, state)
             validate(state)
             return state
         } catch (error: CorruptionException) {
             throw error
         } catch (error: Exception) {
             throw CorruptionException("State could not be read", error)
+        }
+    }
+
+    private fun readSettings(source: DataInputStream, schema: Int): RestrictorSettings {
+        source.readBoolean() // Retired enforcement toggle. Protection is always on.
+        if (schema >= 2 && source.readBoolean()) source.readLong() // Retired pause end.
+        source.readBoolean() // Retired wait toggle. The focused wait is always required.
+        if (schema <= 2) {
+            // Legacy builds stored configurable daily, weekly, and monthly limits.
+            repeat(3) {
+                source.readBoolean()
+                source.readLong()
+            }
+        }
+        source.readBoolean() // Retired emergency-skip toggle. Skips are always enabled.
+        source.readLong() // Retired configurable emergency-skip limit.
+        val theme = source.readEnum<ThemePreference>()
+        val onboardingCompleted = source.readBoolean()
+        val sessionMinutes = if (schema >= 4) {
+            val count = source.readInt()
+            if (count !in 1..6 || (schema < 15 && count != DEFAULT_SESSION_MINUTES.size)) {
+                throw CorruptionException("Invalid session preset count")
+            }
+            List(count) { source.readLong() }
+        } else {
+            DEFAULT_SESSION_MINUTES
+        }
+        val settings = RestrictorSettings(
+            enforcementEnabled = true,
+            pauseUntilWallMs = null,
+            delayEnabled = true,
+            emergencySkipsEnabled = true,
+            emergencySkipDailyLimit = EMERGENCY_SKIP_DAILY_LIMIT,
+            theme = theme,
+            onboardingCompleted = onboardingCompleted,
+            sessionMinutes = sessionMinutes,
+        )
+        return settings
+    }
+
+    private fun readDailyUsage(source: DataInputStream, schema: Int): UsagePeriodState {
+        val daily = source.readUsage(BudgetPeriod.DAILY)
+        if (schema <= 2) {
+            // Consume the retired weekly and monthly usage records.
+            source.readUTF()
+            source.readLong()
+            source.readUTF()
+            source.readLong()
+        }
+        return daily
+    }
+
+    private fun readUnlock(source: DataInputStream, schema: Int): UnlockSession? {
+        val unlock = if (source.readBoolean()) {
+            val id = source.readUTF()
+            val sourceOrdinal = source.readInt()
+            val grantedAtWallMs = source.readLong()
+            val expiresAtWallMs = source.readLong()
+            val unlockSource = UnlockSource.entries.getOrNull(sourceOrdinal)
+            if (schema <= 2 && sourceOrdinal == 2) {
+                // A legacy push-up unlock is deliberately not migrated into earned budget.
+                null
+            } else {
+                UnlockSession(
+                    id = id,
+                    source = unlockSource
+                        ?: throw CorruptionException("Invalid unlock source"),
+                    grantedAtWallMs = grantedAtWallMs,
+                    expiresAtWallMs = expiresAtWallMs,
+                )
+            }
+        } else null
+        return unlock
+    }
+
+    private fun readPendingWait(source: DataInputStream, schema: Int): PendingWait? {
+        val pending = if (source.readBoolean()) {
+            val storedPending = PendingWait(
+                id = source.readUTF(),
+                selectedDurationMs = source.readLong(),
+                requiredFocusMs = source.readLong(),
+                accumulatedFocusMs = source.readLong(),
+                createdAtWallMs = source.readLong(),
+                updatedAtWallMs = source.readLong(),
+            )
+            if (schema <= 2) {
+                // Legacy waits used the retired escalating formula. Restart at the fixed
+                // 12-second gate instead of carrying an incompatible partial wait forward.
+                null
+            } else {
+                storedPending
+            }
+        } else null
+        return pending
+    }
+
+    private fun readDailyCounter(source: DataInputStream, schema: Int): DailyCounter {
+        val localDayKey = source.readUTF()
+        val earnedBudgetRounds = if (schema >= 3) {
+            source.readLong()
+        } else {
+            source.readLong() // Retired completed-normal-unlock count.
+            0L
+        }
+        val emergencySkipsUsed = source.readLong()
+        val pushupRepetitionRemainder = if (schema >= 7) source.readLong() else 0L
+        val spendableBudgetRounds = if (schema >= 8) source.readLong() else earnedBudgetRounds
+        val legacyEveningResetApplied = if (schema >= 8) source.readBoolean() else false
+        val verifiedPushups: Long
+        val plankSecondRemainder: Long
+        val machineRepetitionRemainder: Long
+        val creditedExerciseVerificationIds: List<String>
+        if (schema >= 10) {
+            verifiedPushups = source.readLong()
+            plankSecondRemainder = source.readLong()
+            machineRepetitionRemainder = source.readLong()
+            creditedExerciseVerificationIds = readCreditedIds(source)
+        } else {
+            verifiedPushups = Math.addExact(
+                Math.multiplyExact(earnedBudgetRounds, 5L), // Historical schemas used five push-ups per set.
+                pushupRepetitionRemainder,
+            )
+            plankSecondRemainder = 0L
+            machineRepetitionRemainder = 0L
+            creditedExerciseVerificationIds = emptyList()
+        }
+        val counter = DailyCounter(
+            localDayKey = localDayKey,
+            exercisePointSixths = if (schema >= 11) source.readLong() else 0L,
+            earnedBudgetRounds = earnedBudgetRounds,
+            emergencySkipsUsed = emergencySkipsUsed,
+            pushupRepetitionRemainder = pushupRepetitionRemainder,
+            spendableBudgetRounds = spendableBudgetRounds,
+            legacyEveningResetApplied = legacyEveningResetApplied,
+            plankSecondRemainder = plankSecondRemainder,
+            machineRepetitionRemainder = machineRepetitionRemainder,
+            verifiedPushups = verifiedPushups,
+            creditedExerciseVerificationIds = creditedExerciseVerificationIds,
+            sprintMetersRemainder = if (schema >= 12) source.readLong() else 0L,
+        )
+        return counter
+    }
+
+    private fun readCreditedIds(source: DataInputStream): List<String> {
+            val creditedVerificationCount = source.readInt()
+            if (creditedVerificationCount !in 0..MAX_DAILY_CREDITED_EXERCISE_VERIFICATIONS) {
+                throw CorruptionException("Invalid credited exercise verification count")
+            }
+            return List(creditedVerificationCount) { source.readUTF() }
+    }
+
+    private fun readUsageReports(source: DataInputStream, schema: Int): List<DailyUsageReport> {
+        val reports = if (schema >= 2) {
+            List(source.readBoundedCount("usage reports", RestrictionEngine.MAX_REPORT_DAYS)) {
+                val localDayKey = source.readUTF()
+                val protectedUsageMs = source.readLong()
+                source.readLong() // Retired protection-off usage is deliberately discarded.
+                val exerciseSets = if (schema >= 5) source.readLong() else 0L
+                DailyUsageReport(
+                    localDayKey = localDayKey,
+                    protectedUsageMs = protectedUsageMs,
+                    offUsageMs = 0,
+                    exerciseSets = exerciseSets,
+                )
+            }
+        } else emptyList()
+        return reports
+    }
+
+    private fun readReminder(source: DataInputStream, schema: Int): OffUsageReminderState {
+        val reminder = if (schema >= 2) {
+            OffUsageReminderState(
+                sessionStartedAtWallMs = source.readLong(),
+                qualifyingUsageMs = source.readLong(),
+                firstNotificationSent = source.readBoolean(),
+                lastNotificationWallMs = source.readLong(),
+                usageAtLastNotificationMs = source.readLong(),
+            )
+        } else OffUsageReminderState()
+        return reminder
+    }
+
+    private fun readVisitGrace(source: DataInputStream, schema: Int): Boolean {
+        val currentVisitGraceActive = if (schema == 2) {
+            try {
+                source.readBoolean()
+            } catch (_: EOFException) {
+                // Early schema-v2 development builds ended after the reminder state.
+                false
+            }
+        } else if (schema >= 3) {
+            source.readBoolean()
+        } else false
+        return currentVisitGraceActive
+    }
+
+    private fun readActivityEvents(source: DataInputStream, schema: Int): List<ActivityEvent> {
+        val activityEvents = if (schema >= 6) {
+            List(source.readBoundedCount("activity events", RestrictionEngine.MAX_ACTIVITY_EVENTS)) {
+                ActivityEvent(
+                    id = source.readUTF(),
+                    localDayKey = source.readUTF(),
+                    type = source.readEnum<ActivityEventType>(),
+                    startedAtWallMs = source.readLong(),
+                    endedAtWallMs = source.readLong(),
+                    valueMs = source.readLong(),
+                )
+            }
+        } else emptyList()
+        return activityEvents
+    }
+
+    private fun readMonthlyCycles(source: DataInputStream, schema: Int): List<MonthlyPushupCycle> {
+        val monthlyPushupCycles = if (schema >= 9) {
+            List(source.readBoundedCount("monthly cycles", 10_000)) {
+                MonthlyPushupCycle(
+                    cycleStartDate = source.readUTF(),
+                    totalPushups = source.readLong(),
+                )
+            }
+        } else emptyList()
+        return monthlyPushupCycles
+    }
+
+    private fun readExerciseReceipt(source: DataInputStream, schema: Int): ExerciseReceipt? {
+        val lastExercise = if (schema >= 13 && source.readBoolean()) ExerciseReceipt(
+            id = source.readUTF(), dayKey = source.readUTF(), recordedAtWallMs = source.readLong(),
+            originalExercise = source.readEnum<ExerciseId>(), originalValue = source.readLong(),
+            exercise = source.readEnum<ExerciseId>(), value = source.readLong(),
+            pointsBefore = source.readLong(), awardedSets = source.readLong(),
+            legacyEveningResetApplied = source.readBoolean(), flagged = source.readBoolean(),
+            corrected = source.readBoolean(),
+        ) else null
+        return lastExercise
+    }
+
+    private fun readCorrectionHistory(source: DataInputStream, schema: Int): List<CorrectionEvent> {
+        val correctionHistory = if (schema >= 14) {
+            // The count is untrusted: reject negatives, then decode incrementally so a
+            // corrupt large count fails on EOF instead of preallocating a huge list.
+            val count = source.readBoundedCount("correction events", Int.MAX_VALUE)
+            val events = ArrayList<CorrectionEvent>()
+            repeat(count) {
+                events += CorrectionEvent(
+                    id = source.readUTF(),
+                    receiptId = source.readUTF(),
+                    correctedAtWallMs = source.readLong(),
+                    originalType = source.readUTF(),
+                    originalValue = source.readLong(),
+                    correctedType = source.readUTF(),
+                    correctedValue = source.readLong(),
+                )
+            }
+            events
+        } else emptyList()
+        return correctionHistory
+    }
+
+    private fun readConfiguration(source: DataInputStream, schema: Int, state: PersistedState): PersistedState {
+        if (schema >= 15) {
+            val bytes = source.readBoundedCount("v1 state bytes", 32 * 1024 * 1024)
+            val encoded = ByteArray(bytes)
+            source.readFully(encoded)
+            return ConfigurationJson.withStateJson(state, JSONObject(encoded.toString(Charsets.UTF_8)))
+        } else {
+            return state.copy(configuration = AppConfiguration(settings = ConfigurationSettings(sessionMinutes = state.settings.sessionMinutes)))
         }
     }
 
@@ -417,20 +485,48 @@ object AppStateSerializer : Serializer<PersistedState> {
         target.flush()
     }
 
+    private fun invalid(message: String): Nothing = throw CorruptionException(message)
+
     private fun validate(state: PersistedState) {
-        fun invalid(message: String): Nothing = throw CorruptionException(message)
         if (state.schemaVersion != RESTRICTOR_SCHEMA_VERSION) invalid("Wrong schema")
-        state.lastExercise?.let {
-            if (it.id.isBlank() || it.id.length > 128 || it.dayKey.isBlank() || it.recordedAtWallMs < 0 ||
-                it.originalValue <= 0 || it.value < 0 ||
-                ExercisePolicies.find(it.originalExercise)?.credited != true ||
-                ExercisePolicies.find(it.exercise)?.credited != true ||
-                it.pointsBefore !in 0 until EXERCISE_POINT_SIXTHS_PER_BOOST ||
-                it.awardedSets !in 0..MAX_SAFE_BUDGET_ROUNDS) invalid("Invalid exercise receipt")
-        }
+        validateExerciseReceipt(state)
+        validateTaskAccounting(state)
+        validateProtectionSettings(state)
+        validateUnlockState(state)
+        validateDailyCounter(state)
+        validateUsageHistory(state)
+        validateActivityHistory(state)
+        validateCorrectionHistory(state)
+        validateMonthlyCycles(state)
+        validateReminder(state)
+    }
+
+    private fun validateExerciseReceipt(state: PersistedState) {
+        val receipt = state.lastExercise ?: return
+        validateExerciseIdentity(receipt)
+        validateExerciseAward(receipt)
+    }
+
+    private fun validateExerciseIdentity(receipt: ExerciseReceipt) {
+        if (receipt.id.isBlank() || receipt.id.length > 128 || receipt.dayKey.isBlank() ||
+            receipt.recordedAtWallMs < 0) invalid("Invalid exercise receipt")
+    }
+
+    private fun validateExerciseAward(receipt: ExerciseReceipt) {
+        if (receipt.originalValue <= 0 || receipt.value < 0 ||
+            ExercisePolicies.find(receipt.originalExercise)?.credited != true ||
+            ExercisePolicies.find(receipt.exercise)?.credited != true ||
+            receipt.pointsBefore !in 0 until EXERCISE_POINT_SIXTHS_PER_BOOST ||
+            receipt.awardedSets !in 0..MAX_SAFE_BUDGET_ROUNDS) invalid("Invalid exercise receipt")
+    }
+
+    private fun validRemainder(fraction: com.michalkrsik.internetrestrictor.domain.CreditFraction): Boolean =
+        fraction.valid() && fraction.whole == 0L
+
+    private fun validateTaskAccounting(state: PersistedState) {
         state.configuration.validationError()?.let { invalid(it) }
-        if (state.lastRewardResetWallMs < 0 || state.lastDailyRewardResetWallMs < 0 || !state.taskCreditProgress.valid() || state.taskCreditProgress.whole != 0L ||
-            !state.taskProgressBase.valid() || state.taskProgressBase.whole != 0L || state.taskReceipts.size > 10_000 ||
+        if (state.lastRewardResetWallMs < 0 || state.lastDailyRewardResetWallMs < 0 || !validRemainder(state.taskCreditProgress) ||
+            !validRemainder(state.taskProgressBase) || state.taskReceipts.size > 10_000 ||
             state.taskReceipts.map { it.measurement.id }.distinct().size != state.taskReceipts.size ||
             state.dailyCounter.grantedBudgetMinutes?.let { it !in 0..com.michalkrsik.internetrestrictor.domain.MAX_SAFE_MINUTES } == true) invalid("Invalid task accounting")
         state.taskReceipts.forEach {
@@ -438,6 +534,9 @@ object AppStateSerializer : Serializer<PersistedState> {
                 java.math.BigDecimal(it.valueText).toLong() != it.value ||
                 it.value !in 0..1_000_000 || it.awardedCredits < 0 || it.awardedMinutes < 0) invalid("Invalid saved task receipt")
         }
+    }
+
+    private fun validateProtectionSettings(state: PersistedState) {
         if (state.stateRevision < 0) invalid("Negative revision")
         if (!state.settings.enforcementEnabled || state.settings.pauseUntilWallMs != null) {
             invalid("Protection must remain enabled")
@@ -447,10 +546,17 @@ object AppStateSerializer : Serializer<PersistedState> {
         if (state.settings.emergencySkipDailyLimit != EMERGENCY_SKIP_DAILY_LIMIT) {
             invalid("Invalid setting value")
         }
+        validateSessionPresets(state.settings)
+    }
+
+    private fun validateSessionPresets(settings: RestrictorSettings) {
         if (
-            state.settings.sessionMinutes.size !in 1..6 ||
-            state.settings.sessionMinutes.any { it !in MIN_SESSION_MINUTES..MAX_SESSION_MINUTES }
+            settings.sessionMinutes.size !in 1..6 ||
+            settings.sessionMinutes.any { it !in MIN_SESSION_MINUTES..MAX_SESSION_MINUTES }
         ) invalid("Invalid session presets")
+    }
+
+    private fun validateUnlockState(state: PersistedState) {
         if (state.dailyUsage.usedMs < 0) invalid("Negative usage")
         state.activeUnlock?.let {
             if (it.id.isBlank() || it.grantedAtWallMs < 0 || it.expiresAtWallMs < it.grantedAtWallMs) {
@@ -465,29 +571,34 @@ object AppStateSerializer : Serializer<PersistedState> {
             ) invalid("Invalid pending wait")
         }
         if (state.activeUnlock != null && state.pendingWait != null) invalid("Unlock and wait overlap")
-        if (
-            state.dailyCounter.exercisePointSixths !in 0 until EXERCISE_POINT_SIXTHS_PER_BOOST ||
-            state.dailyCounter.earnedBudgetRounds !in 0..MAX_SAFE_BUDGET_ROUNDS ||
-            state.dailyCounter.spendableBudgetRounds !in 0..state.dailyCounter.earnedBudgetRounds ||
-            state.dailyCounter.emergencySkipsUsed < 0 ||
-            // These three retired fields retain their historical schema bounds.
-            state.dailyCounter.pushupRepetitionRemainder !in 0 until 5L ||
-            // Older installs can carry 15–17 seconds from the former 18-second set.
-            // Preserve these until the next verified plank folds them into credit.
-            state.dailyCounter.plankSecondRemainder !in 0 until 18L ||
-            state.dailyCounter.machineRepetitionRemainder !in 0 until 10L ||
-            state.dailyCounter.sprintMetersRemainder !in 0 until SPRINT_SET_QUALIFYING_METERS ||
-            state.dailyCounter.verifiedPushups < 0 ||
-            state.dailyCounter.creditedExerciseVerificationIds.size >
-            MAX_DAILY_CREDITED_EXERCISE_VERIFICATIONS ||
-            state.dailyCounter.creditedExerciseVerificationIds.any {
-                it.isBlank() || it.length > 128
-            } ||
-            state.dailyCounter.creditedExerciseVerificationIds.distinct().size !=
-            state.dailyCounter.creditedExerciseVerificationIds.size
-        ) {
-            invalid("Invalid daily counter")
-        }
+    }
+
+    private fun validateDailyCounter(state: PersistedState) {
+        val counter = state.dailyCounter
+        if (counter.exercisePointSixths !in 0 until EXERCISE_POINT_SIXTHS_PER_BOOST ||
+            counter.earnedBudgetRounds !in 0..MAX_SAFE_BUDGET_ROUNDS ||
+            counter.spendableBudgetRounds !in 0..counter.earnedBudgetRounds ||
+            counter.emergencySkipsUsed < 0 || counter.verifiedPushups < 0) invalid("Invalid daily counter")
+        validateLegacyRemainders(counter)
+        validateCreditedIds(counter.creditedExerciseVerificationIds)
+    }
+
+    private fun validateLegacyRemainders(counter: com.michalkrsik.internetrestrictor.domain.DailyCounter) {
+        // Retired fields retain their historical bounds. Preserve 15–17 plank
+        // seconds until the next verified plank folds them into credit.
+        if (counter.pushupRepetitionRemainder !in 0 until 5L ||
+            counter.plankSecondRemainder !in 0 until 18L ||
+            counter.machineRepetitionRemainder !in 0 until 10L ||
+            counter.sprintMetersRemainder !in 0 until SPRINT_SET_QUALIFYING_METERS) invalid("Invalid daily counter")
+    }
+
+    private fun validateCreditedIds(ids: List<String>) {
+        if (ids.size > MAX_DAILY_CREDITED_EXERCISE_VERIFICATIONS ||
+            ids.any { it.isBlank() || it.length > 128 } ||
+            ids.distinct().size != ids.size) invalid("Invalid daily counter")
+    }
+
+    private fun validateUsageHistory(state: PersistedState) {
         if (state.usageReports.size > RestrictionEngine.MAX_REPORT_DAYS) invalid("Too many report days")
         state.usageReports.forEach {
             if (
@@ -497,6 +608,9 @@ object AppStateSerializer : Serializer<PersistedState> {
                 invalid("Invalid usage report")
             }
         }
+    }
+
+    private fun validateActivityHistory(state: PersistedState) {
         if (state.activityEvents.size > RestrictionEngine.MAX_ACTIVITY_EVENTS) {
             invalid("Too many activity events")
         }
@@ -508,16 +622,24 @@ object AppStateSerializer : Serializer<PersistedState> {
                 invalid("Invalid activity event")
             }
         }
+    }
+
+    private fun validShortField(value: String): Boolean = value.isNotBlank() && value.length <= 128
+
+    private fun validateCorrectionHistory(state: PersistedState) {
         state.correctionHistory.forEach {
             if (
-                it.id.isBlank() || it.id.length > 128 ||
-                it.receiptId.isBlank() || it.receiptId.length > 128 ||
+                !validShortField(it.id) ||
+                !validShortField(it.receiptId) ||
                 it.correctedAtWallMs < 0 ||
-                it.originalType.isBlank() || it.originalType.length > 128 ||
-                it.correctedType.isBlank() || it.correctedType.length > 128 ||
+                !validShortField(it.originalType) ||
+                !validShortField(it.correctedType) ||
                 it.originalValue <= 0 || it.correctedValue < 0
             ) invalid("Invalid correction event")
         }
+    }
+
+    private fun validateMonthlyCycles(state: PersistedState) {
         if (state.monthlyPushupCycles.size > 10_000) invalid("Too many monthly cycles")
         var previousCycleStart: String? = null
         state.monthlyPushupCycles.forEach { cycle ->
@@ -531,6 +653,9 @@ object AppStateSerializer : Serializer<PersistedState> {
             }
             previousCycleStart = cycle.cycleStartDate
         }
+    }
+
+    private fun validateReminder(state: PersistedState) {
         with(state.offUsageReminder) {
             if (
                 sessionStartedAtWallMs < 0 || qualifyingUsageMs < 0 || lastNotificationWallMs < 0 ||

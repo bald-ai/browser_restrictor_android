@@ -13,6 +13,30 @@ import org.junit.Test
 
 class RestrictorRepositoryPolicyTest {
     @Test
+    fun dailyNormalizationFailureIsReportedAndRetriedDurably() = kotlinx.coroutines.runBlocking {
+        val zone = java.time.ZoneId.of("UTC")
+        val now = java.time.ZonedDateTime.of(2026, 7, 10, 12, 0, 0, 0, zone).toInstant().toEpochMilli()
+        val time = com.michalkrsik.internetrestrictor.domain.FakeTimeSource(now, 1000L, zone)
+        val store = FailingRewardStore(PersistedState())
+        val repo = RestrictorRepository(timeSource = time,
+            applicationScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined),
+            dataStoreOverride = store)
+        repo.awaitLoaded()
+        repo.tick(time.elapsedMs, time.wallMs)
+        val before = store.data.first()
+        store.fail = true
+        time.advance(24 * 60 * 60 * 1000L)
+        repo.tick(time.elapsedMs, time.wallMs)
+        assertEquals(before, store.data.first())
+        assertNotNull(repo.snapshot.value.lastErrorMessage)
+        assertTrue(repo.snapshot.value.lastErrorMessage!!.contains("could not be saved"))
+        store.fail = false
+        repo.tick(time.elapsedMs, time.wallMs)
+        assertEquals("2026-07-11", store.data.first().dailyCounter.localDayKey)
+        assertNull(repo.snapshot.value.lastErrorMessage)
+    }
+
+    @Test
     fun correctionWriteFailureKeepsOriginalAndRetryUpdatesOnce() = kotlinx.coroutines.runBlocking {
         val zone = java.time.ZoneId.of("UTC")
         val now = java.time.ZonedDateTime.of(2026, 9, 14, 12, 0, 0, 0, zone).toInstant().toEpochMilli()
@@ -692,6 +716,7 @@ class RestrictorRepositoryPolicyTest {
 
     @Test
     fun normalExhaustionMidBufferTruncatesRecordedAndChargedAccurately() = kotlinx.coroutines.runBlocking {
+        for (tickDuration in listOf(250L, 1000L)) {
         val zone = java.time.ZoneId.of("UTC")
         val now = java.time.ZonedDateTime.of(2026, 7, 10, 12, 0, 0, 0, zone).toInstant().toEpochMilli()
         val timeSource = com.michalkrsik.internetrestrictor.domain.FakeTimeSource(wallMs = now, elapsedMs = 1_000_000L, zone = zone)
@@ -741,8 +766,8 @@ class RestrictorRepositoryPolicyTest {
 
         repository.tick(timeSource.elapsedRealtimeMs(), timeSource.wallTimeMs())
 
-        // Request 1,000ms of browsing, but only 200ms budget remains
-        timeSource.advance(1_000L)
+        // Both below-heartbeat and heartbeat ticks must stop at 200ms remaining.
+        timeSource.advance(tickDuration)
         repository.tick(timeSource.elapsedRealtimeMs(), timeSource.wallTimeMs())
 
         val snapshot = repository.snapshot.value
@@ -755,6 +780,7 @@ class RestrictorRepositoryPolicyTest {
         val summary = diagnostics.filter { it.contains("Usage committed:") }.last()
         org.junit.Assert.assertTrue(summary.contains("recorded=200ms, charged=200ms"))
         org.junit.Assert.assertTrue(diagnostics.any { it.contains("Browser budget exhausted") })
+        }
     }
 
     @Test

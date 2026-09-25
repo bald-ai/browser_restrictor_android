@@ -98,3 +98,88 @@ test('manual hangup is not reported as a duration limit',async t=>{
  await f.voice.close(f.install,'test');
  assert.equal(f.store.snapshot(f.install).lastVoiceEnd.reason,'user');
 });
+
+test('voice creation reserves once, authenticates the transport and settles after closure',async t=>{
+ const f=await fixture(t,async()=>model([]));await f.voice.finished(f.s);
+ const {EventEmitter}=await import('node:events');let socket,request,settled;
+ class Socket extends EventEmitter{readyState=1;send(){}close(){this.emit('close');}terminate(){this.emit('close');}}
+ const voice=new Voice(f.store,f.agent,{key:'fixture-key',maxSeconds:30,fetcher:async(url,options)=>{
+  if(url.endsWith('/hangup'))return{ok:true};request={url,options};return{ok:true,json:async()=>({session:{id:'fixture/session'},transport:{sdp:'v=0 answer'}})};
+ },socketFactory:(url,options)=>{assert.match(url,/fixture%2Fsession\/attach$/);assert.equal(options.headers.Authorization,'Bearer fixture-key');socket=new Socket();setImmediate(()=>socket.emit('open'));return socket;}});
+ t.after(async()=>{for(const s of voice.sessions.values())await voice.finished(s);});
+ const created=await voice.create(f.install,'v=0 offer');assert.deepEqual(created,{sessionId:'fixture/session',sdp:'v=0 answer'});
+ assert.equal(request.options.headers.Authorization,'Bearer fixture-key');const body=JSON.parse(request.options.body);assert.equal(body.transport.sdp,'v=0 offer');assert.equal(body.session.audio.output.voice,'ripple');
+ assert.equal(f.store.getRuntime(f.install).voice.sessionId,'fixture/session');
+ await assert.rejects(voice.create(f.install,'v=0 duplicate'),/already active/);
+ const session=voice.sessions.get(created.sessionId);session.finalUsage=true;session.seconds=12;
+ await voice.finished(session);await voice.finished(session);assert.equal(voice.sessions.size,0);assert.equal(f.store.getRuntime(f.install).voice,null);
+});
+
+test('voice creation failures clear reservations and do not retain an active call',async t=>{
+ const f=await fixture(t,async()=>model([]));await f.voice.finished(f.s);
+ const unconfigured=new Voice(f.store,f.agent,{key:''});await assert.rejects(unconfigured.create(f.install,'v=0'),/not configured/);
+ const voice=new Voice(f.store,f.agent,{key:'fixture',fetcher:async()=>({ok:false,json:async()=>({})})});
+ await assert.rejects(voice.create(f.install,'invalid'),/offer/);
+ await assert.rejects(voice.create(f.install,'v=0'),/could not be created/);assert.equal(f.store.getRuntime(f.install).voice,null);assert.equal(voice.sessions.size,0);
+ const {EventEmitter}=await import('node:events');let terminated=false,hangups=0;
+ const failed=new Voice(f.store,f.agent,{key:'fixture',fetcher:async url=>{if(url.endsWith('/hangup')){hangups++;return{ok:true};}return{ok:true,json:async()=>({session:{id:'failed'},transport:{sdp:'v=0'}})};},socketFactory:()=>{const socket=new EventEmitter();socket.terminate=()=>{terminated=true;};setImmediate(()=>socket.emit('error',Error('fixture connection failure')));return socket;}});
+ await assert.rejects(failed.create(f.install,'v=0'),/sideband connection failed/);assert.equal(terminated,true);assert.equal(hangups,1);assert.equal(failed.sessions.size,0);assert.equal(f.store.getRuntime(f.install).voice,null);
+});
+
+test('voice context explains saved versus applied state, selected cards and receipt eligibility',async t=>{
+ const f=await fixture(t,async()=>model([]));
+ const config=seed();config.settings.waitSeconds=3;const p=await f.store.stage(f.install,{config,expectedRevision:0});
+ assert(f.sent.some(e=>e.type==='session.thinking.append'&&e.content.includes('setting:waitSeconds')));
+ const saved=await f.store.confirm(f.install,p.id,{version:p.version});assert(f.sent.some(e=>e.content.includes('not acknowledged')));
+ f.voice.update({installationId:f.install,kind:'applied',detail:{applicationStatus:'awaiting_device'}});assert(f.sent.some(e=>e.content.includes('still applying')));
+ await f.store.ack(f.install,1);assert(f.sent.some(e=>e.content.includes('revision 1 is active')));
+ const state=f.store.get(f.install);state.selectedCardId=p.cards[0].id;
+ f.voice.update({installationId:f.install,kind:'context'});assert(f.sent.some(e=>e.content.includes('looking at this card')));
+ const count=f.sent.length;f.voice.update({installationId:f.install,kind:'context'});assert.equal(f.sent.length,count);
+ state.selectedCardId=null;f.voice.update({installationId:f.install,kind:'context'});assert.match(f.sent.at(-1).content,/Saved revision 1/);
+ for(const detail of [{task:{name:'Walk'},measuredUnits:3,metric:'meters',rewardEligible:true,minutesRewardEligible:false},{taskId:'walk',measuredUnits:0,metric:'meters',rewardEligible:false}])f.voice.update({installationId:f.install,kind:'receipt',detail});
+ assert.match(f.sent.at(-2).content,/Browsing minutes eligible: false/);assert.match(f.sent.at(-1).content,/walk/);
+ f.voice.update({installationId:'unrelated',kind:'saved',detail:saved});
+ await f.store.cancel(f.install,{proposalId:p.id});assert(f.sent.some(e=>e.content.includes('Undo is saved')));
+});
+
+test('voice event decoding handles usage, closure and provider error shapes without replaying closed sessions',async t=>{
+ const f=await fixture(t,async()=>model([])),errors=[];
+ f.store.on('change',event=>{if(event.kind==='voice_error')errors.push(event.detail.error);});
+ await f.voice.event(f.s,'not-json');
+ for(const [value,expected]of [[{error:{message:'nested'}},'nested'],[{message:'outer'},'outer'],[{},'Voice error.']]){
+  await f.event({type:'error',...value});assert.equal(errors.at(-1),expected);
+ }
+ await f.event({type:'session.usage.updated',usage:{seconds:12}});assert.equal(f.s.seconds,12);
+ await f.event({type:'session.usage.updated'});assert.equal(f.s.seconds,12);
+ let closes=0;f.s.socket.close=()=>closes++;
+ await f.event({type:'session.closed',usage:{seconds:15}});assert.equal(f.s.seconds,15);assert.equal(f.s.finalUsage,true);assert.equal(closes,1);
+ await f.event({type:'session.closed'});assert.equal(f.s.seconds,15);assert.equal(f.s.finalUsage,false);
+ const count=errors.length;f.s.closed=true;await f.event({type:'error',message:'too late'});assert.equal(errors.length,count);f.s.closed=false;
+});
+
+test('voice progress is sent while a delegated request is pending and is cleared after its answer',async t=>{
+ let release;const f=await fixture(t,()=>new Promise(resolve=>release=resolve));
+ await f.input('Explain my current setup');await f.delegate('progress',1000);
+ await until(()=>f.sent.some(event=>event.content.includes('Still preparing')));
+ assert.equal(f.s.pumping,true);assert.notEqual(f.s.progressTimer,null);
+ release(model([{type:'message',content:[{type:'output_text',text:'Your daily allowance starts at reset.'}]}]));
+ await until(()=>!f.s.pumping);
+ assert.equal(f.s.progressTimer,null);assert(f.sent.some(event=>event.content==='Your daily allowance starts at reset.'));
+ const count=f.sent.length;await pause(120);assert.equal(f.sent.length,count);
+});
+
+test('empty, invalid and closed voice inputs cannot cancel or enqueue work; absent transcript asks for repetition',async t=>{
+ const f=await fixture(t,async()=>model([{type:'message',content:[{type:'output_text',text:'Explained.'}]}]));
+ for(const delta of ['',null,5])await f.event({type:'session.input_transcript.delta',delta});
+ assert.equal(f.s.pending,'');assert.equal(f.s.queue.length,0);
+ await f.delegate('no-transcript',0);assert.match(f.sent.at(-1).content,/Please repeat/);
+ const count=f.sent.length;await f.voice.cancelTranscript(f.s,'What does cancel mean?');assert.equal(f.sent.length,count);
+ f.s.closed=true;await f.voice.cancelTranscript(f.s,'cancel');assert.equal(f.sent.length,count);f.s.closed=false;
+ await f.voice.cancelTranscript(f.s,'cancel');assert.equal(f.s.lastCancellation.throughMs,0);assert.equal(f.s.cancelling,null);
+ const cancelledCount=f.sent.length;await f.delegate('after-cancel',Infinity);assert.equal(f.sent.length,cancelledCount);
+ await f.event({type:'session.input_transcript.delta',delta:'Explain my rules',end_ms:0});
+ // Buffered legacy session state can lack the fragment-version field.
+ delete f.s.pendingVersion;await f.delegate('new-request',Infinity);assert.equal(f.s.pendingVersion,1);await until(()=>!f.s.pumping);
+ assert.equal(f.s.pending,'');assert(f.sent.some(e=>e.content==='Explained.'));
+});

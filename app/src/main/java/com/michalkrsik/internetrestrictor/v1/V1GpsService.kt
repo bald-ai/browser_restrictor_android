@@ -25,14 +25,31 @@ data class V1GpsState(val taskId: String = "", val recording: Boolean = false, v
     val status: String = "Ready to record. Keep your phone with you.", val submitting: Boolean = false,
     val preview: Boolean = false, val previewAttemptId: String? = null)
 
-class V1GpsService : Service(), LocationListener {
+/** The distance itself is shown only as the screen's large number. */
+fun gpsResultStatus(result: JSONObject?): String {
+    val d = result?.optJSONObject("diagnostics")
+    val excluded = d?.let { " ${it.optInt("speedExcluded")} fast sections, ${it.optInt("gaps")} gaps and ${it.optInt("rejected")} inaccurate readings excluded." }.orEmpty()
+    return if (result?.optBoolean("preview") == true) "Test checked.$excluded No rewards granted." else "Verified.$excluded"
+}
+
+internal data class GpsServiceDependencies(
+    val repository: com.michalkrsik.internetrestrictor.data.RestrictorRepository,
+    val coordinator: V1Coordinator,
+    val applicationScope: CoroutineScope,
+)
+
+class V1GpsService internal constructor(
+    private val suppliedDependencies: GpsServiceDependencies? = null,
+) : Service(), LocationListener {
+    private val dependencies by lazy {
+        suppliedDependencies ?: appContainer.let { GpsServiceDependencies(it.repository, it.v1, it.applicationScope) }
+    }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var manager: LocationManager
     private var task: TaskDefinition? = null
     private var attempt: JSONObject? = null
     private var points = JSONArray()
-    private var previous: Location? = null
-    private var meters = 0.0
+    private var distance = GpsRecordingProgress("walk")
     private var startElapsed = 0L
     private var lastPersistElapsed = 0L
     private var wakeLock: PowerManager.WakeLock? = null
@@ -46,27 +63,13 @@ class V1GpsService : Service(), LocationListener {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == "stop") { finishRecording(); return START_NOT_STICKY }
         if (activeAttemptId != null || state.value.acquiring) return START_NOT_STICKY
-        val previewId = intent?.getStringExtra("previewAttemptId")
-        previewSpec = appContainer.v1.previewAttempt(previewId)
-        if (previewId != null && previewSpec == null) { stopSelf(); return START_NOT_STICKY }
-        task = previewSpec?.getJSONObject("task")?.let(com.michalkrsik.internetrestrictor.data.ConfigurationJson::parseTask)
-            ?: appContainer.repository.snapshot.value.configuration.tasks.firstOrNull { it.id == intent?.getStringExtra("taskId") && !it.paused && it.verifier == "gps" }
-        configRevision = previewSpec?.getLong("configRevision") ?: appContainer.repository.snapshot.value.appliedConfigRevision
-        if (task == null || configRevision < 0) { state.value = V1GpsState(status = "Connect once to load your task setup before recording."); stopSelf(); return START_NOT_STICKY }
-        if (previewId != null) {
-            try { previewSpec = appContainer.v1.claimPreviewRecording(previewId) }
-            catch (_: Exception) {
-                state.value = V1GpsState(taskId = task!!.id, preview = true, previewAttemptId = previewId,
-                    status = "This test already has a recording. Review its saved result or retry its upload.")
-                stopSelf(); return START_NOT_STICKY
-            }
-        }
+        if (!prepareRecording(intent)) return START_NOT_STICKY
         ending = false
         startForegroundTracking()
         state.value = V1GpsState(taskId = task!!.id, acquiring = true, status = "Waiting for a clear GPS signal…", preview = previewSpec != null, previewAttemptId = previewSpec?.getString("attemptId"))
         scope.launch {
             try {
-                appContainer.v1.api.bootstrap()
+                dependencies.coordinator.api.bootstrap()
             } catch (_: Exception) { /* Saved identity/config enables offline GPS capture. */ }
             try {
                 if (ContextCompat.checkSelfPermission(this@V1GpsService, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
@@ -95,47 +98,67 @@ class V1GpsService : Service(), LocationListener {
         return START_NOT_STICKY
     }
 
+    private fun prepareRecording(intent: Intent?): Boolean {
+        val previewId = intent?.getStringExtra("previewAttemptId")
+        previewSpec = dependencies.coordinator.previewAttempt(previewId)
+        if (previewId != null && previewSpec == null) { stopSelf(); return false }
+        task = previewSpec?.getJSONObject("task")?.let(com.michalkrsik.internetrestrictor.data.ConfigurationJson::parseTask)
+            ?: dependencies.repository.snapshot.value.configuration.tasks.firstOrNull { it.id == intent?.getStringExtra("taskId") && !it.paused && it.verifier == "gps" }
+        configRevision = previewSpec?.getLong("configRevision") ?: dependencies.repository.snapshot.value.appliedConfigRevision
+        if (task == null || configRevision < 0) { state.value = V1GpsState(status = "Connect once to load your task setup before recording."); stopSelf(); return false }
+        return claimPreview(previewId)
+    }
+
+    private fun claimPreview(previewId: String?): Boolean {
+        if (previewId != null) {
+            try { previewSpec = dependencies.coordinator.claimPreviewRecording(previewId) }
+            catch (_: Exception) {
+                state.value = V1GpsState(taskId = task!!.id, preview = true, previewAttemptId = previewId,
+                    status = "This test already has a recording. Review its saved result or retry its upload.")
+                stopSelf(); return false
+            }
+        }
+        return true
+    }
+
     override fun onLocationChanged(location: Location) {
         if (ending) return
         val nowElapsed = SystemClock.elapsedRealtime()
-        if (nowElapsed - location.elapsedRealtimeNanos / 1_000_000 !in 0..10_000) {
-            previous = null
-            return
-        }
+        if (nowElapsed - location.elapsedRealtimeNanos / 1_000_000 !in 0..10_000) return
         val mock = if (Build.VERSION.SDK_INT >= 31) location.isMock else @Suppress("DEPRECATION") location.isFromMockProvider
         state.value = state.value.copy(accuracy = location.accuracy)
         if (!state.value.recording) {
             if (location.accuracy > 25 || mock || !location.hasAccuracy()) return
-            startElapsed = nowElapsed
-            attempt = previewSpec?.let { JSONObject(it.toString()) } ?: JSONObject().put("attemptId", UUID.randomUUID().toString()).put("taskId", task!!.id)
-                .put("startedAt", location.time).put("configRevision", configRevision)
-            activeAttemptId = attempt!!.getString("attemptId")
-            state.value = state.value.copy(acquiring = false, recording = true, status = "Recording · live distance is provisional")
-            points = JSONArray(); meters = 0.0; previous = null
-            persist(location.time, false)
+            beginRecording(location, nowElapsed)
         }
+        appendLocation(location, mock, nowElapsed)
+    }
+
+    private fun beginRecording(location: Location, nowElapsed: Long) {
+        startElapsed = nowElapsed
+        attempt = previewSpec?.let { JSONObject(it.toString()) } ?: JSONObject().put("attemptId", UUID.randomUUID().toString()).put("taskId", task!!.id)
+            .put("startedAt", location.time).put("configRevision", configRevision)
+        activeAttemptId = attempt!!.getString("attemptId")
+        state.value = state.value.copy(acquiring = false, recording = true, status = "Recording · counted distance")
+        points = JSONArray(); distance = GpsRecordingProgress(task!!.gpsMode)
+        persist(location.time, false)
+    }
+
+    private fun appendLocation(location: Location, mock: Boolean, nowElapsed: Long) {
         val point = JSONObject().put("latitude", location.latitude).put("longitude", location.longitude)
             .put("time", location.time).put("accuracy", if (location.hasAccuracy()) location.accuracy.toDouble() else 999.0)
             .put("elapsedRealtime", location.elapsedRealtimeNanos / 1_000_000).put("isMock", mock)
         if (location.hasSpeed()) point.put("speed", location.speed.toDouble())
         points.put(point)
-        val last = previous
-        if (!mock && last != null && location.accuracy <= 25 && last.accuracy <= 25) {
-            val seconds = (location.elapsedRealtimeNanos - last.elapsedRealtimeNanos) / 1_000_000_000.0
-            val distance = last.distanceTo(location).toDouble()
-            val speed = if (seconds > 0) distance / seconds else Double.POSITIVE_INFINITY
-            val reported = if (location.hasSpeed()) location.speed.toDouble() else speed
-            val threshold = if (task!!.gpsMode == "walk") 5.0 else 12.5
-            val minimum = if (task!!.gpsMode == "sprint") 15 / 3.6 else 0.3
-            if (seconds in 0.5..10.0 && speed in minimum..threshold && reported in minimum..threshold && distance >= maxOf(1.5, minOf(last.accuracy, location.accuracy) * 0.2)) meters += distance
-        }
-        previous = if (mock || location.accuracy > 25) null else location
-        state.value = state.value.copy(meters = meters, status = if (location.accuracy > 25) "Weak GPS · poor readings do not count" else "Recording · live distance is provisional")
+        distance.add(GpsPoint(point.getDouble("latitude"), point.getDouble("longitude"), location.time,
+            point.getDouble("accuracy"), if (location.hasSpeed()) location.speed.toDouble() else null), mock)
+        state.value = state.value.copy(meters = distance.meters, status = distance.failure
+            ?: if (location.accuracy > 25) "Weak GPS · poor readings do not count" else "Recording · counted distance")
         if (nowElapsed - lastPersistElapsed >= 5_000) { persist(location.time, false); lastPersistElapsed = nowElapsed }
     }
 
     private fun persist(endedAt: Long, complete: Boolean) {
-        attempt?.let { appContainer.v1.persistGps(it, points, endedAt, complete) }
+        attempt?.let { dependencies.coordinator.persistGps(it, points, endedAt, complete) }
     }
 
     private fun finishRecording() {
@@ -149,11 +172,10 @@ class V1GpsService : Service(), LocationListener {
         if (id == null) { stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(); return }
         persist(System.currentTimeMillis(), true)
         state.value = state.value.copy(submitting = true, status = "Recording saved. Checking GPS evidence…")
-        appContainer.applicationScope.launch {
+        dependencies.applicationScope.launch {
             try {
-                val result = appContainer.v1.finishGps(id)
-                state.value = state.value.copy(submitting = false, status = if (result.optBoolean("preview")) "Test result: ${result.opt("measuredUnits")} meters. ${result.optString("reason")} No rewards granted."
-                    else "Verified ${result.opt("measuredUnits")} meters. ${result.optString("reason")}")
+                val result = dependencies.coordinator.finishGps(id)
+                state.value = state.value.copy(submitting = false, meters = result.optDouble("measuredUnits", state.value.meters), status = gpsResultStatus(result))
             } catch (error: Exception) {
                 state.value = state.value.copy(submitting = false, status = "Saved on your phone. It will verify when connected. ${error.message.orEmpty().take(90)}")
             }

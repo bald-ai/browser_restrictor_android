@@ -25,8 +25,13 @@ import org.json.JSONObject
 import java.io.File
 import java.util.UUID
 
-class V1Coordinator(private val context: Context, private val repository: RestrictorRepository, private val scope: CoroutineScope) {
-    val api = V1Api(context)
+class V1Coordinator(
+    private val context: Context,
+    private val repository: RestrictorRepository,
+    private val scope: CoroutineScope,
+    val api: V1Api = V1Api(context),
+    private val wallTimeMs: () -> Long = System::currentTimeMillis,
+) {
     private val lock = Mutex()
     private val submissionLock = Mutex()
     private val _status = MutableStateFlow("Connecting to your setup…")
@@ -52,8 +57,8 @@ class V1Coordinator(private val context: Context, private val repository: Restri
                 }
                 .distinctUntilChanged()
                 .collectLatest { boundary ->
-                    delay((boundary - System.currentTimeMillis()).coerceAtLeast(1L))
-                    repository.tick(android.os.SystemClock.elapsedRealtime(), System.currentTimeMillis())
+                    delay((boundary - wallTimeMs()).coerceAtLeast(1L))
+                    repository.tick(android.os.SystemClock.elapsedRealtime(), wallTimeMs())
                 }
         }
         val connectivity = context.getSystemService(ConnectivityManager::class.java)
@@ -76,9 +81,9 @@ class V1Coordinator(private val context: Context, private val repository: Restri
             val snapshot = repository.snapshot.value
             val statistics = com.michalkrsik.internetrestrictor.data.AgentStatistics.build(snapshot)
             val statisticsKey = "${snapshot.stateRevision}:${snapshot.appliedConfigRevision}:${snapshot.budgetSnapshots.firstOrNull()?.usedMs}:${snapshot.canonicalMode}"
-            if (statisticsKey != lastStatisticsKey || System.currentTimeMillis() - lastStatisticsSent >= 15_000) {
+            if (statisticsKey != lastStatisticsKey || wallTimeMs() - lastStatisticsSent >= 15_000) {
                 api.request("/statistics", statistics)
-                lastStatisticsSent = System.currentTimeMillis()
+                lastStatisticsSent = wallTimeMs()
                 lastStatisticsKey = statisticsKey
             }
             _status.value = "Your setup is up to date"
@@ -94,7 +99,7 @@ class V1Coordinator(private val context: Context, private val repository: Restri
         check(snapshot.appliedConfigRevision >= 0) { "Connect once to load your setup before recording." }
         check(snapshot.configuration.tasks.any { it == task && !it.paused }) { "This task changed. Reopen it to use the new rules." }
         val attempt = JSONObject().put("attemptId", UUID.randomUUID().toString()).put("taskId", task.id)
-            .put("startedAt", System.currentTimeMillis()).put("configRevision", snapshot.appliedConfigRevision)
+            .put("startedAt", wallTimeMs()).put("configRevision", snapshot.appliedConfigRevision)
         try { api.bootstrap(); api.request("/attempts", attempt) }
         catch (error: Exception) { if (!allowOffline) throw error }
         return attempt
@@ -105,7 +110,7 @@ class V1Coordinator(private val context: Context, private val repository: Restri
         api.bootstrap()
         val current = api.request("/config")
         val request = JSONObject().put("attemptId", UUID.randomUUID().toString()).put("taskId", taskId)
-            .put("startedAt", System.currentTimeMillis()).put("configRevision", current.getLong("revision"))
+            .put("startedAt", wallTimeMs()).put("configRevision", current.getLong("revision"))
             .put("proposalId", proposalId).put("proposalVersion", version)
         val attempt = api.request("/attempts", request)
         check(attempt.optBoolean("preview")) { "The server did not create a test recording." }

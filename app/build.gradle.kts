@@ -1,9 +1,75 @@
 import java.util.Properties
+import java.io.File as LintOutputFile
 
 plugins {
+    jacoco
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+// Coverage and machine-readable results are internal to explicit manual sessions.
+val manualVerification = providers.environmentVariable("VERIFICATION_SESSION_ROOT").isPresent
+val collectQualityCoverage = providers.environmentVariable("QUALITY_COVERAGE").orNull == "1"
+
+// Optional measurement compiler; never used by normal builds or packaged artifacts.
+val qualityProbes = providers.gradleProperty("qualityProbes").map(String::toBoolean).getOrElse(false)
+val qualityProbeDirectory = rootProject.layout.projectDirectory.dir("quality/probes")
+if (qualityProbes) {
+    tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+        if (name == "compileDebugKotlin") {
+            inputs.file(qualityProbeDirectory.file("build/quality-probes.jar"))
+            compilerOptions.freeCompilerArgs.addAll(
+                "-Xplugin=${qualityProbeDirectory.file("build/quality-probes.jar").asFile.absolutePath}",
+                "-P", "plugin:friction.quality.probes:manifest=${rootProject.file("quality/metrics/kotlin-probes.tsv").absolutePath}",
+            )
+        }
+    }
+    tasks.withType<Test>().configureEach {
+    reports.html.required.set(false)
+    reports.junitXml.required.set(manualVerification)
+    binaryResultsDirectory.set(layout.buildDirectory.dir("test-cache/$name"))
+    testLogging {
+        events("failed", "skipped")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
+        systemProperty("quality.probe.events", rootProject.file("quality/metrics/kotlin-probe-events.txt").absolutePath)
+        doFirst { rootProject.file("quality/metrics/kotlin-probe-events.txt").writeText("") }
+    }
+}
+
+jacoco { toolVersion = "0.8.13" }
+
+tasks.withType<Test>().configureEach {
+    reports.html.required.set(false)
+    reports.junitXml.required.set(manualVerification)
+    binaryResultsDirectory.set(layout.buildDirectory.dir("test-cache/$name"))
+    testLogging {
+        events("failed", "skipped")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
+    // Compose plus multiple Robolectric SDK sandboxes exceed Gradle's 512 MiB default.
+    maxHeapSize = "2g"
+    extensions.configure<org.gradle.testing.jacoco.plugins.JacocoTaskExtension> {
+        isEnabled = collectQualityCoverage
+        isIncludeNoLocationClasses = true
+        excludes = listOf("jdk.internal.*")
+    }
+}
+
+tasks.register<JacocoReport>("unitCoverage") {
+    doFirst { check(manualVerification && collectQualityCoverage) { "Run coverage through scripts/verification-session.py." } }
+    dependsOn("testDebugUnitTest")
+    executionData(fileTree(layout.buildDirectory) {
+        include("jacoco/testDebugUnitTest.exec", "outputs/unit_test_code_coverage/debugUnitTest/testDebugUnitTest.exec")
+    })
+    sourceDirectories.setFrom(files("src/main/java"))
+    classDirectories.setFrom(fileTree(layout.buildDirectory.dir("tmp/kotlin-classes/debug")) {
+        exclude("**/BuildConfig.class", "**/R.class", "**/R$*.class")
+    }, fileTree(layout.buildDirectory.dir("intermediates/javac/debug/compileDebugJavaWithJavac/classes")) {
+        exclude("**/BuildConfig.class", "**/R.class", "**/R$*.class")
+    })
+    reports { xml.required.set(true); html.required.set(false) }
 }
 
 val localProperties = Properties().apply {
@@ -29,6 +95,7 @@ fun buildConfigString(value: String): String = "\"" + value
 val validateV1Configuration by tasks.registering {
     group = "verification"
     doLast {
+        check(!qualityProbes) { "Measurement probes must never be packaged." }
         check(v1BackendUrl.startsWith("https://") &&
             !v1BackendUrl.contains("exercise-verifier-production")) {
             "Friction requires an HTTPS v1BackendUrl / V1_BACKEND_URL."
@@ -47,6 +114,14 @@ androidComponents.onVariants { variant ->
 }
 
 android {
+    lint {
+        htmlReport = false
+        xmlReport = false
+        sarifReport = false
+        textReport = true
+        textOutput = LintOutputFile("stdout")
+    }
+    if (qualityProbes) sourceSets.getByName("debug").java.srcDir(qualityProbeDirectory.dir("runtime"))
     namespace = "com.michalkrsik.internetrestrictor"
     compileSdk = 36
     testBuildType = providers.gradleProperty("androidTestBuildType").getOrElse("debug")
@@ -148,9 +223,15 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-test-manifest")
     add("v1DevImplementation", "androidx.compose.ui:ui-test-manifest")
 
+    testImplementation(composeBom)
+    testImplementation("androidx.compose.ui:ui-test-junit4")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     testImplementation("org.json:json:20250107")
+    testImplementation("org.robolectric:robolectric:4.16.1")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    testImplementation("com.squareup.okhttp3:okhttp-tls:4.12.0")
+    testImplementation("org.mockito:mockito-core:5.14.2")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")

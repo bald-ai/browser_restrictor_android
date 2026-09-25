@@ -73,6 +73,7 @@ test('history still returns measured statistics rather than static guide text',a
  const agent=new Agent(store,{key:'mock',fetcher:async(url,options)=>{
   if(++count===1)return response([call('history','history-call')]);
   const result=JSON.parse(JSON.parse(options.body).input.find(item=>item.type==='function_call_output').output);
+  assert.equal(result.ok,true);
   assert.equal(result.result.summary.creditsEarnedToday,2);
   return response([{type:'message',content:[{type:'output_text',text:'Your latest uploaded statistics show two credits today.'}]}]);
  }});

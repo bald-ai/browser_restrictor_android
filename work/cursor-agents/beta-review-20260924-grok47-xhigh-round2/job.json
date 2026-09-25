@@ -1,0 +1,40 @@
+{
+  "status": "completed",
+  "controller_pid": 86454,
+  "project": "/Users/applelevne/Documents/coding-projects/browser_restrictor_android",
+  "model": "grok-4.7-xhigh",
+  "mode": "ask",
+  "started_at": 1790281820.382726,
+  "session_lock": "/Users/applelevne/Documents/coding-projects/browser_restrictor_android/work/cursor-agents/beta-review-20260924-grok47-xhigh/session.lock",
+  "resume_job": "/Users/applelevne/Documents/coding-projects/browser_restrictor_android/work/cursor-agents/beta-review-20260924-grok47-xhigh",
+  "handoff_required": true,
+  "controller_started": "Thu Sep 24 22:30:20 2026",
+  "slot_path": "/Users/applelevne/.codex/cursor-agents/slots/0.lock",
+  "owner": "beta-review-01a0d421",
+  "assignment": "Deeper code and test review after correction batch",
+  "reads": [
+    "/Users/applelevne/Documents/coding-projects/browser_restrictor_android"
+  ],
+  "writes": [],
+  "worker_id": "/Users/applelevne/Documents/coding-projects/browser_restrictor_android/work/cursor-agents/beta-review-20260924-grok47-xhigh",
+  "conflict_reason": null,
+  "package_hashes": {
+    "SKILL.md": "5d172c2409f7e1c0b2f556d64e97b4107e698a01bf9d085e237276c65956da3e",
+    "scripts/cursor_worker.py": "b7eceb5a99018be20101c85c6d0ff612fd43850b076a37a372febe1402cc8d22",
+    "scripts/devin_acp.py": "de82ae5d108c9b575796ed2b725549fc6f6fe6845d425f4310b6671f35cc761a",
+    "references/worker_handoff.md": "846296dbefff93e7ee533909917c759def0ae1705fbdcb8eb5762cb27c980818",
+    "references/implementation_review.md": "51fc686c42dd2c40c2b732f3455fe9025974fb27c4659532109067c1839a0e2a"
+  },
+  "backend": "cursor",
+  "backend_label": "Cursor \u2014 fast, cheap investigator",
+  "timeout_seconds": 1800.0,
+  "conflicts_at_launch": [],
+  "child_pid": 86499,
+  "process_groups": [
+    86499,
+    88323,
+    89385
+  ],
+  "exit_code": 0,
+  "finished_at": 1790281995.271811
+}

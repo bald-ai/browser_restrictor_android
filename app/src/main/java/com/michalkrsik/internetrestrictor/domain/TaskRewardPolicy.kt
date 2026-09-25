@@ -10,10 +10,7 @@ fun RestrictionEngine.applyConfiguration(
 ): CommandResult {
     val state = normalize(input, nowWallMs, zoneId)
     configuration.validationError()?.let { return CommandResult.Rejected(state, it) }
-    if (state.hasAppliedServerConfiguration && configuration.revision < state.configuration.revision) return CommandResult.Rejected(state, "Configuration is older than the applied revision")
-    if (state.hasAppliedServerConfiguration && configuration.revision == state.configuration.revision && configuration != state.configuration) {
-        return CommandResult.Rejected(state, "Different configuration uses the same revision")
-    }
+    configurationRevisionError(state, configuration)?.let { return CommandResult.Rejected(state, it) }
     if (state.hasAppliedServerConfiguration && configuration == state.configuration && state.dailyCounter.grantedBudgetMinutes != null) return CommandResult.Applied(state)
     val settings = configuration.settings
     val resetsChanged = settings.dayReset != state.configuration.settings.dayReset
@@ -36,9 +33,20 @@ fun RestrictionEngine.applyConfiguration(
         // key would allow an undo to mix in already-expired receipts.
         // Existing running visits keep their agreed duration; an unfinished wait is
         // restarted under the new rules on the next selection.
-        pendingWait = if (settings.waitSeconds != state.configuration.settings.waitSeconds || settings.sessionMinutes != state.configuration.settings.sessionMinutes) null else state.pendingWait,
+        pendingWait = if (settings.restartsWait(state.configuration.settings)) null else state.pendingWait,
     ))
 }
+
+private fun configurationRevisionError(state: PersistedState, configuration: AppConfiguration): String? {
+    if (state.hasAppliedServerConfiguration && configuration.revision < state.configuration.revision) return "Configuration is older than the applied revision"
+    if (state.hasAppliedServerConfiguration && configuration.revision == state.configuration.revision && configuration != state.configuration) {
+        return "Different configuration uses the same revision"
+    }
+    return null
+}
+
+private fun ConfigurationSettings.restartsWait(previous: ConfigurationSettings): Boolean =
+    waitSeconds != previous.waitSeconds || sessionMinutes != previous.sessionMinutes
 
 fun RestrictionEngine.applyTaskReceipt(
     input: PersistedState, receipt: TaskMeasurementReceipt, nowWallMs: Long, zoneId: ZoneId,
@@ -47,52 +55,76 @@ fun RestrictionEngine.applyTaskReceipt(
     val invalid = receipt.validationError(nowWallMs)
     if (invalid != null) return CommandResult.Rejected(state, invalid)
     val existing = state.taskReceipts.find { it.measurement.id == receipt.id || it.measurement.attemptId == receipt.attemptId }
-    if (existing != null) {
-        if (receipt.originalMeasurement() != existing.measurement.originalMeasurement()) {
-            return CommandResult.Rejected(state, "This receipt ID belongs to a different verified recording")
-        }
-        if (receipt.manualCompletion && receipt.fallbackEligible && !existing.measurement.manualCompletion) {
-            if (!existing.canModifyReward(state.taskBudgetKey, nowWallMs)) return CommandResult.Rejected(state, "This recording's reward period expired")
-            if (receipt.task != existing.measurement.task || receipt.id != existing.measurement.id || receipt.task.verifier != "gps") {
-                return CommandResult.Rejected(state, "Fallback receipt does not match the original recording")
-            }
-            val changed = state.taskReceipts.map { if (it == existing) it.copy(
-                measurement = it.measurement.copy(manualCompletion = true), value = it.measurement.task.unitsPerCredit,
-                valueText = it.measurement.task.unitsPerCredit.toString(),
-            ) else it }
-            return recomputeTaskRewards(state, changed, nowWallMs, zoneId)
-        }
-        receipt.correctedUnitsText?.let { corrected ->
-            if (BigDecimal(corrected).compareTo(BigDecimal(existing.valueText)) != 0 && !receipt.manualCompletion)
-                return correctTaskReceiptValue(state, existing.measurement.id, corrected, nowWallMs, zoneId)
-        }
-        return CommandResult.Applied(state) // A retry is a successful no-op, including after a reset.
-    }
+    if (existing != null) return updateExistingTaskReceipt(state, receipt, existing, nowWallMs, zoneId)
     if (state.taskReceipts.size >= 10_000) return CommandResult.Rejected(state, "Task history is full")
-    val pinnedSettings = state.configuration.settings.copy(dayReset = receipt.dayReset)
-    val pinnedZone = ZoneId.of(receipt.timeZone)
-    val eligible = receipt.rewardEligible && receipt.finishedAtWallMs >= state.lastDailyRewardResetWallMs &&
-        PeriodCalculator.keysAt(receipt.finishedAtWallMs, pinnedZone, pinnedSettings).daily == PeriodCalculator.keysAt(nowWallMs, pinnedZone, pinnedSettings).daily
-    val minutesEligible = eligible && receipt.minutesRewardEligible && receipt.finishedAtWallMs >= state.lastRewardResetWallMs &&
-        PeriodCalculator.budgetKey(receipt.finishedAtWallMs, pinnedZone, pinnedSettings) == PeriodCalculator.budgetKey(nowWallMs, pinnedZone, pinnedSettings)
-    val dayKey = PeriodCalculator.keysAt(receipt.finishedAtWallMs, pinnedZone, pinnedSettings).daily
     val currentBudgetKey = state.taskBudgetKey.ifBlank { UUID.randomUUID().toString() }
-    val effectiveValue = if (receipt.manualCompletion && receipt.fallbackEligible && receipt.task.verifier == "gps") receipt.task.unitsPerCredit
-        else receipt.correctedUnits?.takeIf { receipt.correctionEligible && receipt.value >= receipt.task.correctionMinimum } ?: receipt.value
-    val saved = SavedTaskReceipt(receipt, value = effectiveValue, dayKey = dayKey,
-        budgetKey = if (eligible) currentBudgetKey else "expired:${receipt.id}", rewardEligible = eligible,
-        corrected = receipt.correctedUnitsText != null && !receipt.manualCompletion,
-        valueText = if (receipt.manualCompletion) receipt.task.unitsPerCredit.toString() else
-            receipt.correctedUnitsText?.takeIf { receipt.correctionEligible && receipt.value >= receipt.task.correctionMinimum } ?: receipt.measuredUnitsText,
-        minutesRewardEligible = minutesEligible)
-    if (!eligible) return CommandResult.Applied(state.copy(
+    val saved = receipt.forLedger(state, currentBudgetKey, nowWallMs)
+    if (!saved.rewardEligible) return CommandResult.Applied(state.copy(
         stateRevision = Math.addExact(state.stateRevision, 1), taskReceipts = state.taskReceipts + saved,
-    ), RewardCommit(0, state.dailyCounter.exercisePointSixths, dayKey))
+    ), RewardCommit(0, state.dailyCounter.exercisePointSixths, saved.dayKey))
     if (state.taskBudgetKey != currentBudgetKey) {
         val base = CreditFraction(state.dailyCounter.exercisePointSixths.toString(), EXERCISE_POINT_SIXTHS_PER_BOOST.toString())
         state = state.copy(taskBudgetKey = currentBudgetKey, taskProgressBase = base, taskCreditProgress = base)
     }
     return recomputeTaskRewards(state, state.taskReceipts + saved, nowWallMs, zoneId)
+}
+
+/** Pin eligibility to the recording's reset window as well as the current native ledger. */
+private fun TaskMeasurementReceipt.forLedger(state: PersistedState, ledger: String, nowWallMs: Long): SavedTaskReceipt {
+    val pinnedSettings = state.configuration.settings.copy(dayReset = dayReset)
+    val pinnedZone = ZoneId.of(timeZone)
+    val dayKey = PeriodCalculator.keysAt(finishedAtWallMs, pinnedZone, pinnedSettings).daily
+    val eligible = rewardEligible && finishedAtWallMs >= state.lastDailyRewardResetWallMs &&
+        dayKey == PeriodCalculator.keysAt(nowWallMs, pinnedZone, pinnedSettings).daily
+    return SavedTaskReceipt(this, value = effectiveValue(), dayKey = dayKey,
+        budgetKey = if (eligible) ledger else "expired:$id", rewardEligible = eligible,
+        corrected = correctedUnitsText != null && !manualCompletion,
+        valueText = effectiveValueText(),
+        minutesRewardEligible = eligible && retainsMinuteReward(state, nowWallMs, pinnedZone, pinnedSettings))
+}
+
+private fun TaskMeasurementReceipt.retainsMinuteReward(state: PersistedState, nowWallMs: Long, zone: ZoneId, settings: ConfigurationSettings): Boolean =
+    minutesRewardEligible && finishedAtWallMs >= state.lastRewardResetWallMs &&
+        PeriodCalculator.budgetKey(finishedAtWallMs, zone, settings) == PeriodCalculator.budgetKey(nowWallMs, zone, settings)
+
+// forLedger is called only after validationError has verified manual GPS eligibility.
+private fun TaskMeasurementReceipt.effectiveValue(): Long =
+    if (manualCompletion) task.unitsPerCredit
+    else correctedUnits?.takeIf { correctionEligible && value >= task.correctionMinimum } ?: value
+
+private fun TaskMeasurementReceipt.effectiveValueText(): String =
+    if (manualCompletion) task.unitsPerCredit.toString()
+    else correctedUnitsText?.takeIf { correctionEligible && value >= task.correctionMinimum } ?: measuredUnitsText
+
+private fun RestrictionEngine.updateExistingTaskReceipt(
+    state: PersistedState, receipt: TaskMeasurementReceipt, existing: SavedTaskReceipt, nowWallMs: Long, zoneId: ZoneId,
+): CommandResult {
+    if (receipt.originalMeasurement() != existing.measurement.originalMeasurement()) {
+        return CommandResult.Rejected(state, "This receipt ID belongs to a different verified recording")
+    }
+    if (receipt.manualCompletion && receipt.fallbackEligible && !existing.measurement.manualCompletion) {
+        return completeGpsReceipt(state, receipt, existing, nowWallMs, zoneId)
+    }
+    receipt.correctedUnitsText?.let { corrected ->
+        if (BigDecimal(corrected).compareTo(BigDecimal(existing.valueText)) != 0 && !receipt.manualCompletion)
+            return correctTaskReceiptValue(state, existing.measurement.id, corrected, nowWallMs, zoneId)
+    }
+    return CommandResult.Applied(state) // A retry is a successful no-op, including after a reset.
+
+}
+
+private fun completeGpsReceipt(
+    state: PersistedState, receipt: TaskMeasurementReceipt, existing: SavedTaskReceipt, nowWallMs: Long, zoneId: ZoneId,
+): CommandResult {
+    if (!existing.canModifyReward(state.taskBudgetKey, nowWallMs)) return CommandResult.Rejected(state, "This recording's reward period expired")
+    // applyTaskReceipt validated GPS eligibility and updateExistingTaskReceipt matched
+    // the immutable original recording before reaching this completion path.
+    val changed = state.taskReceipts.map { if (it == existing) it.copy(
+        measurement = it.measurement.copy(manualCompletion = true), value = it.measurement.task.unitsPerCredit,
+        valueText = it.measurement.task.unitsPerCredit.toString(),
+    ) else it }
+    return recomputeTaskRewards(state, changed, nowWallMs, zoneId)
+
 }
 
 fun RestrictionEngine.correctTaskReceipt(
@@ -109,16 +141,9 @@ private fun RestrictionEngine.correctTaskReceiptValue(
         stateRevision = Math.addExact(state.stateRevision, 1),
         taskReceipts = state.taskReceipts.map { if (it == saved) it.copy(flagged = true) else it },
     ))
-    if (saved.measurement.manualCompletion) return CommandResult.Rejected(state, "A manually completed GPS task cannot be corrected again")
-    if (!saved.measurement.correctionEligible || saved.measurement.value < saved.measurement.task.correctionMinimum) {
-        return CommandResult.Rejected(state, "The original recording did not show the minimum evidence needed for a correction")
-    }
-    if (!validTaskMeasurement(valueText, 100_000)) return CommandResult.Rejected(state, "Correction is outside the supported range")
+    saved.correctionAuthorizationError()?.let { return CommandResult.Rejected(state, it) }
+    saved.correctedMeasurementError(valueText)?.let { return CommandResult.Rejected(state, it) }
     val value = BigDecimal(valueText).toLong()
-    if (saved.measurement.task.metric == "repetitions" && BigDecimal(valueText).stripTrailingZeros().scale() > 0) return CommandResult.Rejected(state, "Repetitions must be a whole count")
-    if (saved.measurement.task.metric == "seconds" && BigDecimal(valueText).toDouble() >
-        (saved.measurement.maximumCorrectableUnits ?: minOf(30.5,
-            (saved.measurement.finishedAtWallMs - saved.measurement.startedAtWallMs) / 1000.0 + 0.5))) return CommandResult.Rejected(state, "Corrected time cannot exceed the recording")
     if (BigDecimal(valueText).compareTo(BigDecimal(saved.valueText)) == 0) return CommandResult.Applied(state)
     if (!saved.canModifyReward(state.taskBudgetKey, nowWallMs)) {
         return CommandResult.Rejected(state, "This task's reward period has expired; a correction cannot restore old rewards")
@@ -130,6 +155,23 @@ private fun RestrictionEngine.correctTaskReceiptValue(
         UUID.randomUUID().toString(), receiptId, nowWallMs, saved.measurement.taskId, saved.measurement.value,
         saved.measurement.taskId, value,
     )))
+}
+
+private fun SavedTaskReceipt.correctionAuthorizationError(): String? {
+    if (measurement.manualCompletion) return "A manually completed GPS task cannot be corrected again"
+    if (!measurement.correctionEligible || measurement.value < measurement.task.correctionMinimum) {
+        return "The original recording did not show the minimum evidence needed for a correction"
+    }
+    return null
+}
+
+private fun SavedTaskReceipt.correctedMeasurementError(valueText: String): String? {
+    if (!validTaskMeasurement(valueText, 100_000)) return "Correction is outside the supported range"
+    if (measurement.task.metric == "repetitions" && BigDecimal(valueText).stripTrailingZeros().scale() > 0) return "Repetitions must be a whole count"
+    if (measurement.task.metric == "seconds" && BigDecimal(valueText).toDouble() >
+        (measurement.maximumCorrectableUnits ?: minOf(30.5,
+            (measurement.finishedAtWallMs - measurement.startedAtWallMs) / 1000.0 + 0.5))) return "Corrected time cannot exceed the recording"
+    return null
 }
 
 /** Historical reward eligibility is immutable; modification additionally needs the
@@ -162,7 +204,7 @@ private fun recomputeTaskRewards(state: PersistedState, receipts: List<SavedTask
         val earned = Math.addExact(state.dailyCounter.earnedBudgetRounds, deltaCredits)
         val spendable = Math.addExact(state.dailyCounter.spendableBudgetRounds, deltaSpendableCredits)
         val minutes = Math.addExact(state.dailyCounter.grantedBudgetMinutes ?: state.dailyCounter.spendableBudgetRounds * EXERCISE_SET_REWARD_MINUTES, deltaMinutes)
-        require(earned in 0..MAX_SAFE_BUDGET_ROUNDS && spendable in 0..earned && minutes in 0..MAX_SAFE_MINUTES && fraction.valid())
+        validateTaskBalances(earned, spendable, minutes, fraction)
         val changedIds = replacements.keys
         val eventReceipts = replacements.values.filter { it.awardedCredits > 0 }.map { saved ->
             ActivityEvent(saved.measurement.id, saved.dayKey, ActivityEventType.EXERCISE_SET,
@@ -174,13 +216,7 @@ private fun recomputeTaskRewards(state: PersistedState, receipts: List<SavedTask
         val oldPushups = before.filter { it.measurement.taskId == "pushups" }.sumOf { it.value }
         val newPushups = current.filter { it.measurement.taskId == "pushups" }.sumOf { it.value }
         val pushupDelta = newPushups - oldPushups
-        var cycles = state.monthlyPushupCycles
-        if (pushupDelta != 0L) {
-            val cycleKey = MonthlyPushupCalculator.cycleStartKey(nowWallMs, zoneId)
-            val previous = cycles.find { it.cycleStartDate == cycleKey }?.totalPushups ?: 0
-            require(previous + pushupDelta >= 0)
-            cycles = (cycles.filterNot { it.cycleStartDate == cycleKey } + MonthlyPushupCycle(cycleKey, Math.addExact(previous, pushupDelta))).sortedBy { it.cycleStartDate }
-        }
+        val cycles = updateMonthlyTaskPushups(state.monthlyPushupCycles, pushupDelta, nowWallMs, zoneId)
         CommandResult.Applied(state.copy(
             stateRevision = Math.addExact(state.stateRevision, 1),
             taskReceipts = receipts.map { replacements[it.measurement.id] ?: it },
@@ -196,17 +232,50 @@ private fun recomputeTaskRewards(state: PersistedState, receipts: List<SavedTask
     } catch (_: IllegalArgumentException) { CommandResult.Rejected(state, "Task reward would produce invalid balances") }
 }
 
-fun TaskMeasurementReceipt.validationError(nowWallMs: Long = Long.MAX_VALUE): String? = when {
-    id.isBlank() || id.length > 128 || attemptId.isBlank() || attemptId.length > 128 -> "Invalid verification receipt ID"
+/** Reject the complete replacement before publishing any ledger or report changes. */
+private fun validateTaskBalances(earned: Long, spendable: Long, minutes: Long, fraction: CreditFraction) {
+    require(earned in 0..MAX_SAFE_BUDGET_ROUNDS && spendable in 0..earned && minutes in 0..MAX_SAFE_MINUTES && fraction.valid())
+}
+
+private fun updateMonthlyTaskPushups(current: List<MonthlyPushupCycle>, pushupDelta: Long, nowWallMs: Long, zoneId: ZoneId): List<MonthlyPushupCycle> {
+        var cycles = current
+        if (pushupDelta != 0L) {
+            val cycleKey = MonthlyPushupCalculator.cycleStartKey(nowWallMs, zoneId)
+            val previous = cycles.find { it.cycleStartDate == cycleKey }?.totalPushups ?: 0
+            require(previous + pushupDelta >= 0)
+            cycles = (cycles.filterNot { it.cycleStartDate == cycleKey } + MonthlyPushupCycle(cycleKey, Math.addExact(previous, pushupDelta))).sortedBy { it.cycleStartDate }
+        }
+    return cycles
+}
+
+fun TaskMeasurementReceipt.validationError(nowWallMs: Long = Long.MAX_VALUE): String? =
+    identityValidationError() ?: measurementValidationError() ?: correctionValidationError() ?: timingValidationError(nowWallMs)
+
+private fun validReceiptIdentifier(value: String): Boolean = value.isNotBlank() && value.length <= 128
+
+private fun TaskMeasurementReceipt.identityValidationError(): String? = when {
+    !validReceiptIdentifier(id) || !validReceiptIdentifier(attemptId) -> "Invalid verification receipt ID"
     taskId != task.id || task.validationError() != null -> "Invalid pinned task definition"
     configRevision < 0 || !verified -> "Receipt has not been verified"
+    else -> null
+}
+
+private fun TaskMeasurementReceipt.measurementValidationError(): String? = when {
     value !in 0..1_000_000 || minutesPerCredit !in 1..120 -> "Receipt measurement or reward is outside the supported range"
     !validTaskMeasurement(measuredUnitsText) || BigDecimal(measuredUnitsText).toLong() != value -> "Invalid precise receipt measurement"
     task.metric == "repetitions" && BigDecimal(measuredUnitsText).stripTrailingZeros().scale() > 0 -> "Repetitions must be a whole count"
+    else -> null
+}
+
+private fun TaskMeasurementReceipt.correctionValidationError(): String? = when {
     correctedUnitsText?.let { !validTaskMeasurement(it, 100_000) || BigDecimal(it).toLong() != correctedUnits } == true -> "Invalid precise corrected measurement"
     correctedUnits?.let { it !in 0..1_000_000 } == true -> "Corrected receipt measurement is outside the supported range"
     maximumCorrectableUnits?.let { !it.isFinite() || it !in 0.0..30.5 || task.verifier != "video" || task.metric != "seconds" } == true -> "Invalid recording correction maximum"
     manualCompletion && (!fallbackEligible || task.verifier != "gps") -> "Manual completion needs an eligible GPS receipt"
+    else -> null
+}
+
+private fun TaskMeasurementReceipt.timingValidationError(nowWallMs: Long): String? = when {
     startedAtWallMs < 0 || finishedAtWallMs < startedAtWallMs || finishedAtWallMs > nowWallMs -> "Invalid recording timestamps"
     !validResetTime(dayReset) || runCatching { ZoneId.of(timeZone) }.isFailure -> "Invalid receipt reset settings"
     else -> null

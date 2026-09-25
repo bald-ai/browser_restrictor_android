@@ -20,6 +20,31 @@ class ExerciseCorrectionTest {
         engine.correctExercise(state, id, exercise, value, flag, time, zone)
     private fun applied(result: CommandResult) = (result as CommandResult.Applied).state
 
+    @Test fun correctionsRejectUnsafeBalancesAndChangedPushupTotalsWithoutPublishingEdits() {
+        val recorded = record(value = 5)
+        val counter = recorded.dailyCounter
+        val unsafe = listOf(
+            recorded.copy(dailyCounter = counter.copy(earnedBudgetRounds = 0, spendableBudgetRounds = 0)),
+            recorded.copy(dailyCounter = counter.copy(earnedBudgetRounds = 1, spendableBudgetRounds = 0)),
+            recorded.copy(dailyCounter = counter.copy(verifiedPushups = 0)),
+            recorded.copy(monthlyPushupCycles = emptyList()),
+        )
+        for (state in unsafe) {
+            val result = correct(state, 0)
+            assertTrue(result.toString(), result is CommandResult.Rejected)
+            assertEquals(state.lastExercise, (result as CommandResult.Rejected).state.lastExercise)
+            assertTrue(result.state.correctionHistory.isEmpty())
+        }
+        val capped = recorded.copy(dailyCounter = counter.copy(earnedBudgetRounds = MAX_SAFE_BUDGET_ROUNDS, spendableBudgetRounds = MAX_SAFE_BUDGET_ROUNDS))
+        assertTrue(correct(capped, 10) is CommandResult.Rejected)
+        val fullCycle = recorded.copy(monthlyPushupCycles = recorded.monthlyPushupCycles.map { it.copy(totalPushups = Long.MAX_VALUE) })
+        assertTrue(correct(fullCycle, 6) is CommandResult.Rejected)
+        val granted = recorded.copy(dailyCounter = counter.copy(grantedBudgetMinutes = 3))
+        assertEquals(6L, applied(correct(granted, 10)).dailyCounter.grantedBudgetMinutes)
+        val noCycle = record(value = 1, exercise = ExerciseId.PLANK).copy(monthlyPushupCycles = emptyList())
+        assertEquals(5L, applied(correct(noCycle, 5)).monthlyPushupCycles.single().totalPushups)
+    }
+
     @Test fun noPositiveVerifierReceiptCannotAuthorizeCorrection() {
         assertTrue(correct(initial(), 5) is CommandResult.Rejected)
         for (exercise in listOf(ExerciseId.PUSH_UP, ExerciseId.UNSUPPORTED)) {

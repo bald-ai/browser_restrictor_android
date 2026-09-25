@@ -51,47 +51,51 @@ class BrowserForegroundMonitor(
     ): ForegroundDecision {
         val windows = service.windows.orEmpty()
         val focused = windows.firstOrNull { it.isFocused }
-        val decision = when {
-            gateVisible && latchedTarget != null -> {
-                val activePackage = activeApplicationPackage(windows)
-                val switchedTarget = protectedTargetForPackage(activePackage)
-                    ?.takeIf { it != latchedTarget }
-                if (switchedTarget != null) {
-                    val owner = packageClassification(activePackage)
-                    ForegroundDecision(owner.foregroundClass, switchedTarget, false)
-                } else {
-                    val exitCandidate = gateExitCandidatePackage(event, focused, windows)
-                    if (exitStabilizer.observe(exitCandidate, nowElapsedMs)) {
-                        ForegroundDecision(ForegroundClass.OTHER, null, false)
-                    } else {
-                        ForegroundDecision(
-                            ForegroundClass.RESTRICTOR,
-                            latchedTarget,
-                            gateHasFocus || focused?.type == AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY,
-                        )
-                    }
-                }
-            }
-            focused?.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD -> classifyImeContext(windows)
-            focused?.type == AccessibilityWindowInfo.TYPE_APPLICATION -> classifyApplication(focused, event)
-            focused != null -> ForegroundDecision(ForegroundClass.OTHER, null, false)
-            else -> {
-                val activeApp = windows.firstOrNull {
-                    it.type == AccessibilityWindowInfo.TYPE_APPLICATION && it.isActive && it.isFocused
-                }
-                activeApp?.let { classifyApplication(it, event) } ?: classifyEventFallback(event)
-            }
-        }
+        val decision = if (gateVisible && latchedTarget != null) {
+            evaluateVisibleGate(event, focused, windows, nowElapsedMs)
+        } else classifyWindows(event, focused, windows)
 
-        when {
-            decision.activeTarget != null -> {
-                latchedTarget = decision.activeTarget
-            }
-            decision.foregroundClass == ForegroundClass.RESTRICTOR && gateVisible && decision.targetActive -> Unit
-            else -> latchedTarget = null
-        }
+        latchedTarget = decision.activeTarget
         lastDecision = decision
         return decision
+    }
+
+    private fun evaluateVisibleGate(
+        event: AccessibilityEvent?,
+        focused: AccessibilityWindowInfo?,
+        windows: List<AccessibilityWindowInfo>,
+        nowElapsedMs: Long,
+    ): ForegroundDecision {
+        val activePackage = activeApplicationPackage(windows)
+        val switchedTarget = protectedTargetForPackage(activePackage)
+            ?.takeIf { it != latchedTarget }
+        return if (switchedTarget != null) {
+            val owner = packageClassification(activePackage)
+            ForegroundDecision(owner.foregroundClass, switchedTarget, false)
+        } else {
+            val exitCandidate = gateExitCandidatePackage(event, focused, windows)
+            if (exitStabilizer.observe(exitCandidate, nowElapsedMs)) {
+                ForegroundDecision(ForegroundClass.OTHER, null, false)
+            } else {
+                ForegroundDecision(
+                    ForegroundClass.RESTRICTOR,
+                    latchedTarget,
+                    gateHasFocus || focused?.type == AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY,
+                )
+            }
+        }
+    }
+
+    private fun classifyWindows(
+        event: AccessibilityEvent?,
+        focused: AccessibilityWindowInfo?,
+        windows: List<AccessibilityWindowInfo>,
+    ): ForegroundDecision = when {
+        focused?.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD -> classifyImeContext(windows)
+        focused?.type == AccessibilityWindowInfo.TYPE_APPLICATION -> classifyApplication(focused, event)
+        focused != null -> ForegroundDecision(ForegroundClass.OTHER, null, false)
+        // evaluate already selected the first focused window from this snapshot.
+        else -> classifyEventFallback(event)
     }
 
     fun confirmPendingGateExit(

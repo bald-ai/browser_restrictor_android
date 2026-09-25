@@ -70,7 +70,7 @@ class GateScreenTest {
             RestrictorTheme(snapshot.settings.theme) { GateScreen(snapshot, actions) }
         }
 
-        composeRule.onNodeWithText("MAKE IT\nINTENTIONAL.").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("3 min").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithContentDescription("3 minute session").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithContentDescription("5 minute session").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithContentDescription("10 minute session").performScrollTo().assertIsDisplayed()
@@ -165,7 +165,7 @@ class GateScreenTest {
             RestrictorTheme(snapshot.settings.theme) { GateScreen(snapshot, actions) }
         }
 
-        composeRule.onNodeWithText("UNLOCKING BROWSER").assertIsDisplayed()
+        composeRule.onNodeWithText("Hang on a moment.").assertIsDisplayed()
         composeRule.onNodeWithText("5 min session").assertIsDisplayed()
         composeRule.onNodeWithText("12").assertIsDisplayed()
         composeRule.onNodeWithText("Daily budget").assertIsDisplayed()

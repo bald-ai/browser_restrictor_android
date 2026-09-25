@@ -57,67 +57,58 @@ class V1GpsActivity : ComponentActivity() {
                     delay(1_000)
                 }
             }
-            val testRecovered = previewId != null && !gps.recording && !gps.acquiring && !gps.submitting
-            val displayStatus = if (testRecovered) when (testStatus) {
-                PreviewRecordingStatus.COMPLETE -> "Test result: ${testResult?.opt("measuredUnits")} meters. ${testResult?.optString("reason").orEmpty()} No rewards granted."
-                PreviewRecordingStatus.WAITING_UPLOAD -> "Your test recording is saved on this phone. It will be checked when connected, or you can retry now."
-                PreviewRecordingStatus.INTERRUPTED, PreviewRecordingStatus.MISSING -> "This test recording was interrupted. Return to the review card to start a new test."
-                PreviewRecordingStatus.READY -> gps.status
-            } else gps.status
+            val canFallback = canConfirmGpsFallback(previewSpec != null, gps, latest, snapshot.modifiableTaskReceiptIds)
+            val screen = GpsScreenState(task, snapshot.configuration.settings.creditName, gps,
+                preview = previewSpec != null, previewStatus = testStatus, previewResult = testResult,
+                permissionError = permissionError, canFallback = canFallback,
+                fallbackBusy = fallbackBusy, error = fallbackError, retrying = retryingTest)
             RestrictorTheme(snapshot.settings.theme) {
-                Surface(Modifier.fillMaxSize()) {
-                    Column(Modifier.fillMaxSize().systemBarsPadding().padding(24.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                        TextButton(onClick = { finish() }) { Text(if (previewSpec != null) "‹ Back to review" else "‹ Back to your day") }
-                        Text(task?.name ?: "GPS activity", style = MaterialTheme.typography.headlineLarge)
-                        Text(if (previewSpec != null) "Test recording · your setup and rewards stay unchanged" else "${task?.unitsPerCredit ?: 0} meters = 1 ${snapshot.configuration.settings.creditName}")
-                        Spacer(Modifier.weight(1f))
-                        Text(if (testRecovered && testStatus == PreviewRecordingStatus.COMPLETE) "${testResult?.opt("measuredUnits")} m" else "${gps.meters.toLong()} m", style = MaterialTheme.typography.displayLarge)
-                        Text("${gps.elapsedSeconds / 60}:${(gps.elapsedSeconds % 60).toString().padStart(2, '0')} elapsed · ${gps.accuracy?.toInt()?.let { "GPS ±${it}m" } ?: "Waiting for GPS"}")
-                        if (gps.acquiring || gps.submitting) LinearProgressIndicator(Modifier.fillMaxWidth())
-                        Text(if (permissionError) "Precise location permission is needed to verify distance." else displayStatus)
-                        if (previewSpec == null && !gps.recording && !gps.acquiring && latest?.measurement?.fallbackEligible == true && !latest.measurement.manualCompletion && latest.measurement.id in snapshot.modifiableTaskReceiptIds) {
-                            Text("GPS coverage was insufficient. Confirm only if you completed this task.")
-                            OutlinedButton(enabled = !fallbackBusy, onClick = {
-                                fallbackBusy = true
-                                scope.launch { try { appContainer.v1.confirmGpsFallback(latest.measurement.attemptId) } catch (error: Exception) { fallbackError = error.message } finally { fallbackBusy = false } }
-                            }) { Text(if (fallbackBusy) "Saving…" else "I completed this task · 1 credit") }
+                GpsRecordingScreen(screen, GpsScreenActions(
+                    back = { finish() },
+                    start = ::requestTracking,
+                    stop = { startService(Intent(this@V1GpsActivity, V1GpsService::class.java).setAction("stop")) },
+                    fallback = {
+                        fallbackBusy = true
+                        scope.launch {
+                            try { appContainer.v1.confirmGpsFallback(latest!!.measurement.attemptId) }
+                            catch (error: Exception) { fallbackError = error.message }
+                            finally { fallbackBusy = false }
                         }
-                        fallbackError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                        Text(if (task?.gpsMode == "walk") "Walk anywhere. Vehicle-speed sections, drift and tracking gaps do not count. Stop when you finish; the 4-hour cap ends a forgotten recording." else "Run outdoors. Qualifying sprint sections must reach 15 km/h. GPS is verified after you stop; live distance is provisional.", style = MaterialTheme.typography.bodyMedium)
-                        Spacer(Modifier.weight(1f))
-                        if (gps.recording || gps.acquiring) {
-                            Button(onClick = { startService(Intent(this@V1GpsActivity, V1GpsService::class.java).setAction("stop")) }, modifier = Modifier.fillMaxWidth()) { Text("Stop & verify") }
-                            Text("You can lock your screen. Recording keeps going.", modifier = Modifier.align(Alignment.CenterHorizontally), style = MaterialTheme.typography.bodySmall)
-                        } else if (testRecovered && testStatus != PreviewRecordingStatus.READY) {
-                            if (testStatus == PreviewRecordingStatus.WAITING_UPLOAD) {
-                                Button(enabled = !retryingTest, onClick = {
-                                    retryingTest = true
-                                    scope.launch {
-                                        try { appContainer.v1.retryPreview(previewId!!) }
-                                        catch (error: Exception) { fallbackError = error.message }
-                                        finally {
-                                            testStatus = appContainer.v1.previewStatus(previewId)
-                                            testResult = appContainer.v1.previewResult(previewId)
-                                            retryingTest = false
-                                        }
-                                    }
-                                }, modifier = Modifier.fillMaxWidth()) { Text(if (retryingTest) "Checking recording…" else "Retry saved recording") }
+                    },
+                    retry = {
+                        retryingTest = true
+                        scope.launch {
+                            try { appContainer.v1.retryPreview(previewId!!) }
+                            catch (error: Exception) { fallbackError = error.message }
+                            finally {
+                                testStatus = appContainer.v1.previewStatus(previewId)
+                                testResult = appContainer.v1.previewResult(previewId)
+                                retryingTest = false
                             }
-                            Button(onClick = { finish() }, modifier = Modifier.fillMaxWidth()) { Text("Back to review") }
-                        } else if (!gps.submitting) Button(onClick = {
-                            val requested = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
-                            if (Build.VERSION.SDK_INT >= 33) requested += Manifest.permission.POST_NOTIFICATIONS
-                            if (requested.all { ContextCompat.checkSelfPermission(this@V1GpsActivity, it) == PackageManager.PERMISSION_GRANTED }) startTracking()
-                            else permissions.launch(requested.toTypedArray())
-                        }, modifier = Modifier.fillMaxWidth()) { Text("Start recording") }
-                    }
-                }
+                        }
+                    },
+                ))
             }
         }
     }
+    private fun requestTracking() {
+        val requested = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+        if (Build.VERSION.SDK_INT >= 33) requested += Manifest.permission.POST_NOTIFICATIONS
+        if (requested.all { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }) startTracking()
+        else permissions.launch(requested.toTypedArray())
+    }
+
     private fun startTracking() {
         permissionError = false
         if (previewSpec != null && appContainer.v1.previewStatus(previewSpec!!.getString("attemptId")) != PreviewRecordingStatus.READY) return
         ContextCompat.startForegroundService(this, Intent(this, V1GpsService::class.java).putExtra("taskId", intent.getStringExtra("taskId")).putExtra("previewAttemptId", previewSpec?.getString("attemptId")))
     }
 }
+
+internal fun canConfirmGpsFallback(
+    preview: Boolean, gps: V1GpsState,
+    latest: com.michalkrsik.internetrestrictor.domain.SavedTaskReceipt?,
+    modifiableIds: Set<String>,
+): Boolean = !preview && !gps.recording && !gps.acquiring &&
+    latest?.measurement?.fallbackEligible == true && !latest.measurement.manualCompletion &&
+    latest.measurement.id in modifiableIds

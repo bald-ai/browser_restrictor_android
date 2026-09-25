@@ -99,8 +99,8 @@ fun V1Dashboard(snapshot: StateSnapshot, connection: String, onConversation: () 
                     Text("${latest.measurement.task.name} · ${latest.valueText} ${latest.measurement.task.metric}", style = MaterialTheme.typography.titleMedium)
                     Text(if (latest.rewardEligible) "+${latest.awardedMinutes} min · ${latest.awardedCredits} ${rules.creditName}" else "Saved to history · reward window expired", style = MaterialTheme.typography.bodySmall)
                     if (latest.rewardEligible && !latest.minutesRewardEligible) Text("Browsing-time window expired; daily progress kept.", style = MaterialTheme.typography.bodySmall)
-                    if (latest.measurement.correctionEligible && !latest.measurement.manualCompletion && latest.measurement.value >= latest.measurement.task.correctionMinimum && latest.measurement.id in snapshot.modifiableTaskReceiptIds) TextButton(onClick = { correction = latest }) { Text("Correct measurement") }
-                    if (latest.measurement.fallbackEligible && !latest.measurement.manualCompletion && latest.measurement.id in snapshot.modifiableTaskReceiptIds) {
+                    if (latest.canCorrectMeasurement(snapshot.modifiableTaskReceiptIds)) TextButton(onClick = { correction = latest }) { Text("Correct measurement") }
+                    if (latest.canConfirmCompletion(snapshot.modifiableTaskReceiptIds)) {
                         var saving by remember(latest) { mutableStateOf(false) }
                         var error by remember(latest) { mutableStateOf<String?>(null) }
                         val scope = rememberCoroutineScope()
@@ -143,3 +143,10 @@ fun V1Dashboard(snapshot: StateSnapshot, connection: String, onConversation: () 
         }) { Text(if (saving) "Saving…" else "Save correction") } }, dismissButton = { TextButton(onClick = { correction = null }, enabled = !saving) { Text("Cancel") } })
     }
 }
+
+private fun SavedTaskReceipt.canCorrectMeasurement(modifiableIds: Set<String>): Boolean =
+    measurement.correctionEligible && !measurement.manualCompletion &&
+        measurement.value >= measurement.task.correctionMinimum && measurement.id in modifiableIds
+
+private fun SavedTaskReceipt.canConfirmCompletion(modifiableIds: Set<String>): Boolean =
+    measurement.fallbackEligible && !measurement.manualCompletion && measurement.id in modifiableIds

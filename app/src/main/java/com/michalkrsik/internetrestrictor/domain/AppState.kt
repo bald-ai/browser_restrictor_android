@@ -71,33 +71,35 @@ enum class ForegroundClass { BROWSER, RESTRICTOR, OTHER }
 
 enum class ActivityEventType { EXERCISE_SET, BROWSER_SESSION }
 
-enum class GateMode {
-    SERVICE_UNAVAILABLE,
-    ENFORCEMENT_DISABLED,
-    BROWSER_BACKGROUND,
-    PAUSED,
-    WAITING,
-    ACCESS_GRANTED_NORMAL,
-    ACCESS_GRANTED_EMERGENCY,
-    ACCESS_GRANTED_CURRENT_VISIT,
-    OUT_OF_TIME,
-    OUT_OF_TIME_LATCHED,
-    YOUTUBE_LOCKED,
-    YOUTUBE_ACCESS_GRANTED,
-    STORAGE_ERROR,
+enum class GateMode(val traits: ModeTraits) {
+    SERVICE_UNAVAILABLE(ModeTraits()),
+    ENFORCEMENT_DISABLED(ModeTraits(grantsAccess = true)),
+    BROWSER_BACKGROUND(ModeTraits()),
+    PAUSED(ModeTraits(overlay = ModeOverlay.GATE, gateSession = true)),
+    WAITING(ModeTraits(overlay = ModeOverlay.GATE, gateSession = true)),
+    ACCESS_GRANTED_NORMAL(ModeTraits(ModeOverlay.BADGE, recordsUsage = true, chargesBudget = true, grantsAccess = true)),
+    ACCESS_GRANTED_EMERGENCY(ModeTraits(ModeOverlay.BADGE, recordsUsage = true, grantsAccess = true)),
+    ACCESS_GRANTED_CURRENT_VISIT(ModeTraits(ModeOverlay.BADGE, grantsAccess = true)),
+    OUT_OF_TIME(ModeTraits(overlay = ModeOverlay.GATE, gateSession = true)),
+    OUT_OF_TIME_LATCHED(ModeTraits(overlay = ModeOverlay.GATE, gateSession = true)),
+    YOUTUBE_LOCKED(ModeTraits(overlay = ModeOverlay.GATE, gateSession = true)),
+    YOUTUBE_ACCESS_GRANTED(ModeTraits(grantsAccess = true)),
+    STORAGE_ERROR(ModeTraits()),
 }
 
-enum class ProtectionHealth {
-    READY,
-    READY_LIMITED_RECOVERY,
-    ENFORCEMENT_OFF,
-    ACCESSIBILITY_REQUIRED,
-    USAGE_ACCESS_RECOMMENDED,
-    SERVICE_DISCONNECTED,
-    BROWSERS_NOT_FOUND,
-    STORAGE_ERROR,
-    RESTRICTED_SETTINGS_BLOCKED,
-    ADVANCED_PROTECTION_BLOCKED,
+enum class HealthAction { NONE, USAGE_ACCESS, ACCESSIBILITY, BROWSER_LISTING, APP_INFO, ADVANCED_PROTECTION_HELP }
+
+enum class ProtectionHealth(val action: HealthAction) {
+    READY(HealthAction.NONE),
+    READY_LIMITED_RECOVERY(HealthAction.USAGE_ACCESS),
+    ENFORCEMENT_OFF(HealthAction.NONE),
+    ACCESSIBILITY_REQUIRED(HealthAction.ACCESSIBILITY),
+    USAGE_ACCESS_RECOMMENDED(HealthAction.USAGE_ACCESS),
+    SERVICE_DISCONNECTED(HealthAction.ACCESSIBILITY),
+    BROWSERS_NOT_FOUND(HealthAction.BROWSER_LISTING),
+    STORAGE_ERROR(HealthAction.APP_INFO),
+    RESTRICTED_SETTINGS_BLOCKED(HealthAction.ACCESSIBILITY),
+    ADVANCED_PROTECTION_BLOCKED(HealthAction.ADVANCED_PROTECTION_HELP),
 }
 
 data class RestrictorSettings(
@@ -356,19 +358,6 @@ data class ModeTraits(
     val grantsAccess: Boolean = false,
     val gateSession: Boolean = false,
 )
-
-val GateMode.traits: ModeTraits get() = when (this) {
-    GateMode.PAUSED, GateMode.WAITING, GateMode.OUT_OF_TIME,
-    GateMode.OUT_OF_TIME_LATCHED, GateMode.YOUTUBE_LOCKED ->
-        ModeTraits(overlay = ModeOverlay.GATE, gateSession = true)
-    GateMode.ACCESS_GRANTED_NORMAL ->
-        ModeTraits(ModeOverlay.BADGE, recordsUsage = true, chargesBudget = true, grantsAccess = true)
-    GateMode.ACCESS_GRANTED_EMERGENCY ->
-        ModeTraits(ModeOverlay.BADGE, recordsUsage = true, grantsAccess = true)
-    GateMode.ACCESS_GRANTED_CURRENT_VISIT -> ModeTraits(ModeOverlay.BADGE, grantsAccess = true)
-    GateMode.YOUTUBE_ACCESS_GRANTED, GateMode.ENFORCEMENT_DISABLED -> ModeTraits(grantsAccess = true)
-    GateMode.SERVICE_UNAVAILABLE, GateMode.BROWSER_BACKGROUND, GateMode.STORAGE_ERROR -> ModeTraits()
-}
 
 sealed interface CommandResult {
     data class Applied(val state: PersistedState, val reward: RewardCommit? = null) : CommandResult

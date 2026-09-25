@@ -1,0 +1,76 @@
+{
+  "outcome": "complete",
+  "summary": "Campaign is honestly incomplete against whole-component targets. Saved metrics largely match independent Jacoco/Istanbul recomputation; gate correctly fails. Server/browser meet line/branch floors but not CRAP\u22648. Android remains far below coverage/CRAP with 605 unmapped functions. No evidence of marking unmapped functions covered or substituting line% for branch%. Concrete defect: GateScreen PAUSED copy changed while androidTest still asserts the old headline. Mutation evidence supports scoped kills plus one documented equivalent accounting survivor; ordinary tests were rerun with source hashes unchanged. Not ready to call targets met; suitable for user manual checks of the changed GPS/accounting/agent/browser areas, after fixing the stale GateScreenTest expectation.",
+  "findings": [
+    "SEVERITY HIGH \u2014 Incomplete vs assignment targets (not a silent pass). Gate failed (quality/logs/final-gate.exit=1; quality/metrics/gate.json passed:false; exceptions:[]). Independent Jacoco LINE 2693/7286=36.9613%, BRANCH 1482/5494=26.9749% matches saved Android. Istanbul server lines 441/446\u224898.88% branches 921/1078\u224885.44%; browser 179/180=99.44% branches 419/489\u224885.69%. CRAP>8 remains Android 198 / server 24 / browser 11; Android unmapped 605. Campaign docs correctly label status incomplete-targets-not-met.",
+    "SEVERITY HIGH \u2014 Stale instrumented GateScreen contract after PAUSED copy change. app/src/main/.../ui/gate/GateScreen.kt:438-439 now headlines \"${availableMinutes(snapshot)} min\" with empty PAUSED supporting copy (447) and eyebrow \"BROWSING TIME LEFT\" (431). app/src/androidTest/.../ui/GateScreenTest.kt:73 still asserts onNodeWithText(\"MAKE IT\\nINTENTIONAL.\"). Failure scenario: user-run androidTest paused-gate case fails immediately. Suggested correction: update the assertion to the minutes headline (and re-check other paused strings), or revert the copy change if unintentional. Runtime of androidTest was correctly not executed under the UI prohibition.",
+    "SEVERITY MEDIUM \u2014 Priority Android surfaces still effectively unprotected by coverage despite campaign focus. From quality/metrics/android-functions.json joins: V1GpsService mapped avg coverage 0 with onLocationChanged CRAP 240; GateScreen avg 0; Chrome accessibility / enforcement paths remain in remaining-scope largest gaps (SprintChallengeActivity, DashboardScreen, ChromeAccessibilityService, GateScreen, SprintLocationService, V1Coordinator, overlays). GpsDistanceTracker itself is well-tested (mapped CRAP\u22648, avgCov 1.0) but live service/UI/enforcement were not brought near targets.",
+    "SEVERITY MEDIUM \u2014 CRAP targets unmet on server/browser even where coverage floors pass. Full-coverage high-CC functions still have CRAP=complexity (e.g. store anonymous@90:165 CC/CRAP 18; expandChanges 16). Hotspots remain server.mjs request router CC48, agent chat CC40, voice.mjs event CRAP\u224863.6, browser app.js review renderer CRAP\u224826. No CRAP waivers recorded (gate.exceptions []).",
+    "SEVERITY MEDIUM \u2014 Pre-existing/unfixed WAITING androidTest expectation also mismatches production. GateScreenTest waiting case expects \"UNLOCKING BROWSER\" while GateScreen WAITING headline has been \"Hang on a moment.\" since checkpoint 11af973 (uppercase \u2192 \"HANG ON A MOMENT.\"). Assignment asked to inspect/fix stale screen expectations; this was left for user.",
+    "SEVERITY LOW \u2014 Live GPS timing basis changed with tracker extraction. V1GpsService now feeds GpsDistanceTracker with location.time (wall clock), matching backend-v1/evidence.mjs verifyGps; prior inline logic used elapsedRealtimeNanos. Likely intentional parity; still a user-visible verification risk if wall clock jumps. Tracker bands/noise/gap thresholds align with evidence.mjs (walk/sprint).",
+    "SEVERITY LOW \u2014 Mutation reporting is scoped and mostly honest, with one nuance. latestDistinctMutations: 36 detected + 1 surviving (ignore-unlock-expiry-cap) assessed equivalent; RestrictionEngine.consumeUsageDetailed unlockBoundary (engine ~752-753) and repository unlockReached flush (~589-591) support redundancy of the repository expiry cap for accounted usage. trials.surviving:8 counts earlier survivors that were later retested and detected (ignore-budget-boundary, skip-durable-normalization, JS review/stream/provider/approval mutants, accept-slow-sprint). historicalErrors:2 correctly not counted as kills. No whole-repo mutation percentage claimed.",
+    "Parser/CRAP basis: AppStateSerializer.invalid is startLine=endLine=421, complexity=1, coverageFraction=1, crap=1 (quality/metrics/android-functions.json) \u2014 Lizard CC87 issue corrected. CRAP formula C\u00b2(1-f)\u00b3+C recomputed with 0 mismatches on mapped Android functions. Unmapped retain null coverage/CRAP (605). Branch data are real JaCoCo BRANCH counters and Istanbul branchMap (16/17 JS files; edit-schema.mjs has 0 branches).",
+    "Changed behavior (product): GateScreen PAUSED UX (minutes as hero); V1GpsService live distance via shared tracker + status copy; agent.mjs request/execute extraction without tool-name break (read_setup/read_details/propose_changes/\u2026 match prompts.mjs); evidence.mjs GPS structured refactor; RestrictorRepository advanceLocked split (normalize/wait/buffer) \u2014 complexity 11, still CRAP>8.",
+    "Tests from saved evidence (not re-run here): Android JVM 246 pass / 0 fail / 0 error / 0 skip; backend+browser Node 181 pass / 0 fail / 0 skip; instrumented Node same 181 not double-counted; androidTest/emulator not run. Before (assignment baseline): Android unit lines 35.81%/branches 25.70%; server 96.83%/89.72%; browser lines 20.94% (V8, not comparable). After (saved+verified): Android 36.96%/26.97%; server 98.87%/85.43%; browser 99.44%/85.68%."
+  ],
+  "changes": [],
+  "decisions": [
+    "Read-only review only: used git diff vs 11af973f8e0ef7d4f85d14265cae4b0e19035e13, quality/metrics|logs, and source inspection; did not run tests, builds, mutations, or UI.",
+    "Treated quality/PROGRESS.md and final-evidence.json as claims to verify, not as authority; independently recomputed Jacoco/Istanbul totals and CRAP formula.",
+    "Verdict = incomplete against targets (not 'ready' as complete), while noting honesty of the failing gate and that manual testing of changed areas can proceed after fixing GateScreenTest drift."
+  ],
+  "evidence": [
+    "git HEAD still 11af973f8e0ef7d4f85d14265cae4b0e19035e13; all campaign work uncommitted (git status).",
+    "quality/metrics/final-evidence.json; quality/metrics/summary.json; quality/metrics/gate.json; quality/PROGRESS.md; quality/README.md",
+    "quality/metrics/android-jacoco.xml (LINE/BRANCH counters); quality/metrics/istanbul/summary.json + coverage-final.json",
+    "quality/metrics/android-functions.json (invalid @421 CC1; unmappedFunctions 605; advanceLocked CC11); quality/metrics/remaining-scope.json",
+    "quality/metrics/mutation-summary.json; quality/metrics/accounting-*.json; quality/metrics/javascript-*.json; quality/metrics/gps-*.json",
+    "quality/logs/verification-1790276574385547000/android-ordinary.exit=0; android-test-counts.json tests=246; quality/logs/istanbul-*/tests.exit=0; quality/logs/final-gate.exit=1",
+    "GateScreen.kt:427-447 vs GateScreenTest.kt:73; V1GpsService.kt GpsDistanceTracker wiring; backend-v1/evidence.mjs GPS_SPEED_BANDS; backend-v1/agent.mjs executeFunction tool names vs prompts.mjs"
+  ],
+  "checks": [
+    {
+      "check": "Independent Jacoco LINE/BRANCH totals from quality/metrics/android-jacoco.xml",
+      "result": "passed",
+      "detail": "LINE 2693/7286=36.9613%; BRANCH 1482/5494=26.9749%; matches saved summary/final-evidence."
+    },
+    {
+      "check": "Independent Istanbul line/branch totals from coverage-final.json",
+      "result": "passed",
+      "detail": "Server \u224898.88%/85.44%; browser 99.44%/85.69%; matches saved percentages within rounding. All listed prod .mjs and public .js present; no zero-line production files."
+    },
+    {
+      "check": "CRAP formula and invalid() parser boundary",
+      "result": "passed",
+      "detail": "Formula mismatches=0 on mapped Android functions; invalid helper CC=1 at line 421 only; max mapped Android CRAP=600; crapAbove8=198."
+    },
+    {
+      "check": "Saved ordinary test exits after mutations + sourceUnchanged",
+      "result": "passed",
+      "detail": "android-ordinary.exit=0 (246 tests); Node 181 pass; final-evidence sourceUnchanged/sourceSha256 manifest matched 139/0/0 on spot-check of changed production files."
+    },
+    {
+      "check": "Strict gate vs targets",
+      "result": "failed",
+      "detail": "gate.passed=false; failures include Android lines/branches, Android CRAP>8 (198), Android unmapped (605), server CRAP>8 (24), browser CRAP>8 (11). No exceptions."
+    },
+    {
+      "check": "Re-run tests/builds/mutations/UI in this review",
+      "result": "not_run",
+      "detail": "Forbidden by review-only assignment; relied on saved logs and static recomputation."
+    }
+  ],
+  "open_issues": [
+    "Whole-component Android coverage/CRAP and 605 unmapped JaCoCo joins remain open; cannot claim function-level CRAP complete until unique attribution exists or code is structured for it.",
+    "Server/browser CRAP\u22648 requires further complexity reduction, not more coverage alone.",
+    "Instrumented GateScreenTest (and WAITING \"UNLOCKING BROWSER\") await user/device run after expectation fixes; do not treat historical emulator results as fresh.",
+    "Equivalent mutant ignore-unlock-expiry-cap is plausible for usage totals but was not re-proven here by applying the mutant; assessor relied on code+saved logs.",
+    "HEAD has no campaign commits; reviewable only as working tree vs checkpoint."
+  ],
+  "next_steps": [
+    "Fix GateScreenTest paused (and waiting) string expectations to match current GateScreen before user androidTest runs.",
+    "Continue Android coverage on enforcement/GPS service/UI/overlays/serializer validation without excluding those files from the denominator.",
+    "Refactor remaining CRAP>8 hotspots (serializer validate/readFrom, task rewards, server router/chat/voice, browser review rendering) with mutation follow-up on touched rules.",
+    "User manual checklist (from quality/README.md): blocking/wait/expiry/relock/emergency; GPS live vs verified walk/sprint including gaps; settings review/apply/undo/offline ack; video/mic/overlays/layout \u2014 all unverified by agents."
+  ]
+}

@@ -1,12 +1,12 @@
-Friction is a personal experiment in what helps you use your phone on purpose. Its core is win/win: do an activity you value and earn time in protected apps; skip earning and leave less room for scrolling. Keep it playful, without guilt or punishment.
+Friction helps you use your phone on purpose: do an activity you value and earn time in protected apps. Keep it playful, without guilt or punishment.
 
-What makes Friction distinctive is how much you can tune through a simple interface: activities, what counts, effort per credit, rewards, waiting time, session lengths, allowance and reset time. Use voice, text or manual controls. Undo restores only the latest saved action.
+Tune activities, what counts, effort per credit, rewards, waiting time, session lengths, allowance and reset time through voice, text or manual controls. Undo restores only the latest saved action.
 
 Chrome, Firefox, Edge, Opera and X share one browsing budget. Official YouTube has its own daily earned-credit threshold. Win/win concerns protected apps; a configured allowance or already-earned time can still provide access without a new task.
 
 The daily allowance is configurable from 0 to 30 whole minutes. It arrives at the single daily reset, replacing unused time without carryover. Editing the allowance never changes the balance immediately. Tasks can earn extra minutes above 30. Changing reset time preserves current balances until the next actual reset. Use current app context for the user's allowance, reset time, reward rate and other values; do not assume defaults.
 
-Video or GPS tasks earn credits after verification. Partial progress combines across tasks. Whole credits earn browsing minutes and count toward YouTube access. Daily reset clears daily credits and partial progress. Existing rewards are not repriced by settings edits.
+Video or GPS tasks earn credits after verification. The live GPS distance applies verification's movement filters; mock locations or repeated/backwards timestamps clear live distance and invalidate verification. Partial progress combines across tasks. Whole credits earn browsing minutes and count toward YouTube access. Daily reset clears daily credits and partial progress. Existing rewards are not repriced by settings edits.
 
 Normal browsing requires available time and the configured focused wait. A session expires with elapsed time, while the budget is charged for active protected use. YouTube opens when the daily credit threshold is met and does not spend browsing minutes. The first completed daily credit earns one emergency unlock; its configured duration is free of browsing-budget charges. Allowance minutes alone do not earn credits or unlock YouTube/emergency access.
 

@@ -32,11 +32,17 @@ data class ConfigurationSettings(
     val youtubeUnlockLabel: String = "Unlock YouTube",
     val emergencyUnlockLabel: String = "Emergency unlock",
 ) {
-    fun validationError(): String? = when {
+    fun validationError(): String? = budgetValidationError() ?: accessValidationError()
+
+    private fun budgetValidationError(): String? = when {
         waitSeconds !in 0..600 -> "Wait must be between 0 and 600 seconds"
         minutesPerCredit !in 1..120 -> "Credit reward must be between 1 and 120 minutes"
         sessionMinutes.size != 3 || sessionMinutes.any { it !in MIN_SESSION_MINUTES..MAX_SESSION_MINUTES } -> "Choose three session lengths from 1 to 120 minutes"
         dailyBudgetMinutes !in 0..30 -> "Daily budget must be between 0 and 30 minutes"
+        else -> null
+    }
+
+    private fun accessValidationError(): String? = when {
         !validResetTime(dayReset) -> "Reset times must use HH:mm"
         youtubeCredits !in 1..100 -> "YouTube credit requirement is outside its supported range"
         emergencyMinutes !in 1..120 -> "Emergency duration must be between 1 and 120 minutes"
@@ -59,19 +65,40 @@ data class TaskDefinition(
     val paused: Boolean = false,
     val gpsMode: String? = null,
 ) {
-    fun validationError(): String? = when {
+    fun validationError(): String? = identityValidationError() ?: measurementValidationError() ?: rewardValidationError()
+
+    private fun identityValidationError(): String? = when {
         !Regex("[a-z][a-z0-9_-]{0,63}").matches(id) -> "Invalid task ID"
         name.isBlank() || name.length > 80 -> "Task name must contain 1 to 80 characters"
+        else -> null
+    }
+
+    private fun measurementValidationError(): String? = when {
         verifier !in setOf("video", "gps") -> "Choose video or GPS verification"
         metric !in setOf("repetitions", "seconds", "meters") -> "Unsupported measurement"
-        verifier == "gps" && (metric != "meters" || gpsMode !in setOf("walk", "sprint")) -> "GPS tasks must measure walking or sprinting distance"
-        verifier == "video" && (metric == "meters" || gpsMode != null) -> "Video tasks measure repetitions or seconds"
+        verifier == "gps" -> gpsValidationError()
+        metric == "meters" || gpsMode != null -> "Video tasks measure repetitions or seconds"
+        else -> null
+    }
+
+    private fun gpsValidationError(): String? =
+        if (metric != "meters" || gpsMode !in setOf("walk", "sprint")) "GPS tasks must measure walking or sprinting distance" else null
+
+    private fun rewardValidationError(): String? = when {
         unitsPerCredit !in 1..100_000 -> "Units per credit must be between 1 and 100,000"
         correctionMinimum !in 1..100_000 -> "Correction minimum must be between 1 and 100,000"
-        verifier == "video" && metric == "seconds" && correctionMinimum > 30 -> "A video correction requires evidence within the 30-second recording limit"
-        verifier == "video" && metric == "repetitions" && correctionMinimum > 150 -> "Video repetition correction minimum cannot exceed 150"
+        videoCorrectionError() != null -> videoCorrectionError()
         instructions.isBlank() || instructions.length > 2000 -> "Task needs judging instructions of at most 2,000 characters"
         else -> null
+    }
+
+    private fun videoCorrectionError(): String? {
+        if (verifier != "video") return null
+        return when {
+            metric == "seconds" && correctionMinimum > 30 -> "A video correction requires evidence within the 30-second recording limit"
+            metric == "repetitions" && correctionMinimum > 150 -> "Video repetition correction minimum cannot exceed 150"
+            else -> null
+        }
     }
 }
 

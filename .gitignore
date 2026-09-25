@@ -39,4 +39,22 @@ node_modules/
 # Maintained reproducible assistant benchmark; generated runs stay local.
 !/benchmarks/friction/README.md
 /benchmarks/friction/runs/
+!/quality/*.md
+/quality/.venv/
+/quality/parser/build/
+/quality/__pycache__/
+/quality/metrics/javascript/tmp/
 !/benchmarks/friction/RESULTS.md
+
+/quality/probes/build/
+
+# Disposable verification output; manual runs clean it up.
+/quality/logs
+/quality/history
+/app/build/reports
+/app/build/test-results
+/app/build/jacoco
+/app/build/outputs/unit_test_code_coverage
+/quality/PROGRESS.md
+/.verification-session/
+/**/__pycache__/

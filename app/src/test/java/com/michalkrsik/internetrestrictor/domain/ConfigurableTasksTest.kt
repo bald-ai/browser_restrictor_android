@@ -22,6 +22,15 @@ class ConfigurableTasksTest {
     private fun record(state: PersistedState, value: TaskMeasurementReceipt, now: Long = value.finishedAtWallMs) =
         applied(engine.applyTaskReceipt(state, value, now, zone))
 
+    @Test fun identicalConfigurationStillFreezesAnUnmigratedBudgetOnce() {
+        val base = initial()
+        val legacy = engine.normalize(base.copy(dailyCounter = base.dailyCounter.copy(grantedBudgetMinutes = null, earnedBudgetRounds = 2, spendableBudgetRounds = 1)), noon, zone)
+        val migrated = applied(engine.applyConfiguration(legacy, legacy.configuration, noon, zone))
+        assertEquals(3L, migrated.dailyCounter.grantedBudgetMinutes)
+        assertEquals(legacy.stateRevision + 1, migrated.stateRevision)
+        assertEquals(migrated, applied(engine.applyConfiguration(migrated, migrated.configuration, noon, zone)))
+    }
+
     @Test fun correctionEligibilityExpiresAtPinnedResetEvenWhenUserMovesCurrentResetLater() {
         val before = at("2026-09-17T03:59:00+02:00[Europe/Prague]")
         val after = at("2026-09-17T04:01:00+02:00[Europe/Prague]")

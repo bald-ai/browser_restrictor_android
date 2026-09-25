@@ -39,7 +39,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicLong
 
-class ChromeAccessibilityService : AccessibilityService() {
+class ChromeAccessibilityService(private val overlayWindowManager: WindowManager? = null) : AccessibilityService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val repository by lazy { appContainer.repository }
     private val eventLog by lazy { appContainer.eventLog }
@@ -74,7 +74,7 @@ class ChromeAccessibilityService : AccessibilityService() {
         serviceGeneration = nextServiceGeneration.incrementAndGet()
         activeServiceGeneration.set(serviceGeneration)
         foregroundMonitor = BrowserForegroundMonitor(this)
-        val windowManager = getSystemService(WindowManager::class.java)
+        val windowManager = overlayWindowManager ?: getSystemService(WindowManager::class.java)
         gateController = GateOverlayController(
             context = this,
             windowManager = windowManager,

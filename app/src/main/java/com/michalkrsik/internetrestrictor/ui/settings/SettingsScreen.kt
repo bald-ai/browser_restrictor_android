@@ -85,6 +85,7 @@ fun SettingsScreen(
     onHealthAction: () -> Unit,
     onExportDiagnostics: () -> Unit,
     onCustomize: () -> Unit = {},
+    configurableTasks: Boolean = com.michalkrsik.internetrestrictor.BuildConfig.IS_V1,
 ) {
     BackHandler(onBack = onBack)
     var firstSession by rememberSaveable { mutableStateOf(snapshot.settings.sessionMinutes.getOrElse(0) { 3L }.toString()) }
@@ -105,7 +106,7 @@ fun SettingsScreen(
         Spacer(Modifier.height(7.dp))
         Text("BROWSER RULES.", style = MaterialTheme.typography.headlineLarge.copy(fontSize = 35.sp, lineHeight = 40.sp, letterSpacing = (-1).sp))
         Spacer(Modifier.height(21.dp))
-        if (com.michalkrsik.internetrestrictor.BuildConfig.IS_V1) {
+        if (configurableTasks) {
             PulsePrimary("Customize tasks & rules", onCustomize, subtitle = "Settings, rewards, reset times and task definitions")
         } else PulseControlGroup {
             PulseSection("Session presets", "Minutes")
@@ -150,7 +151,7 @@ fun SettingsScreen(
         }
         Text("Tasks contribute toward your next credit. Emergency access is earned with your first credit of the day.", Modifier.padding(top = 11.dp), style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp, lineHeight = 17.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(20.dp))
-        if (!com.michalkrsik.internetrestrictor.BuildConfig.IS_V1) PulsePrimary("Save changes", { onSave(snapshot.settings.copy(delayEnabled = true, sessionMinutes = sessionValues)) }, enabled = sessionsValid)
+        if (!configurableTasks) PulsePrimary("Save changes", { onSave(snapshot.settings.copy(delayEnabled = true, sessionMinutes = sessionValues)) }, enabled = sessionsValid)
         Spacer(Modifier.height(24.dp))
         Spacer(Modifier.weight(1f))
         PulseNav(settings = true, onToday = onBack, onSettings = {})

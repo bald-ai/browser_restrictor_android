@@ -44,7 +44,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-class SprintLocationService : Service(), LocationListener {
+class SprintLocationService(
+    private val saveRecording: (suspend (String, Long, Boolean) -> RewardSaveResult)? = null,
+) : Service(), LocationListener {
 
     inner class LocalBinder : Binder() {
         val service: SprintLocationService get() = this@SprintLocationService
@@ -165,8 +167,8 @@ class SprintLocationService : Service(), LocationListener {
         if (pending.isSaving || pending.saveSucceeded) return
         saveState = pending.copy(isSaving = true, manualConfirmed = manual, errorMessage = null)
         saveScope.launch {
-            val container = (application as RestrictorApplication).container
-            val saved = container.repository.recordSprintRecording(
+            val persist = saveRecording ?: (application as RestrictorApplication).container.repository::recordSprintRecording
+            val saved = persist(
                 pending.recordingId, if (manual) 0L else pending.result.qualifyingDistanceMeters, manual,
             )
             saveState = when (saved) {
@@ -236,12 +238,8 @@ class SprintLocationService : Service(), LocationListener {
 
             if (!vibrator.hasVibrator()) return
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vibrator.vibrate(VibrationEffect.createOneShot(500L, VibrationEffect.DEFAULT_AMPLITUDE))
-            } else {
-                @Suppress("DEPRECATION")
-                vibrator.vibrate(500L)
-            }
+            // VibrationEffect is available on every supported SDK (minSdk 29).
+            vibrator.vibrate(VibrationEffect.createOneShot(500L, VibrationEffect.DEFAULT_AMPLITUDE))
         } catch (error: Exception) {
             Log.w(TAG, "Vibration failed", error)
         }

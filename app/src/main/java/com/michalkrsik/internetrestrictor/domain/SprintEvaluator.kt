@@ -153,165 +153,139 @@ class SprintMovementJudge(
             fixElapsedRealtimeMs = location.elapsedRealtimeMs,
         )
         val prev = lastAcceptedLocation
-        if (prev == null) maxGpsGapMs = maxOf(maxGpsGapMs, location.elapsedRealtimeMs - recordingStartTimeMs)
-        if (prev != null) {
-            val dtMs = location.elapsedRealtimeMs - prev.elapsedRealtimeMs
-            if (dtMs <= 50) {
-                // Sub-50ms duplicate or near-duplicate fix; skip
-                return currentLiveState(
-                    lastAccuracyMeters = location.accuracyMeters,
-                    isGpsUsable = isUsable,
-                    instantSpeedMps = prev.speedMps ?: 0f,
-                    fixElapsedRealtimeMs = location.elapsedRealtimeMs,
-                )
-            }
-            if (dtMs > maxGpsGapMs) {
-                maxGpsGapMs = dtMs
-            }
+        if (prev != null) return onFollowingLocation(prev, location, isUsable)
+        maxGpsGapMs = maxOf(maxGpsGapMs, location.elapsedRealtimeMs - recordingStartTimeMs)
+        // First accepted location
+        lastAcceptedLocation = location
+        allValidLocations.add(location)
+        return currentLiveState(
+            lastAccuracyMeters = location.accuracyMeters,
+            isGpsUsable = isUsable,
+            instantSpeedMps = location.speedMps?.takeIf { it >= 0f } ?: 0f,
+            fixElapsedRealtimeMs = location.elapsedRealtimeMs,
+        )
+    }
 
-            val dist = haversineDistanceMeters(
-                prev.latitude, prev.longitude,
-                location.latitude, location.longitude,
-            )
-            val impliedSpeed = dist / (dtMs / 1000.0)
-
-            // Impossible jump / teleport filter
-            if (impliedSpeed > MAX_PLAUSIBLE_HUMAN_SPEED_MPS) {
-                totalRejectedJumps++
-                return currentLiveState(
-                    lastAccuracyMeters = location.accuracyMeters,
-                    isGpsUsable = isUsable,
-                    instantSpeedMps = 0f,
-                    fixElapsedRealtimeMs = location.elapsedRealtimeMs,
-                )
-            }
-
-            val reportedSpeed = location.speedMps?.takeIf { it >= 0f }
-            if (reportedSpeed != null && reportedSpeed >= RUNNING_ENTRY_SPEED_MPS && impliedSpeed < 1.0) {
-                consecutiveDiscrepantSteps++
-                if (consecutiveDiscrepantSteps >= 5) {
-                    hasGrossDiscrepancy = true
-                }
-            } else {
-                consecutiveDiscrepantSteps = 0
-            }
-
-            val step = EffortStep(
-                startLocation = prev,
-                endLocation = location,
-                distanceMeters = dist,
-                reportedSpeedMps = reportedSpeed,
-                coordinateSpeedMps = impliedSpeed.toFloat(),
-            )
-
-            totalRecordedDistanceMeters += dist
-            processEffortStep(step)
-            lastAcceptedLocation = location
-            allValidLocations.add(location)
-
+    private fun onFollowingLocation(prev: SprintLocation, location: SprintLocation, isUsable: Boolean): SprintLiveState {
+        val dtMs = location.elapsedRealtimeMs - prev.elapsedRealtimeMs
+        if (dtMs <= 50) {
+            // Sub-50ms duplicate or near-duplicate fix; skip
             return currentLiveState(
                 lastAccuracyMeters = location.accuracyMeters,
                 isGpsUsable = isUsable,
-                instantSpeedMps = step.effectiveSpeedMps,
+                instantSpeedMps = prev.speedMps ?: 0f,
                 fixElapsedRealtimeMs = location.elapsedRealtimeMs,
             )
+        }
+        if (dtMs > maxGpsGapMs) {
+            maxGpsGapMs = dtMs
+        }
+
+        val dist = haversineDistanceMeters(
+            prev.latitude, prev.longitude,
+            location.latitude, location.longitude,
+        )
+        val impliedSpeed = dist / (dtMs / 1000.0)
+
+        // Impossible jump / teleport filter
+        if (impliedSpeed > MAX_PLAUSIBLE_HUMAN_SPEED_MPS) {
+            totalRejectedJumps++
+            return currentLiveState(
+                lastAccuracyMeters = location.accuracyMeters,
+                isGpsUsable = isUsable,
+                instantSpeedMps = 0f,
+                fixElapsedRealtimeMs = location.elapsedRealtimeMs,
+            )
+        }
+
+        val reportedSpeed = location.speedMps?.takeIf { it >= 0f }
+        trackSpeedDiscrepancy(reportedSpeed, impliedSpeed)
+
+        val step = EffortStep(
+            startLocation = prev,
+            endLocation = location,
+            distanceMeters = dist,
+            reportedSpeedMps = reportedSpeed,
+            coordinateSpeedMps = impliedSpeed.toFloat(),
+        )
+
+        totalRecordedDistanceMeters += dist
+        processEffortStep(step)
+        lastAcceptedLocation = location
+        allValidLocations.add(location)
+
+        return currentLiveState(
+            lastAccuracyMeters = location.accuracyMeters,
+            isGpsUsable = isUsable,
+            instantSpeedMps = step.effectiveSpeedMps,
+            fixElapsedRealtimeMs = location.elapsedRealtimeMs,
+        )
+    }
+
+    private fun trackSpeedDiscrepancy(reportedSpeed: Float?, impliedSpeed: Double) {
+        if (reportedSpeed != null && reportedSpeed >= RUNNING_ENTRY_SPEED_MPS && impliedSpeed < 1.0) {
+            consecutiveDiscrepantSteps++
+            if (consecutiveDiscrepantSteps >= 5) hasGrossDiscrepancy = true
         } else {
-            // First accepted location
-            lastAcceptedLocation = location
-            allValidLocations.add(location)
-            return currentLiveState(
-                lastAccuracyMeters = location.accuracyMeters,
-                isGpsUsable = isUsable,
-                instantSpeedMps = location.speedMps?.takeIf { it >= 0f } ?: 0f,
-                fixElapsedRealtimeMs = location.elapsedRealtimeMs,
-            )
+            consecutiveDiscrepantSteps = 0
         }
     }
 
     private fun processEffortStep(step: EffortStep) {
-        val speedMps = step.effectiveSpeedMps
-        val nowMs = step.endLocation.elapsedRealtimeMs
-
-        if (activeEffortSteps.isEmpty()) {
-            if (speedMps >= RUNNING_ENTRY_SPEED_MPS) {
-                activeEffortSteps.add(step)
-                dipStartTimeMs = null
-            }
+        if (step.effectiveSpeedMps >= RUNNING_ENTRY_SPEED_MPS) {
+            activeEffortSteps.add(step)
+            dipStartTimeMs = null
+            return
+        }
+        if (activeEffortSteps.isEmpty()) return
+        val dipStart = dipStartTimeMs ?: step.startLocation.elapsedRealtimeMs.also { dipStartTimeMs = it }
+        if (step.endLocation.elapsedRealtimeMs - dipStart <= MAX_SPEED_DIP_DURATION_MS) {
+            activeEffortSteps.add(step)
         } else {
-            if (speedMps >= RUNNING_ENTRY_SPEED_MPS) {
-                activeEffortSteps.add(step)
-                dipStartTimeMs = null
-            } else if (speedMps >= RUNNING_DIP_SPEED_MPS) {
-                val dipStart = dipStartTimeMs ?: step.startLocation.elapsedRealtimeMs.also { dipStartTimeMs = it }
-                if (nowMs - dipStart <= MAX_SPEED_DIP_DURATION_MS) {
-                    activeEffortSteps.add(step)
-                } else {
-                    finalizeActiveEffort()
-                }
-            } else {
-                val dipStart = dipStartTimeMs ?: step.startLocation.elapsedRealtimeMs.also { dipStartTimeMs = it }
-                if (nowMs - dipStart <= MAX_SPEED_DIP_DURATION_MS) {
-                    activeEffortSteps.add(step)
-                } else {
-                    finalizeActiveEffort()
-                }
-            }
+            finalizeActiveEffort()
         }
     }
 
+    private data class PrefixTotals(
+        val distance: Double,
+        val duration: Double,
+        val weightedPace: Double,
+        val missingSpeeds: Int,
+    )
+
+    private fun prefixTotals(steps: List<EffortStep>): PrefixTotals {
+        var distance = 0.0
+        var duration = 0.0
+        var weightedPace = 0.0
+        var missingSpeeds = 0
+        for (step in steps) {
+            distance += step.distanceMeters
+            duration += step.durationSec
+            if (step.reportedSpeedMps == null || !(step.reportedSpeedMps >= 0f)) missingSpeeds++
+            weightedPace += step.effectiveSpeedMps * step.durationSec
+        }
+        return PrefixTotals(distance, duration, weightedPace, missingSpeeds)
+    }
+
+    private fun isStationaryJitter(steps: List<EffortStep>, totals: PrefixTotals): Boolean {
+        if (totals.missingSpeeds <= steps.size / 2) return false
+        val start = steps.first().startLocation
+        val end = steps.last().endLocation
+        val displacement = haversineDistanceMeters(start.latitude, start.longitude, end.latitude, end.longitude)
+        val accuracy = steps.maxOf { it.endLocation.accuracyMeters }
+        return displacement < accuracy || (totals.distance >= 15.0 && displacement / totals.distance < 0.35)
+    }
+
     private fun findBestQualifyingPrefix(steps: List<EffortStep>): PrefixEval? {
-        if (steps.isEmpty()) return null
         for (endIdx in steps.indices.reversed()) {
-            val count = endIdx + 1
-            if (count < 2) continue // Need at least 2 steps (3 fixes) to avoid single spike
-
-            var totalDist = 0.0
-            var totalDurSec = 0.0
-            var weightedPaceMps = 0.0
-            var missingSpeedCount = 0
-
-            for (i in 0..endIdx) {
-                val s = steps[i]
-                totalDist += s.distanceMeters
-                totalDurSec += s.durationSec
-                val stepSpeed = if (s.reportedSpeedMps != null && s.reportedSpeedMps >= 0f) {
-                    s.reportedSpeedMps
-                } else {
-                    missingSpeedCount++
-                    s.coordinateSpeedMps
-                }
-                weightedPaceMps += stepSpeed * s.durationSec
-            }
-
-            if (totalDurSec < 1.5) continue
-
-            val averagePaceMps = weightedPaceMps / totalDurSec
-            val averagePaceKmh = averagePaceMps * 3.6
-
-            // Defense against stationary jitter when speed is predominantly absent:
-            // Small position oscillations within declared accuracy must not generate running distance.
-            if (missingSpeedCount > count / 2) {
-                val startLoc = steps[0].startLocation
-                val endLoc = steps[endIdx].endLocation
-                val netDisplacement = haversineDistanceMeters(
-                    startLoc.latitude, startLoc.longitude,
-                    endLoc.latitude, endLoc.longitude,
-                )
-                val maxAccuracy = steps.subList(0, endIdx + 1).maxOf { it.endLocation.accuracyMeters }
-
-                if (netDisplacement < maxAccuracy || (totalDist >= 15.0 && (netDisplacement / totalDist) < 0.35)) {
-                    // Jitter oscillating in place rather than directional movement
-                    continue
-                }
-            }
-
-            if (averagePaceKmh >= MIN_EFFORT_QUALIFYING_SPEED_KMH && totalDist >= 5.0) {
-                return PrefixEval(
-                    stepIndex = endIdx,
-                    distanceMeters = totalDist,
-                    durationSec = totalDurSec,
-                    speedKmh = averagePaceKmh,
-                )
+            if (endIdx < 1) continue // Two steps (three fixes) prevent a single spike earning credit.
+            val prefix = steps.subList(0, endIdx + 1)
+            val totals = prefixTotals(prefix)
+            if (totals.duration < 1.5) continue
+            if (isStationaryJitter(prefix, totals)) continue
+            val speedKmh = totals.weightedPace / totals.duration * 3.6
+            if (speedKmh >= MIN_EFFORT_QUALIFYING_SPEED_KMH && totals.distance >= 5.0) {
+                return PrefixEval(endIdx, totals.distance, totals.duration, speedKmh)
             }
         }
         return null

@@ -4,9 +4,9 @@ import android.app.Application
 import androidx.lifecycle.ProcessLifecycleOwner
 import com.michalkrsik.internetrestrictor.monitoring.DeviceAccessMonitor
 
-class RestrictorApplication : Application() {
+open class RestrictorApplication : Application() {
     lateinit var container: AppContainer
-        private set
+        internal set
 
     private lateinit var accessMonitor: DeviceAccessMonitor
 

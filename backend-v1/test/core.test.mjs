@@ -53,3 +53,56 @@ test('03:59 activity verified after04:00 has neither daily nor minutes eligibili
 test('current-period activity keeps both eligibilities and a later duplicate never rewrites verification flags',async t=>{let now=Date.parse('2026-09-16T19:59:30Z');const {store,install}=await fixture(t,{clock:()=>now});const a=await store.startAttempt(install,{attemptId:id(),taskId:'pushups',startedAt:now-20000,configRevision:0});const r=await store.finishAttempt(install,a.attemptId,{endedAt:now-1000,measuredUnits:5,timeZone:'UTC'});assert.equal(r.rewardEligible,true);assert.equal(r.minutesRewardEligible,true);now=Date.parse('2026-09-16T20:01:00Z');const duplicate=await store.finishAttempt(install,a.attemptId,{endedAt:r.endedAt,measuredUnits:5,timeZone:'UTC'});assert.deepEqual(duplicate,r);assert.equal((await store.correct(install,a.attemptId,6)).correctedUnits,6);now=Date.parse('2026-09-17T04:01:00Z');await assert.rejects(store.correct(install,a.attemptId,7),/period has ended/);});
 test('unreliable GPS verified across the evening retains manual completion until daily reset',async t=>{const now=Date.parse('2026-09-16T20:01:00Z');const {store,install}=await fixture(t,{clock:()=>now});const a=await store.startAttempt(install,{attemptId:id(),taskId:'walk',startedAt:Date.parse('2026-09-16T19:58:00Z'),configRevision:0});const r=await store.finishAttempt(install,a.attemptId,{endedAt:Date.parse('2026-09-16T19:59:00Z'),measuredUnits:0,fallbackEligible:true,timeZone:'UTC'});assert.equal(r.rewardEligible,true);assert.equal(r.minutesRewardEligible,true);assert.equal((await store.fallback(install,a.attemptId,true)).manualCompletion,true);});
 test('pending review blocks saved undo, cancellation preserves it and new saves renew undo',async t=>{const {store,install}=await fixture(t);const a=await proposal(store,install,c=>c.settings.waitSeconds=9);await approve(store,install,a);assert.equal(store.snapshot(install).undoableChangeId,a.changeId||store.get(install).proposals[0].changeId);const b=await proposal(store,install,c=>c.settings.waitSeconds=8);assert.equal(store.snapshot(install).undoableChangeId,null);await assert.rejects(store.cancel(install,{proposalId:a.id}),/pending review/);await store.cancel(install,{proposalId:b.id});await store.cancel(install,{proposalId:a.id});const c=await proposal(store,install,c=>c.settings.waitSeconds=6);await approve(store,install,c);assert(store.snapshot(install).undoableChangeId);await store.cancel(install,{proposalId:c.id});assert.deepEqual(store.get(install).config,seed());});
+
+test('an incomplete provider response cannot stage a partial proposal and clears the active turn',async t=>{
+ const {store,install}=await fixture(t);
+ const agent=new Agent(store,{key:'fixture',fetcher:async()=>({ok:true,status:200,json:async()=>({status:'incomplete',output:[{type:'function_call',name:'propose_changes',call_id:'partial',arguments:JSON.stringify({changes:[{action:'set_setting',field:'waitSeconds',value:5}],expectedRevision:0,title:'Partial change'})}]})})});
+ await assert.rejects(agent.chat(install,'Set my wait to five seconds'),/response was incomplete/);
+ assert.equal(store.get(install).revision,0);assert.equal(store.get(install).proposals.length,0);assert.equal(store.getRuntime(install).turn,null);
+});
+
+test('an approval request cannot approve a review that appeared after the request began',async t=>{
+ const {store,install}=await fixture(t);let calls=0;
+ const agent=new Agent(store,{key:'fixture',fetcher:async()=>{
+  if(++calls===1){
+   const config=seed();config.settings.waitSeconds=5;
+   const proposal=await store.stage(install,{config,expectedRevision:0});
+   return{ok:true,status:200,json:async()=>({status:'completed',output:[{type:'function_call',name:'confirm_changes',call_id:'late-review',arguments:JSON.stringify({proposalId:proposal.id,version:proposal.version,approvalQuote:'apply'})}]})};
+  }
+  return{ok:true,status:200,json:async()=>({status:'completed',output:[{type:'message',content:[{text:'Please review the new cards.'}]}]})};
+ }});
+ await agent.chat(install,'apply');
+ assert.equal(store.get(install).revision,0);assert.equal(store.get(install).config.settings.waitSeconds,12);assert.equal(store.get(install).proposals.at(-1).status,'pending');
+});
+
+test('provider rejections without usage release client-error cost but retain unknown server-error cost',async t=>{
+ const {store,install}=await fixture(t);
+ for(const status of [400,503]){
+  const agent=new Agent(store,{key:'fixture',fetcher:async()=>({ok:false,status,json:async()=>({error:'provider failure'})})});
+  await assert.rejects(agent.chat(install,'Explain this setup'),new RegExp(String(status)));
+  const usage=store.usage(install).entries.at(-1);
+  if(status===400)assert.equal(usage.usd,0);else assert(usage.usd>0);
+  assert.equal(Object.keys(store.db.reservations).length,0);assert.equal(store.getRuntime(install).turn,null);
+ }
+});
+
+test('finishing a response only releases the turn it owns',async t=>{
+ const {store,install}=await fixture(t),replacement={id:'replacement',cancelled:false};
+ const agent=new Agent(store,{key:'fixture',fetcher:async()=>{
+  store.getRuntime(install).turn=replacement;
+  return mockResponse([{type:'message',content:[{type:'output_text',text:'Current setup explained.'}]}]);
+ }});
+ assert.equal((await agent.chat(install,'Explain my setup')).text,'Current setup explained.');
+ assert.equal(store.getRuntime(install).turn,replacement);
+ await assert.rejects(agent.chat(install,'Another request'),/previous request/);
+ store.getRuntime(install).turn=null;
+});
+
+test('a pending review tied to an obsolete base is cancelled when a new review is staged',async t=>{
+ const {store,install}=await fixture(t),old=await proposal(store,install,c=>c.settings.waitSeconds=4);
+ // A durable legacy review may outlive the configuration it was based on.
+ const state=store.get(install);state.proposals.at(-1).baseRevision=-1;
+ const next=await proposal(store,install,c=>c.settings.waitSeconds=7);
+ assert.notEqual(next.id,old.id);assert.equal(store.get(install).proposals[0].status,'cancelled');
+ assert.equal(store.get(install).revision,0);assert.equal(next.cards[0].after,7);
+});

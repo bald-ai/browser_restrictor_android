@@ -1,0 +1,63 @@
+{
+  "outcome": "complete",
+  "summary": "Deeper read-only review of browser_restrictor_android against checkpoint 11af973f8e0ef7d4f85d14265cae4b0e19035e13. The campaign remains incomplete: Android 36.96% lines / 26.97% branches, server 98.87% / 85.43%, browser 99.44% / 85.68%, and every component still has functions with CRAP above 8. No exception is approved. Those coverage figures match the last saved JaCoCo and Istanbul summaries, but four current files and one new test are newer than that run, so the published 246/181 counts are stale. No reward-path regression was found in the serializer split, review-card split, or GPS rule move. Mac, Language, Desktop, and Zoomies reports are not in this repo and were not reviewed.",
+  "findings": [
+    "Targets, from quality/metrics/gate.json and summary.json, gate exit 1, exceptions []. Android lines 2693/7286 = 36.96%, branches 1482/5494 = 26.97%, max complexity 38 with 42 functions above 8, max mapped CRAP 600 with 198 above 8, 605/1523 functions unmapped. Server lines 441/446 = 98.87%, branches 921/1078 = 85.43%, max complexity 48 with 21 above 8, max CRAP 63.61 with 24 above 8, unmapped 0. Browser lines 179/180 = 99.44%, branches 419/489 = 85.68%, statements 700/770 = 90.9%, max complexity 26 with 8 above 8, max CRAP 26.06 with 11 above 8, unmapped 0. Server and browser meet only the line and branch floors. None meet CRAP<=8 for every function. There is no Swift component here; Android branches are JaCoCo and server/browser branches are Istanbul, not missing counters.",
+    "Freshness defect: quality/metrics/source-manifest.json does not match the checkout. SHA-256 mismatches are AppStateSerializer.kt, backend-v1/public/app.js, backend-v1/test/browser-app.test.mjs, and GateScreenTest.kt. SavedStateValidationTest.kt is absent from the manifest and from the final JUnit directory. The cited final run verification-1790276574385547000 still says JVM 246 passed and Node 181 passed. PROGRESS.md still reports that run and does not mention the later serializer work. Current AppStateSerializer.kt hashes to 6865ab3f81efc1b68f543951503873b929ae555ce4ade817b9769e0ea20c5c8f, which matches quality/metrics/serializer-1790279685646293000.json, so that focused mutation run is current for the serializer only.",
+    "Serializer mutations on the current file: 8 detected, 0 surviving, each with assertion failures, 83 tests in SavedStateValidationTest only. That is not a full-suite rerun. Earlier scoped campaign mutations remain 36 detected and 1 equivalent survivor (ignore-unlock-expiry-cap), plus historical attempt totals 58 detected, 8 surviving, 2 errored. Those earlier survivors were later rechecked as detected. The expiry survivor is still only an equivalence argument: consumeUsageDetailed splits at unlockBoundary (RestrictionEngine.kt:752-755) while the repository cap remains (RestrictorRepository.kt:575-591).",
+    "No production regression found in the serializer split. AppStateSerializer.kt:420-581 moves the same checks into named helpers and keeps invalid() as a CorruptionException. SavedStateValidationTest.kt:15-20 asserts the exception type, exact message, and that writeTo emits 0 bytes. It does not include an invalid lastExercise receipt, so validateExerciseReceipt (lines 436-444) is not covered by this new table. That is a test gap, not a changed rule.",
+    "No production regression found in the browser review split. public/app.js reviewCard still swaps before/after only when the card is undone, and taskReviewField still hides unchanged fields, null gpsMode, and paused on a new task. That matches the previous inline conditions. The new test file changed after the Istanbul snapshot, so browser 99.44%/85.68% does not include that edit.",
+    "GateScreenTest.kt now expects \"3 min\" and \"Hang on a moment.\" GateScreen.kt:438-440 shows available minutes while paused and that waiting headline. Default daily base is 0 and one earned set is 3 minutes (AppState.kt:44-45), so the new text matches the source. The instrumented test has no saved execution after the edit.",
+    "GPS live versus verification, medium: V1GpsService.kt:124-126 appends every non-stale fix, including one whose wall time does not move forward. GpsDistanceTracker.kt:17 ignores seconds<=0 and keeps the old anchor, so later fixes can still add meters. evidence.mjs:29 rejects the whole upload when time is not strictly increasing. Trigger: one fix with location.time less than or equal to the previous stored time. Effect: the screen can show counted distance, then verification fails and no reward is granted. Mock fixes are also stored and rejected, which the app guide already states.",
+    "Preexisting user-facing edits preserved in the same diff, not treated as campaign regressions: paused gate copy, creditName.removeSuffix(\"s\"), GPS status wording, and the metres-to-meters message. Repository accounting and agent chat were moved into helpers without a dropped branch in the inspected sections.",
+    "Mac Dev/quality/RESULTS.md, Language reports, Desktop quality/REPORT.md, and Zoomies reports are outside this repository. This repo's own PROGRESS.md and gate.json do not claim max CRAP 8 or 90% lines for every component. The NSNumber and screenshot-display-ID corrections do not apply to any file here."
+  ],
+  "changes": [],
+  "decisions": [
+    "Reviewed only browser_restrictor_android. Did not open other project reports or work/cursor-agents.",
+    "Did not rerun tests. Compared the saved manifest hashes with the current files and read the later serializer mutation record.",
+    "Treated the serializer and review-card splits as behavior-preserving after comparing the moved conditions with the previous expressions.",
+    "Did not approve the project. Line and branch passes on server and browser do not satisfy per-function CRAP, and Android remains far below both coverage floors."
+  ],
+  "evidence": [
+    "HEAD 11af973f8e0ef7d4f85d14265cae4b0e19035e13; quality/metrics/gate.json; quality/PROGRESS.md lines 5-16 and 40-52.",
+    "Hash mismatches against quality/metrics/source-manifest.json: AppStateSerializer.kt, public/app.js, browser-app.test.mjs, GateScreenTest.kt. SavedStateValidationTest.kt unlisted.",
+    "quality/metrics/serializer-1790279685646293000.json sourceSha256 6865ab3f matches the current serializer; eight detected mutations.",
+    "AppStateSerializer.kt:420-581; SavedStateValidationTest.kt:15-20; public/app.js reviewCard and taskReviewField; GateScreen.kt:427-440; GateScreenTest.kt paused and waiting assertions.",
+    "V1GpsService.kt:104-127; GpsDistanceTracker.kt:13-23; evidence.mjs:27-31; RestrictorRepository.kt:569-591; RestrictionEngine.kt:745-755.",
+    "JaCoCo report counters LINE 4593 missed / 2693 covered and BRANCH 4012 missed / 1482 covered. Istanbul summary server 441/446 and 921/1078; browser 179/180 and 419/489."
+  ],
+  "checks": [
+    {
+      "check": "git status and diff against 11af973",
+      "result": "passed",
+      "detail": "HEAD is the checkpoint. New since the first review: AppStateSerializer.kt, public/app.js, GateScreenTest.kt, SavedStateValidationTest.kt, and browser-app.test.mjs content."
+    },
+    {
+      "check": "SHA-256 of current files versus quality/metrics/source-manifest.json",
+      "result": "failed",
+      "detail": "Four manifest hashes differ and SavedStateValidationTest.kt is absent. The published final 246/181 run is older than these edits."
+    },
+    {
+      "check": "Serializer mutation record versus current AppStateSerializer.kt hash",
+      "result": "passed",
+      "detail": "Both are 6865ab3f81efc1b68f543951503873b929ae555ce4ade817b9769e0ea20c5c8f. Eight mutations detected, zero surviving, 83 focused tests. Full suite was not rerun afterward."
+    },
+    {
+      "check": "Re-run unit, coverage, or mutation suites",
+      "result": "not_run",
+      "detail": "Forbidden by this review. Counts come from saved logs only."
+    }
+  ],
+  "open_issues": [
+    "Current Android and browser coverage after the serializer and app.js edits is not in a saved full run. The numbers above describe the last complete artifacts, not a fresh measurement of those four files.",
+    "Invalid lastExercise receipts are not in SavedStateValidationTest. Whether older serializer tests already reject them was not rechecked line by line.",
+    "Untouched UI, monitoring, overlay, and sprint activity files were included in the saved JaCoCo denominator but were not re-read function by function in this pass.",
+    "Interface behavior remains for the user. This review did not execute it."
+  ],
+  "next_steps": [
+    "Keep the strict gate failed until each component has at least 90% lines, 85% branches, and CRAP at most 8 on every mapped function, with unmapped Android functions resolved.",
+    "After the serializer and app.js edits, save a new ordinary JVM and Node run and refresh the manifest before treating 246/181 or the coverage table as current.",
+    "User checklist remains manual: blocking, wait, expiry, relock, emergency spend; live GPS versus the verified distance, including a backwards timestamp; settings review, undo, and recovery; video, overlays, and the paused minutes label."
+  ]
+}

@@ -99,16 +99,20 @@ class V1ConversationActivity : ComponentActivity() {
                 status.setPadding(24, 2, 24, 8)
                 container.addView(view, LinearLayout.LayoutParams(-1, 0, 1f))
                 view.loadUrl(appContainer.v1.api.baseUrl + "/")
-                while (true) {
-                    if (resumed) appContainer.v1.sync()
-                    status.text = appContainer.v1.status.value
-                    delay(2_000)
-                }
+                updateConnectionStatusWhileOpen(status)
             } catch (error: Exception) {
                 status.text = "${error.message ?: "Unable to connect."}\nTap here to retry."
                 status.setOnClickListener { recreate() }
                 appContainer.eventLog.record("v1_conversation ${error.message.orEmpty()}")
             }
+        }
+    }
+
+    private suspend fun updateConnectionStatusWhileOpen(status: TextView) {
+        while (true) {
+            if (resumed) appContainer.v1.sync()
+            status.text = appContainer.v1.status.value
+            delay(2_000)
         }
     }
 

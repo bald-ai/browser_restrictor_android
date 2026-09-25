@@ -46,6 +46,17 @@ fun LastExerciseCard(snapshot: StateSnapshot) {
 @Composable
 fun ExerciseCorrectionDialog(receipt: ExerciseReceipt, onDismiss: () -> Unit, onSaved: () -> Unit) {
     val repository = LocalContext.current.appContainer.repository
+    ExerciseCorrectionForm(receipt, onDismiss, onSaved, repository::correctExercise)
+}
+
+/** Renders and submits a correction through the supplied persistence operation. */
+@Composable
+internal fun ExerciseCorrectionForm(
+    receipt: ExerciseReceipt,
+    onDismiss: () -> Unit,
+    onSaved: () -> Unit,
+    saveCorrection: suspend (String, ExerciseId, Long, Boolean) -> RewardSaveResult,
+) {
     val scope = rememberCoroutineScope()
     var exercise by rememberSaveable(receipt.id) { mutableStateOf(receipt.exercise) }
     var valueText by rememberSaveable(receipt.id) { mutableStateOf(receipt.value.toString()) }
@@ -59,7 +70,7 @@ fun ExerciseCorrectionDialog(receipt: ExerciseReceipt, onDismiss: () -> Unit, on
         error = null
         scope.launch {
             try {
-                when (val result = repository.correctExercise(receipt.id, exercise, value ?: receipt.value, flagOnly)) {
+                when (val result = saveCorrection(receipt.id, exercise, value ?: receipt.value, flagOnly)) {
                     is RewardSaveResult.Saved -> onSaved()
                     is RewardSaveResult.Rejected -> error = result.reason
                     RewardSaveResult.StorageFailure -> error = "Could not save. Your previous result is unchanged. Try again."

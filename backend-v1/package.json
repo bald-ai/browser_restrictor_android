@@ -1,1 +1,25 @@
-{"name":"friction-v1","private":true,"type":"module","engines":{"node":">=22"},"scripts":{"start":"node server.mjs","test":"node --test test/*.test.mjs"},"dependencies":{"@ai-sdk/gateway":"4.0.86","ai":"7.0.106","ws":"^8.18.0"}}
+{
+  "name": "friction-v1",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test test/*.test.mjs",
+    "test:coverage": "python3 ../scripts/verification-session.py coverage",
+    "quality:check": "python3 ../scripts/verification-session.py metrics"
+  },
+  "dependencies": {
+    "@ai-sdk/gateway": "4.0.86",
+    "ai": "7.0.106",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "acorn": "^8.18.0",
+    "istanbul-lib-coverage": "^3.2.2",
+    "istanbul-lib-instrument": "^6.0.3",
+    "jsdom": "^30.1.1"
+  }
+}

@@ -103,9 +103,11 @@ fun GateScreen(snapshot: StateSnapshot, actions: GateActions) {
             Spacer(Modifier.height(18.dp))
             Text(eyebrow(snapshot.canonicalMode), style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, letterSpacing = 1.2.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(13.dp))
-            Text(headline(snapshot.canonicalMode).uppercase(), textAlign = TextAlign.Center, style = MaterialTheme.typography.headlineLarge.copy(fontSize = 41.sp, lineHeight = 42.sp, letterSpacing = (-1).sp))
-            Spacer(Modifier.height(10.dp))
-            Text(supportingCopy(snapshot), textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 21.sp))
+            Text(headline(snapshot).uppercase(), textAlign = TextAlign.Center, style = MaterialTheme.typography.headlineLarge.copy(fontSize = 41.sp, lineHeight = 42.sp, letterSpacing = (-1).sp))
+            supportingCopy(snapshot).takeIf { it.isNotEmpty() }?.let {
+                Spacer(Modifier.height(10.dp))
+                Text(it, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 21.sp))
+            }
         }
         when(snapshot.canonicalMode) {
             GateMode.PAUSED -> PausedControls(snapshot, selectedMinutes, { selectedMinutes = it }, actionInFlight,
@@ -189,10 +191,9 @@ private fun PausedControls(
     onExerciseChallenge: () -> Unit,
     onSprintChallenge: () -> Unit = {},
 ) {
-    val remaining = ((snapshot.budgetSnapshots.firstOrNull { it.enabled }?.remainingMs ?: 0L) + 59_999) / 60_000
     Column {
         PulseControlGroup {
-            PulseSection("Session length", "$remaining min available")
+            PulseSection("Session length")
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 snapshot.settings.sessionMinutes.forEach { minutes -> DurationCard(minutes, minutes == selectedMinutes, { onSelect(minutes) }, Modifier.weight(1f)) }
             }
@@ -423,24 +424,27 @@ private fun SectionLabel(text: String) {
     )
 }
 
-private fun eyebrow(mode: GateMode): String = when (mode) {
-    GateMode.PAUSED -> "A MOMENT BEFORE YOU BROWSE"
+private fun availableMinutes(snapshot: StateSnapshot): Long =
+    ((snapshot.budgetSnapshots.firstOrNull { it.enabled }?.remainingMs ?: 0L).coerceAtLeast(0) + 59_999) / 60_000
+
+internal fun eyebrow(mode: GateMode): String = when (mode) {
+    GateMode.PAUSED -> "BROWSING TIME LEFT"
     GateMode.WAITING -> "ALMOST THERE"
     GateMode.OUT_OF_TIME, GateMode.OUT_OF_TIME_LATCHED -> "BUDGET USED"
     GateMode.YOUTUBE_LOCKED -> "MORNING GATE"
     else -> "BROWSER"
 }
 
-private fun headline(mode: GateMode): String = when (mode) {
-    GateMode.PAUSED -> "MAKE IT\nINTENTIONAL."
+internal fun headline(snapshot: StateSnapshot): String = when (snapshot.canonicalMode) {
+    GateMode.PAUSED -> "${availableMinutes(snapshot)} min"
     GateMode.WAITING -> "Hang on a moment."
     GateMode.OUT_OF_TIME, GateMode.OUT_OF_TIME_LATCHED -> "Browser time is used up."
     GateMode.YOUTUBE_LOCKED -> "Exercise before YouTube."
     else -> "Browser"
 }
 
-private fun supportingCopy(snapshot: StateSnapshot): String = when (snapshot.canonicalMode) {
-    GateMode.PAUSED -> "Choose how long you need.\nThe rest of your day is yours."
+internal fun supportingCopy(snapshot: StateSnapshot): String = when (snapshot.canonicalMode) {
+    GateMode.PAUSED -> ""
     GateMode.WAITING -> {
         val minutes = (snapshot.waitSnapshot?.selectedDurationMs ?: 0) / MINUTE_MS
         "Your $minutes min session is opening soon."

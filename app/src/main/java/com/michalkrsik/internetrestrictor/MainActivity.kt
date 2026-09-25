@@ -27,6 +27,7 @@ import androidx.core.net.toUri
 import androidx.lifecycle.lifecycleScope
 import com.michalkrsik.internetrestrictor.domain.SUPPORTED_BROWSERS
 import com.michalkrsik.internetrestrictor.domain.ProtectionHealth
+import com.michalkrsik.internetrestrictor.domain.HealthAction
 import com.michalkrsik.internetrestrictor.domain.StateSnapshot
 import com.michalkrsik.internetrestrictor.domain.ThemePreference
 import com.michalkrsik.internetrestrictor.ui.dashboard.DashboardScreen
@@ -202,19 +203,13 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleHealthAction(health: ProtectionHealth) {
-        when (health) {
-            ProtectionHealth.READY -> Unit
-            ProtectionHealth.READY_LIMITED_RECOVERY,
-            ProtectionHealth.USAGE_ACCESS_RECOMMENDED,
-            -> openUsageAccessSettings()
-            ProtectionHealth.ENFORCEMENT_OFF -> Unit
-            ProtectionHealth.ACCESSIBILITY_REQUIRED,
-            ProtectionHealth.SERVICE_DISCONNECTED,
-            ProtectionHealth.RESTRICTED_SETTINGS_BLOCKED,
-            -> openAccessibilitySettings()
-            ProtectionHealth.BROWSERS_NOT_FOUND -> openBrowserListing()
-            ProtectionHealth.STORAGE_ERROR -> openAppInfo()
-            ProtectionHealth.ADVANCED_PROTECTION_BLOCKED -> startActivity(
+        when (health.action) {
+            HealthAction.NONE -> Unit
+            HealthAction.USAGE_ACCESS -> openUsageAccessSettings()
+            HealthAction.ACCESSIBILITY -> openAccessibilitySettings()
+            HealthAction.BROWSER_LISTING -> openBrowserListing()
+            HealthAction.APP_INFO -> openAppInfo()
+            HealthAction.ADVANCED_PROTECTION_HELP -> startActivity(
                 Intent(Intent.ACTION_VIEW, "https://support.google.com/android/answer/16339980".toUri()),
             )
         }

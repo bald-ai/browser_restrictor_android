@@ -51,21 +51,22 @@ fun PulseText(text: String, size: Int = 11, modifier: Modifier = Modifier, muted
     Text(text, modifier, color = color, style = MaterialTheme.typography.bodySmall.copy(fontSize = size.sp, lineHeight = (size * 1.43f).sp, fontWeight = weight))
 }
 
+private val pulseIconPaths = mapOf(
+    "settings" to "M4 21V14 M4 10V3 M12 21V12 M12 8V3 M20 21V16 M20 12V3 M1 14H7 M9 8H15 M17 16H23",
+    "activity" to "M2 12H6L9 3L15 21L18 12H22",
+    "arrow" to "M7 17L17 7 M7 7H17V17",
+    "back" to "M19 12H5 M12 19L5 12L12 5",
+    "plus" to "M12 5V19 M5 12H19",
+    "shield" to "M12 22S3 18 3 11V5L12 2L21 5V11C21 18 12 22 12 22 M9 12L11 14L15 10",
+    "check" to "M20 6L9 17L4 12",
+    "play" to "M6 3L20 12L6 21Z",
+    "help" to "M9 9C9 5 15 5 15 9C15 12 12 11 12 14 M12 17H12.01 M22 12A10 10 0 1 1 2 12A10 10 0 1 1 22 12",
+    "pause" to "M6 4H9V20H6Z M15 4H18V20H15Z",
+)
+
 @Composable
 fun PulseIcon(name: String, size: Int = 18, color: Color = MaterialTheme.colorScheme.onSurface) {
-    val data = when(name) {
-        "settings" -> "M4 21V14 M4 10V3 M12 21V12 M12 8V3 M20 21V16 M20 12V3 M1 14H7 M9 8H15 M17 16H23"
-        "activity" -> "M2 12H6L9 3L15 21L18 12H22"
-        "arrow" -> "M7 17L17 7 M7 7H17V17"
-        "back" -> "M19 12H5 M12 19L5 12L12 5"
-        "plus" -> "M12 5V19 M5 12H19"
-        "shield" -> "M12 22S3 18 3 11V5L12 2L21 5V11C21 18 12 22 12 22 M9 12L11 14L15 10"
-        "check" -> "M20 6L9 17L4 12"
-        "play" -> "M6 3L20 12L6 21Z"
-        "help" -> "M9 9C9 5 15 5 15 9C15 12 12 11 12 14 M12 17H12.01 M22 12A10 10 0 1 1 2 12A10 10 0 1 1 22 12"
-        "pause" -> "M6 4H9V20H6Z M15 4H18V20H15Z"
-        else -> "M12 3V21"
-    }
+    val data = pulseIconPaths[name] ?: "M12 3V21"
     val path = remember(data) { PathParser().parsePathString(data).toPath() }
     Canvas(Modifier.size(size.dp)) { scale(this.size.width / 24f, this.size.height / 24f, pivot = androidx.compose.ui.geometry.Offset.Zero) { drawPath(path, color, style = Stroke(width = 1.6f, cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round)) } }
 }

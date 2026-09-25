@@ -1,0 +1,71 @@
+{
+  "outcome": "complete",
+  "summary": "Read-only review against checkpoint 11af973f8e0ef7d4f85d14265cae4b0e19035e13. HEAD is still that commit; the campaign is uncommitted and its own gate fails. Server and browser meet line and branch coverage only. Android coverage, all three CRAP gates, and 605 unmapped Kotlin functions remain unmet. One existing screen test is stale against the paused-gate copy. Ordinary JVM and Node results in the saved final run are green. Interface behavior was not executed.",
+  "findings": [
+    "Verdict: incomplete against targets. quality/metrics/gate.json passed=false and quality/logs/final-gate.exit is 1. No CRAP exception is approved.",
+    "Defect: app/src/androidTest/java/com/michalkrsik/internetrestrictor/ui/GateScreenTest.kt:73 still asserts \"MAKE IT\\nINTENTIONAL.\" GateScreen.kt headline() now shows remaining minutes for PAUSED (about lines 427-444) and supporting copy is empty. The existing screen test will fail when the user runs it. Update that assertion to the current paused headline, or restore the old copy if the label change was not intended.",
+    "Android, independently checked from app/build/reports/jacoco/unitCoverage/unitCoverage.xml report counters: lines 2693/7286 = 36.96% (missed 4593), branches 1482/5494 = 26.97% (missed 4012). Saved summary.json matches. Baseline in the assignment was unit-only 35.81%/25.70%. Target 90%/85% is missed by about 53 and 58 points. Max complexity 38 with 42 functions >8. Max mapped CRAP 600 with 198 functions >8. 605 of 1523 functions are unmapped (null CRAP, not treated as covered). Largest untouched gaps include SprintChallengeActivity, DashboardScreen, ChromeAccessibilityService, GateScreen, and SprintLocationService.",
+    "Server, arithmetic on saved Istanbul summary (not re-aggregated from coverage-final.json): lines 441/446 = 98.87%, branches 921/1078 = 85.43%. Both coverage targets are met. Statements 1261/1384 = 91.11%. Max complexity 48 with 21 functions >8. Max CRAP 63.61 (voice.mjs event) with 24 functions >8. Unmapped 0. Historical 96.83%/89.72% used a different counter and is not the same measurement; branch coverage is lower under Istanbul and still just above 85%.",
+    "Browser, same Istanbul summary: lines 179/180 = 99.44%, branches 419/489 = 85.68%. Both coverage targets are met. Statements 700/770 = 90.9%. Function coverage 143/177 = 80.79% is not the stated target; many functions occupy one source line, so line coverage is a weaker signal than statements and branches. Max complexity 26 with 8 functions >8. Max CRAP 26.06 with 11 functions >8. Unmapped 0. Prior 20.94% V8 line figure is not comparable.",
+    "CRAP formula spot-check matches the documented C\u00b2*(1-coverage)\u00b3+C: AppStateSerializer.validate complexity 37 at branch fraction 49/96 gives CRAP about 197.65; a 0-covered complexity-24 lambda gives 600. quality/metrics/kotlin-functions.tsv bounds invalid to line 421 with complexity 1. Parser choice is credible. Android per-function CRAP still omits shared lines and the 605 unmapped functions; the gate already fails those rather than marking them covered.",
+    "Saved tests, independently counted: JVM JUnit XML under quality/logs/verification-1790276574385547000/junit is 26 classes, 246 passed, 0 failed, 0 errors, 0 skipped. Node ordinary log ends tests 181, pass 181, fail 0, skipped 0, cancelled 0. Exits 0. Android ordinary exit 0, backend ordinary exit 0. These are the post-mutation runs cited by final-evidence.json.",
+    "Mutations are scoped, not whole-repo. Saved latest distinct set: 36 detected, 1 surviving, 0 uncovered, 0 timed out. The survivor is ignore-unlock-expiry-cap. RestrictionEngine.consumeUsageDetailed (RestrictionEngine.kt:729-806) splits at unlockBoundary and stops when the mode no longer records usage, so removing the repository cap in bufferBrowsingUsageLocked (RestrictorRepository.kt:575-591) can be equivalent for current charging. The cap is still in source. Aggregate attempts are 58 detected, 8 surviving, 2 errored; the extra survivors and both errors are earlier trials later rechecked as detected, not current open bugs. RestrictorRepository.kt and evidence.mjs hashes in the mutation records match the current files.",
+    "Intentional behavior in the uncommitted diff, still manually unverified: live GPS distance uses the verification speed, accuracy, gap, and noise rules (GpsDistanceTracker.kt and evidence.mjs); verified meters replace the live count after a successful upload; paused gate copy shows minutes instead of the old headline; credit labels drop a trailing s. Repository accounting and agent chat were split without an obvious contract change in the moved branches. Non-monotonic GPS times are still uploaded and fail verification, while the live tracker skips them and can keep a distance (GpsDistanceRulesTest.kt:37-40). Rewards stay fail-closed because verifyGps rejects that recording."
+  ],
+  "changes": [],
+  "decisions": [
+    "Did not read work/cursor-agents or grok-reviews, and did not run tests, builds, mutations, or UI.",
+    "Treated the campaign's incomplete self-report as a claim to check, then confirmed JaCoCo counters, JUnit totals, the Node summary, the CRAP formula, and the invalid-helper span from source and saved artifacts.",
+    "Classified the expiry-cap survivor as a disclosed equivalent, not a hidden kill, because consumeUsageDetailed already cuts the interval at unlock expiry.",
+    "Did not treat server/browser line-and-branch passes as campaign completion while CRAP and Android coverage fail."
+  ],
+  "evidence": [
+    "git HEAD 11af973f8e0ef7d4f85d14265cae4b0e19035e13; checkpoint commit message is save before test and crap refactor; campaign files are uncommitted.",
+    "quality/metrics/gate.json; quality/metrics/summary.json; quality/PROGRESS.md; quality/README.md; quality/logs/final-gate.exit = 1.",
+    "app/build/reports/jacoco/unitCoverage/unitCoverage.xml report counters LINE 4593/2693 and BRANCH 4012/1482.",
+    "quality/metrics/istanbul/summary.json server lines 441/446 branches 921/1078; browser lines 179/180 branches 419/489.",
+    "quality/logs/verification-1790276574385547000/junit (246/0/0/0) and backend-ordinary.log (181 pass).",
+    "quality/metrics/kotlin-functions.tsv AppStateSerializer.kt invalid line 421 complexity 1.",
+    "app/src/androidTest/.../GateScreenTest.kt:73 versus GateScreen.kt paused headline.",
+    "GpsDistanceTracker.kt:13-31; evidence.mjs:8-55; RestrictorRepository.kt:569-591; RestrictionEngine.kt:745-755.",
+    "quality/metrics/mutation-summary.json latest distinct 36 detected and 1 surviving."
+  ],
+  "checks": [
+    {
+      "check": "git rev-parse HEAD and git diff --stat against 11af973f8e0ef7d4f85d14265cae4b0e19035e13",
+      "result": "passed",
+      "detail": "HEAD is the checkpoint. 24 tracked files differ and new quality, GPS, and test files are untracked. No later commit."
+    },
+    {
+      "check": "Parse JaCoCo report counters and compare to summary.json",
+      "result": "passed",
+      "detail": "LINE 2693/7286 = 36.961%; BRANCH 1482/5494 = 26.975%. Matches the saved Android metrics."
+    },
+    {
+      "check": "Sum verification JUnit XML and read Node ordinary log",
+      "result": "passed",
+      "detail": "246 passed, 0 failed, 0 errors, 0 skipped. Node 181 pass, 0 fail, 0 skipped, 0 cancelled."
+    },
+    {
+      "check": "Arithmetic on saved Istanbul summary and CRAP examples",
+      "result": "passed",
+      "detail": "Server 98.87/85.43 and browser 99.44/85.68 match the reported coverage. CRAP examples match the documented formula. coverage-final.json was not re-aggregated."
+    },
+    {
+      "check": "Re-run unit tests, coverage, or mutations",
+      "result": "not_run",
+      "detail": "Review scope forbids executing tests, builds, and mutations. Counts and coverage come from saved logs and reports."
+    }
+  ],
+  "open_issues": [
+    "Android per-function coverage is incomplete: 605 functions have null coverage because JaCoCo cannot uniquely attribute shared lines. Whole-file line and branch percentages still include that code.",
+    "Istanbul coverage-final.json was not independently re-summed; the component summary file was arithmetic-checked only.",
+    "Which uncommitted copy edits were pre-existing user work versus campaign edits cannot be separated from git, because both sit in the same uncommitted diff. PROGRESS.md says the GPS and screen-label edits were preserved.",
+    "Real blocking, GPS, settings, video, and overlay behavior remains unverified until the user runs the manual checklist."
+  ],
+  "next_steps": [
+    "Do not treat this checkout as target-complete. Keep the strict gate failing until Android reaches 90% lines and 85% branches, mapped CRAP is at most 8 or a named exception is accepted, and unmapped Kotlin functions are resolved.",
+    "Before the user runs the existing screen suite, fix GateScreenTest.kt:73 so it expects the current paused headline, without launching the app in this review.",
+    "User manual checklist, still unverified: browser block, focused wait, expiry and relock, and emergency access not spending budget; live GPS versus verified distance for walk and sprint, including gaps and rejected motion; settings review, apply, undo, offline recovery, and phone acknowledgement; video, microphone, overlays, and the new paused-gate minutes label."
+  ]
+}

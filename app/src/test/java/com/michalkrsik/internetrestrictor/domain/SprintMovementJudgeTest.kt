@@ -23,6 +23,42 @@ class SprintMovementJudgeTest {
     )
 
     @Test
+    fun sustainedFourSecondDipSeparatesTwoQualifyingEfforts() {
+        val judge = SprintMovementJudge()
+        judge.onStart(0)
+        var latitude = 50.0875
+        var elapsed = 0L
+        judge.onLocation(location(latitude, 14.4211, elapsed, accuracy = 5f, speedMps = 0f))
+        fun steps(count: Int, metersPerSecond: Float) {
+            repeat(count) {
+                elapsed += 1000
+                latitude += metersPerSecond / 111_195.0
+                judge.onLocation(location(latitude, 14.4211, elapsed, accuracy = 5f, speedMps = metersPerSecond))
+            }
+        }
+        steps(8, 5f)
+        steps(4, 3.2f)
+        steps(8, 5f)
+        val result = judge.onStop(elapsed)
+        assertEquals("A dip beyond 3.5 seconds closes the first effort", 2, result.qualifyingEffortCount)
+        assertTrue(result.qualifyingDistanceMeters in 85..95)
+        assertEquals(0L, result.setsEarned)
+    }
+
+    @Test
+    fun oneTwoSecondPositionJumpCannotCreditSprintDistance() {
+        val judge = SprintMovementJudge()
+        judge.onStart(0)
+        judge.onLocation(location(50.0875, 14.4211, 0, accuracy = 5f, speedMps = null))
+        judge.onLocation(location(50.0875 + 10.0 / 111_195, 14.4211, 2000, accuracy = 5f, speedMps = null))
+        val result = judge.onStop(2000)
+        assertTrue(result.totalRecordedDistanceMeters in 9.0..11.0)
+        assertEquals(0L, result.qualifyingDistanceMeters)
+        assertEquals(0, result.qualifyingEffortCount)
+        assertEquals(0L, result.newRemainderMeters)
+    }
+
+    @Test
     fun stationaryJitterIsRejectedWithZeroQualifyingDistance() {
         val judge = SprintMovementJudge(startingRemainderMeters = 0L)
         judge.onStart(0L)

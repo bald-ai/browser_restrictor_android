@@ -188,7 +188,13 @@ Recording needs location permission, enabled location services and usable GPS.
 It can continue with the screen off. Reaching the task target does not stop the
 recording automatically: the user stops it. The maximum recording is four hours.
 Distance and speed depend on usable readings, so measured qualifying distance may
-differ from the route actually traveled.
+differ from the route actually traveled. The distance shown while recording
+applies the same rules as verification, so stopping should give that distance;
+a mock location or repeated/backwards GPS timestamp invalidates the whole recording.
+The live distance clears to zero and explains that no reward can be earned.
+Evidence remains saved and verification still rejects it; later good fixes do not
+restore eligibility. After
+verification the screen shows the verified distance.
 
 When verification identifies eligible unreliable GPS coverage, the app may offer
 manual completion for exactly one credit. It is not a general way to claim any

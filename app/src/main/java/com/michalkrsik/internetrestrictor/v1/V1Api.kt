@@ -14,8 +14,8 @@ import java.net.URL
 import java.util.UUID
 
 /** Only installation credentials live on the phone. Provider keys stay on the separate backend. */
-class V1Api(context: Context) {
-    val baseUrl = BuildConfig.V1_BACKEND_URL.trimEnd('/')
+class V1Api(context: Context, backendUrl: String = BuildConfig.V1_BACKEND_URL) {
+    val baseUrl = backendUrl.trimEnd('/')
     private val preferences = context.getSharedPreferences("v1_installation", Context.MODE_PRIVATE)
     private val identityLock = Mutex()
 

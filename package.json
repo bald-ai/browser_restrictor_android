@@ -6,7 +6,12 @@
     "hosting:deploy": "railway up backend-v1 --path-as-root --project b806bbbd-f21d-4546-a59c-6ebd81802ac9 --environment production --service friction-v1-api",
     "benchmark": "node benchmarks/friction/run.mjs",
     "benchmark:test": "node --test benchmarks/friction/test/*.test.mjs",
-    "benchmark:report": "node benchmarks/friction/report.mjs"
+    "benchmark:report": "node benchmarks/friction/report.mjs",
+    "test:coverage": "python3 scripts/verification-session.py coverage",
+    "quality:check": "python3 scripts/verification-session.py metrics",
+    "quality:metrics": "python3 scripts/verification-session.py metrics",
+    "quality:mutations": "python3 scripts/verification-session.py mutations",
+    "quality:mutations:android": "python3 scripts/verification-session.py mutations:android"
   },
   "devDependencies": {
     "@railway/cli": "5.49.2"
