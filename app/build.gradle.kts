@@ -14,6 +14,8 @@ val collectQualityCoverage = providers.environmentVariable("QUALITY_COVERAGE").o
 
 // Optional measurement compiler; never used by normal builds or packaged artifacts.
 val qualityProbes = providers.gradleProperty("qualityProbes").map(String::toBoolean).getOrElse(false)
+check(!collectQualityCoverage || manualVerification) { "Run coverage through scripts/verification-session.py." }
+check(!qualityProbes || (manualVerification && collectQualityCoverage)) { "Run measurement probes through scripts/verification-session.py metrics." }
 val qualityProbeDirectory = rootProject.layout.projectDirectory.dir("quality/probes")
 if (qualityProbes) {
     tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
@@ -26,13 +28,6 @@ if (qualityProbes) {
         }
     }
     tasks.withType<Test>().configureEach {
-    reports.html.required.set(false)
-    reports.junitXml.required.set(manualVerification)
-    binaryResultsDirectory.set(layout.buildDirectory.dir("test-cache/$name"))
-    testLogging {
-        events("failed", "skipped")
-        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
-    }
         systemProperty("quality.probe.events", rootProject.file("quality/metrics/kotlin-probe-events.txt").absolutePath)
         doFirst { rootProject.file("quality/metrics/kotlin-probe-events.txt").writeText("") }
     }
@@ -40,10 +35,34 @@ if (qualityProbes) {
 
 jacoco { toolVersion = "0.8.13" }
 
+val cleanTestResults = tasks.register<Delete>("cleanTestResults") {
+    delete(layout.buildDirectory.dir("test-cache"))
+    doLast {
+        // AGP creates these empty directories even with coverage disabled.
+        if (!manualVerification) {
+            val directory = layout.buildDirectory.dir("outputs/unit_test_code_coverage").get().asFile
+            directory.walkBottomUp().filter { it.isDirectory && it.list()?.isEmpty() == true }.forEach { it.delete() }
+        }
+    }
+}
+
+val cleanLintReports = tasks.register<Delete>("cleanLintReports") {
+    delete(fileTree(layout.buildDirectory.dir("reports")) { include("lint-results-*.txt") })
+    doLast {
+        val directory = layout.buildDirectory.dir("reports").get().asFile
+        if (directory.list()?.isEmpty() == true) directory.delete()
+    }
+}
+tasks.matching { it.name == "lint" || it.name.matches(Regex("lint(Debug|Release)")) }.configureEach {
+    finalizedBy(cleanLintReports)
+}
+
 tasks.withType<Test>().configureEach {
     reports.html.required.set(false)
     reports.junitXml.required.set(manualVerification)
-    binaryResultsDirectory.set(layout.buildDirectory.dir("test-cache/$name"))
+    val resultsDirectory = layout.buildDirectory.dir("test-cache/$name")
+    binaryResultsDirectory.set(resultsDirectory)
+    finalizedBy(cleanTestResults)
     testLogging {
         events("failed", "skipped")
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL

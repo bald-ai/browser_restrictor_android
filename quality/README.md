@@ -12,7 +12,7 @@ python3 scripts/verification-session.py metrics
 python3 scripts/verification-session.py mutations
 ```
 
-Ordinary suites: `npm test`, `npm run benchmark:test` (local tooling tests), and `./gradlew testDebugUnitTest`. The existing APK CI also builds/lints the app and uploads its APK; the APK is a deliverable, not a verification report. `coverage` measures backend/browser JavaScript; `metrics` runs the full Android and JavaScript measurement pipeline with the existing 90% line, 85% branch and CRAP <=8 gates. `mutations` accepts JavaScript mutation names. For Android use `python3 scripts/verification-session.py mutations:android GROUP` with a group defined in `quality/mutate-android.py`. Production model benchmark history is separate and preserved.
+Ordinary suites: `npm test`, `npm run benchmark:test` (local tooling tests), and `npm run test:android`. The existing APK CI also builds/lints the app and uploads its APK; the APK is a deliverable, not a verification report. `coverage` measures backend/browser JavaScript; `metrics` runs the full Android and JavaScript measurement pipeline with the existing 90% line, 85% branch and CRAP <=8 gates. `mutations` accepts JavaScript mutation names. For Android use `python3 scripts/verification-session.py mutations:android GROUP` with a group defined in `quality/mutate-android.py`. Production model benchmark history is separate and preserved.
 
 Mutation outcomes distinguish surviving changes from assertion detections and infrastructure errors. Low-level measurement scripts are implementation helpers; use the manual runner so fresh inputs and temporary cleanup are managed together.
 
@@ -43,3 +43,5 @@ gate. Unmapped executable functions still fail; no scores are assumed and no
 per-function exceptions are allowed. Regression fixtures cover
 inline and shared-line lambdas, short-circuit/null decisions, loops, suspension,
 constant loops, and preservation of results and exceptions.
+
+Ordinary Android tests use `npm run test:android`, which explicitly sets Gradle’s JDK to `ANDROID_TEST_JAVA_HOME`, Homebrew JDK 21, or finally `JAVA_HOME`. This avoids a user-level Gradle setting silently selecting Java 17. Android Studio’s bundled Java 25 is too new for the pinned Gradle 8.14.5. Test binary output is cleaned after success or failure; HTML/XML reports remain disabled outside manual sessions.

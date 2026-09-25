@@ -11,7 +11,8 @@
     "quality:check": "python3 scripts/verification-session.py metrics",
     "quality:metrics": "python3 scripts/verification-session.py metrics",
     "quality:mutations": "python3 scripts/verification-session.py mutations",
-    "quality:mutations:android": "python3 scripts/verification-session.py mutations:android"
+    "quality:mutations:android": "python3 scripts/verification-session.py mutations:android",
+    "test:android": "bash scripts/test-android.sh"
   },
   "devDependencies": {
     "@railway/cli": "5.49.2"

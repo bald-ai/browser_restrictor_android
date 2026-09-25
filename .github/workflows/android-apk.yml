@@ -9,6 +9,7 @@ on:
       - "gradle/**"
       - "*.gradle.kts"
       - "gradle.properties"
+      - "scripts/test-android.sh"
       - ".github/workflows/android-apk.yml"
 
 permissions:
@@ -39,7 +40,7 @@ jobs:
           packages: "platform-tools platforms;android-36 build-tools;36.0.0"
           log-accepted-android-sdk-licenses: false
       - name: Test and build installable APK
-        run: ANDROID_DEBUG_KEYSTORE_PATH="$HOME/.android/debug.keystore" ./gradlew --no-daemon testDebugUnitTest :app:compileDebugAndroidTestKotlin lintDebug assembleDebug
+        run: ANDROID_DEBUG_KEYSTORE_PATH="$HOME/.android/debug.keystore" bash scripts/test-android.sh --no-daemon :app:compileDebugAndroidTestKotlin lintDebug assembleDebug
       - name: Verify application identity
         run: |
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging app/build/outputs/apk/debug/app-debug.apk > "$RUNNER_TEMP/apk-badging.txt"

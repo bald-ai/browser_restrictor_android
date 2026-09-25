@@ -2,6 +2,9 @@
 import importlib.util
 from pathlib import Path
 import sys
+import os
+import subprocess
+from unittest.mock import patch
 import tempfile
 import unittest
 
@@ -47,6 +50,28 @@ class VerificationSessionTests(unittest.TestCase):
                 runner.run_session([], ['reports'], root=root)
             self.assertTrue((root / '.verification-session').is_dir())
             self.assertFalse((root / 'reports').exists())
+
+
+class AndroidTestCommandTests(unittest.TestCase):
+    def test_explicit_jdk_overrides_global_gradle_selection_and_forwards_checks(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'scripts').mkdir()
+            (root / 'scripts/test-android.sh').write_bytes(Path(__file__).with_name('test-android.sh').read_bytes())
+            gradlew = root / 'gradlew'
+            gradlew.write_text('#!/bin/sh\nprintf "%s\\n" "$JAVA_HOME" "$@"\nexit 7\n')
+            gradlew.chmod(0o755)
+            result = subprocess.run(['bash', str(root / 'scripts/test-android.sh'), 'lintDebug'],
+                env={**os.environ, 'JAVA_HOME':'/old/jdk', 'ANDROID_TEST_JAVA_HOME':'/chosen jdk'},
+                text=True, capture_output=True)
+            self.assertEqual(result.returncode, 7)
+            self.assertEqual(result.stdout.splitlines(), ['/chosen jdk', '-Dorg.gradle.java.home=/chosen jdk', 'testDebugUnitTest', '--console=plain', '--no-problems-report', 'lintDebug'])
+
+    def test_manual_checks_pass_the_explicit_quality_jdk_to_nested_runners(self):
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {'QUALITY_JAVA_HOME':'/chosen jdk', 'JAVA_HOME':'/old/jdk'}):
+            root = Path(folder)
+            command = [sys.executable, '-c', "import os; assert os.environ['JAVA_HOME'] == os.environ['QUALITY_JAVA_HOME'] == '/chosen jdk'"]
+            self.assertEqual(runner.run_session([command], [], root=root), 0)
 
 
 if __name__ == '__main__':

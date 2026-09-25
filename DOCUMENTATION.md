@@ -173,8 +173,12 @@ After setup, changing the Accessibility or Usage Access switch in Android settin
 Run the complete local verification suite with:
 
 ```bash
-./gradlew clean testDebugUnitTest :app:compileDebugAndroidTestKotlin lintDebug assembleDebug
+npm test
+npm run benchmark:test
+npm run test:android -- :app:compileDebugAndroidTestKotlin lintDebug assembleDebug
 ```
+
+The Android test command uses JDK 21 or newer and overrides any global Gradle JDK selection. Set `ANDROID_TEST_JAVA_HOME` or `JAVA_HOME` when needed. Ordinary tests print results to the terminal and clean their binary output after success or failure. Coverage, metrics, and mutations are manual-only; see `quality/README.md`.
 
 The unit suite covers local-day and Monday-to-Sunday week boundaries, fixed waits, gate priority, unlocks, earned budget, active-use accounting, persisted exercise sets, budget exhaustion, stale commands, latches, corruption detection, and persistence round trips. Compose gate tests are also compiled as part of the command.
 

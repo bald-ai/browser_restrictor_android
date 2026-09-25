@@ -40,12 +40,24 @@ def run_session(commands, outputs, *, root=ROOT, coverage=False):
             env = {**os.environ, 'VERIFICATION_SESSION_ROOT': str(root),
                    'QUALITY_COVERAGE': '1' if coverage else '0',
                    'PYTHONDONTWRITEBYTECODE': '1'}
-            bundled_jdk = Path('/Applications/Android Studio.app/Contents/jbr/Contents/Home')
-            if not env.get('JAVA_HOME') and (bundled_jdk / 'bin/java').exists():
-                env['JAVA_HOME'] = str(bundled_jdk)
+            test_jdk = env.get('QUALITY_JAVA_HOME') or env.get('ANDROID_TEST_JAVA_HOME')
+            if not test_jdk:
+                for prefix in ('/opt/homebrew', '/usr/local'):
+                    candidate = Path(prefix) / 'opt/openjdk@21/libexec/openjdk.jdk/Contents/Home'
+                    if (candidate / 'bin/java').exists():
+                        test_jdk = str(candidate)
+                        break
+            test_jdk = test_jdk or env.get('JAVA_HOME')
+            if test_jdk:
+                env['JAVA_HOME'] = test_jdk
+            if env.get('JAVA_HOME'):
+                env.setdefault('QUALITY_JAVA_HOME', env['JAVA_HOME'])
             for signum in (signal.SIGINT, signal.SIGTERM):
                 previous[signum] = signal.signal(signum, forward)
             for command in commands:
+                command = list(command)
+                if command[0] == './gradlew' and env.get('JAVA_HOME'):
+                    command.insert(1, '-Dorg.gradle.java.home=' + env['JAVA_HOME'])
                 print('$ ' + ' '.join(command), flush=True)
                 process = subprocess.Popen(command, cwd=root, env=env, start_new_session=True)
                 code = process.wait()
