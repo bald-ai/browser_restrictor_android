@@ -36,23 +36,14 @@ function verifiedReceipt(a,attemptId,details,now){
   diagnostics:details.diagnostics||null,maximumCorrectableUnits:recordingCorrectionMaximum(a,details)};
 }
 function repeatsGenericCancellation(s,generic,inflight,runtime){return generic&&!inflight&&!runtime.savingProposal&&s.lastGenericCancellation?.editEpoch===(s.editEpoch||0);}
-function explicitCancellationTarget(s,proposalId,changeId){
- let p=proposalId?s.proposals.find(p=>p.id===proposalId):null;fail(!proposalId||p,'Review not found.',404);
- let c=changeId?s.changes.find(c=>c.id===changeId&&!c.undoOf):p?.changeId?s.changes.find(c=>c.id===p.changeId):null;fail(!changeId||c,'Change not found.',404);
- return {p,c};
-}
 function cancellationTarget(s,proposalId,changeId,inflight){
- let {p,c}=explicitCancellationTarget(s,proposalId,changeId);
+ let p=proposalId?s.proposals.find(p=>p.id===proposalId):null;fail(!proposalId||p,'Review not found.',404);
+ let c=changeId?s.changes.find(c=>c.id===changeId&&!c.undoOf):null;fail(!changeId||c,'Change not found.',404);
  if(!p&&!c){
   p=inflight?s.proposals.findLast(p=>p.status==='pending'&&p.originTurn===inflight.id):s.proposals.at(-1);
   if(!p&&!inflight)c=s.changes.findLast(c=>!c.undoOf);
  }
  return {p,c};
-}
-function linkedCancellationChange(s,p,inflight){
- let c=null;if(p?.changeId)c=s.changes.find(c=>c.id===p.changeId);
- if(!c&&inflight)c=s.changes.findLast(c=>c.originTurn===inflight.id&&!c.undoOf);
- return c;
 }
 function cancelPendingReview(p,cardId){
  if(!cardId){p.status='cancelled';return;}
@@ -125,7 +116,8 @@ export class Store extends EventEmitter {
   if(repeatsGenericCancellation(s,generic,inflight,runtime))return finish({cancelled:true,restored:s.lastGenericCancellation.restored,alreadyCancelled:true,...this.envelope(s)});
   let {p,c}=cancellationTarget(s,proposalId,changeId,inflight);
   if(p?.status==='pending'){cancelPendingReview(p,cardId);return finish({cancelled:true,restored:false,...this.envelope(s)});}
-  if(!c)c=linkedCancellationChange(s,p,inflight);
+  if(!c&&p?.changeId)c=s.changes.find(c=>c.id===p.changeId);
+  if(!c&&inflight)c=s.changes.findLast(c=>c.originTurn===inflight.id&&!c.undoOf);
   if(!c)return finish({cancelled:true,restored:false,...this.envelope(s)});
   return finish(this.undoLatestChange(s,c,cardId));
  });await this.verifySaved(install,out);this.notify(install,'cancelled',out);return out;

@@ -83,3 +83,14 @@ test('incomplete model output cannot become a receipt', async () => {
     fetcher: provider({ measured_units: 3, confidence: 0.9, reason: 'Partial' }, () => {}, 'length'),
   }), /incomplete result/);
 });
+
+for (const [name, verdict, message] of [
+  ['an array result', [], /returned an invalid result/],
+  ['negative units', { measured_units: -1, confidence: 0.9, reason: 'Invalid' }, /measurement was invalid/],
+  ['text units', { measured_units: '3', confidence: 0.9, reason: 'Invalid' }, /measurement was invalid/],
+  ['negative confidence', { measured_units: 3, confidence: -0.1, reason: 'Invalid' }, /measurement was invalid/],
+  ['a numeric reason', { measured_units: 3, confidence: 0.9, reason: 3 }, /measurement was invalid/],
+]) test(`video verdict with ${name} is rejected with its specific reason`, async () => {
+  await assert.rejects(verifyVideo({ task }, video, { key: 'test-key', fetcher: provider(verdict) }),
+    error => error.status === 502 && message.test(error.message));
+});

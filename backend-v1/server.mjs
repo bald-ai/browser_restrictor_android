@@ -53,29 +53,21 @@ export async function createApp({dataDir=process.env.DATA_DIR||path.join(root,'d
      const reservation=await store.reserve(install,'video',.5);let reported=false,providerStarted=false;
      try{const verdict=await videoVerifier(attempt,fields.video,{key:openrouterKey,onProviderStart:()=>{providerStarted=true;},onUsage:async usage=>{await store.settle(reservation,usage.cost,{model:process.env.VIDEO_MODEL||'google/gemini-3.8-flash',...usage});reported=true;}});return await store.finishAttempt(install,attemptId,{...verdict,endedAt:+fields.endedAt,timeZone:fields.timeZone||'UTC'});}finally{if(!reported){if(providerStarted)await store.settle(reservation,null,{reason:'Video provider usage unknown; reservation retained conservatively.'});else await store.release(reservation);}}
  }
- async function verifyRecording(install,attemptId,attempt,method,body,raw,req){
-  if(method==='gps'){
-   const verdict=verifyGps(attempt,body);
-   return store.finishAttempt(install,attemptId,{...verdict,endedAt:body.endedAt,timeZone:body.timeZone});
-  }
-  return verifySubmittedVideo(install,attemptId,attempt,raw,req);
- }
- async function submitRecording(install,attemptId,method,body,raw,req){
+ async function serveEvidence(install,match,body,raw,req){
+  const attemptId=match[1],method=match[2];
+  if(method==='correction')return store.correct(install,attemptId,body.value);
+  if(method==='fallback')return store.fallback(install,attemptId,body.completed);
   let attempt=store.get(install).attempts[attemptId];
   if(!attempt&&method==='gps')attempt=await store.startAttempt(install,{...body,attemptId});
   fail(attempt,'Start the recording before submitting video.',404);fail(attempt.task.verifier===method,'This recording uses another verifier.');
   if(attempt.receipt)return attempt.receipt;
   const operationKey=install+':'+attemptId;
   if(attemptsRunning.has(operationKey))return attemptsRunning.get(operationKey);
-  const run=verifyRecording(install,attemptId,attempt,method,body,raw,req);
+  const run=method==='gps'
+   ?store.finishAttempt(install,attemptId,{...verifyGps(attempt,body),endedAt:body.endedAt,timeZone:body.timeZone})
+   :verifySubmittedVideo(install,attemptId,attempt,raw,req);
   attemptsRunning.set(operationKey,run);
   try{return await run;}finally{attemptsRunning.delete(operationKey);}
- }
- async function serveEvidence(install,match,body,raw,req){
-  const attemptId=match[1],method=match[2];
-  if(method==='correction')return store.correct(install,attemptId,body.value);
-  if(method==='fallback')return store.fallback(install,attemptId,body.completed);
-  return submitRecording(install,attemptId,method,body,raw,req);
  }
  async function servePost(install,route,req,json){
   const videoRoute=route.match(/^\/attempts\/([a-zA-Z0-9_-]+)\/video$/);

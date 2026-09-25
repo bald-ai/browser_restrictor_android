@@ -337,24 +337,19 @@ class RestrictionEngine(
             0
         }
         val grantDuration = state.configuration.settings.emergencyMinutes * MINUTE_MS
-        val skipEligible = eligibleForEmergency(state, mode, budgets, nowWallMs, remainingSkips, grantDuration)
-        return SkipSnapshot(enabled = true, limit = EMERGENCY_SKIP_DAILY_LIMIT,
-            used = state.dailyCounter.emergencySkipsUsed, remaining = remainingSkips,
-            grantDurationMs = grantDuration, eligible = skipEligible)
-    }
-
-    private fun eligibleForEmergency(state: PersistedState, mode: GateMode, budgets: List<BudgetSnapshot>,
-        nowWallMs: Long, remainingSkips: Long, grantDuration: Long): Boolean {
         val skipModeEligible = mode in setOf(GateMode.PAUSED, GateMode.WAITING, GateMode.OUT_OF_TIME, GateMode.OUT_OF_TIME_LATCHED)
         val activeUnlockIsCurrent = state.activeUnlock?.let {
             it.expiresAtWallMs > nowWallMs &&
                 (it.source == UnlockSource.EMERGENCY || budgets.none { budget -> budget.exhausted })
         } == true
-        return state.dailyCounter.earnedBudgetRounds > 0 &&
-            remainingSkips > 0 &&
+        // remainingSkips is above 0 only when a budget round was earned today.
+        val skipEligible = remainingSkips > 0 &&
             skipModeEligible &&
             !activeUnlockIsCurrent &&
             grantDuration > 0
+        return SkipSnapshot(enabled = true, limit = EMERGENCY_SKIP_DAILY_LIMIT,
+            used = state.dailyCounter.emergencySkipsUsed, remaining = remainingSkips,
+            grantDurationMs = grantDuration, eligible = skipEligible)
     }
 
     fun startWait(
@@ -403,8 +398,11 @@ class RestrictionEngine(
         var state = normalize(input, nowWallMs, zoneId)
         val pending = state.pendingWait ?: return rejected(state, "No pending wait")
         if (elapsedMs <= 0) return CommandResult.Applied(state)
-        val canAdvance = canAdvanceFocusedWait(state, runtime, nowWallMs, expectedGateSessionId)
-        if (!canAdvance) return rejected(state, "Wait is not focused")
+        if (underlyingMode(state, runtime, nowWallMs) != GateMode.WAITING ||
+            !runtime.focusedGateMatches(expectedGateSessionId)
+        ) {
+            return rejected(state, "Wait is not focused")
+        }
 
         val accumulated = Math.addExact(pending.accumulatedFocusMs, elapsedMs)
             .coerceAtMost(pending.requiredFocusMs)
@@ -418,12 +416,6 @@ class RestrictionEngine(
         return completeNormalWait(state, runtime, nowWallMs, zoneId, pending.id, expectedGateSessionId)
     }
 
-    private fun canAdvanceFocusedWait(state: PersistedState, runtime: RuntimeSignals,
-        nowWallMs: Long, expectedGateSessionId: String?): Boolean {
-        return underlyingMode(state, runtime, nowWallMs) == GateMode.WAITING &&
-            runtime.gateFocused && runtime.gateSessionId != null && runtime.gateSessionId == expectedGateSessionId
-    }
-
     fun completeNormalWait(
         input: PersistedState,
         runtime: RuntimeSignals,
@@ -434,8 +426,13 @@ class RestrictionEngine(
     ): CommandResult {
         val state = normalize(input, nowWallMs, zoneId)
         val pending = state.pendingWait ?: return rejected(state, "No pending wait")
-        val valid = completedWaitIsCurrent(state, runtime, pending, nowWallMs, expectedPendingWaitId, expectedGateSessionId)
-        if (!valid) return rejected(state, "Completion preconditions changed")
+        if (pending.id != expectedPendingWaitId ||
+            pending.accumulatedFocusMs < pending.requiredFocusMs ||
+            !runtime.focusedGateMatches(expectedGateSessionId) ||
+            underlyingMode(state, runtime, nowWallMs) != GateMode.WAITING
+        ) {
+            return rejected(state, "Completion preconditions changed")
+        }
 
         val unlock = UnlockSession(
             id = idGenerator.nextId(),
@@ -450,14 +447,6 @@ class RestrictionEngine(
                 pendingWait = null,
             ),
         )
-    }
-
-    private fun completedWaitIsCurrent(state: PersistedState, runtime: RuntimeSignals, pending: PendingWait,
-        nowWallMs: Long, expectedPendingWaitId: String, expectedGateSessionId: String?): Boolean {
-        return pending.id == expectedPendingWaitId &&
-            pending.accumulatedFocusMs >= pending.requiredFocusMs &&
-            runtime.focusedGateMatches(expectedGateSessionId) &&
-            underlyingMode(state, runtime, nowWallMs) == GateMode.WAITING
     }
 
     private fun RuntimeSignals.focusedGateMatches(expectedGateSessionId: String?): Boolean =

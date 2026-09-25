@@ -109,13 +109,10 @@ function reviewCardActions(p,card){
  const recording=card.kind==='task'&&card.after?`<button data-test-task="${esc(card.key)}">Test recording</button>`:'';
  return `<button data-preview="${esc(card.id)}">Try it</button>${recording}<button data-adjust="${esc(card.id)}">Adjust</button><button data-remove="${esc(card.id)}">Remove</button>`;
 }
-function reviewCardClasses(p,cardUndone){
- return `${p.cards.length===1?'single':''} ${p.status==='saved'||p.status==='undone'?'completed':''} ${p.status==='cancelled'||cardUndone?'cancelled':''}`;
-}
 function reviewCard(p,original,index){
  const change=state.changes?.find(c=>c.id===p.changeId),cardUndone=change?.undoneCardIds?.includes(original.id);
  const card=cardUndone?{...original,before:original.after,after:original.before}:original;
- return `<article class="change-card ${reviewCardClasses(p,cardUndone)}" data-card-id="${esc(card.id)}"><p class="eyebrow">${card.kind==='task'?'TASK':'SETTING'} · ${index+1} OF ${p.cards.length}${cardUndone?' · UNDONE':''}</p><h3>${esc(card.title)}</h3>${reviewCardRows(card)}${testResult(p,card)}<div class="card-actions">${reviewCardActions(p,card)}</div></article>`;
+ return `<article class="change-card ${p.cards.length===1?'single':''} ${p.status==='saved'||p.status==='undone'?'completed':''} ${p.status==='cancelled'||cardUndone?'cancelled':''}" data-card-id="${esc(card.id)}"><p class="eyebrow">${card.kind==='task'?'TASK':'SETTING'} · ${index+1} OF ${p.cards.length}${cardUndone?' · UNDONE':''}</p><h3>${esc(card.title)}</h3>${reviewCardRows(card)}${testResult(p,card)}<div class="card-actions">${reviewCardActions(p,card)}</div></article>`;
 }
 function reviewCards(p){return p.cards.map((card,index)=>reviewCard(p,card,index)).join('');}
 function presentPendingReview(p=currentProposal()){if(!p)return;const key=p.id+':'+p.version;if(p.status==='pending'&&lastPresentedReview!==key&&view==='talk'&&!$('editor').open&&!$('previewDialog').open){lastPresentedReview=key;$('review').scrollIntoView({block:'start',behavior:'smooth'});}}

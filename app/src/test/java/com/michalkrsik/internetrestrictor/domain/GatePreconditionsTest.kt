@@ -54,6 +54,25 @@ class GatePreconditionsTest {
         assertEquals(UnlockSource.NORMAL, (completed as CommandResult.Applied).state.activeUnlock!!.source)
     }
 
+    @Test fun partialFocusKeepsWaitingAndCompletionNeedsTheCurrentFullyFocusedWait() {
+        val base = state()
+        val waiting = (engine.startWait(base, ready, base.stateRevision, 3, now, zone) as CommandResult.Applied).state
+        val pendingId = waiting.pendingWait!!.id
+        // The default wait needs 12 seconds of focus, so 5 seconds leaves it pending without access.
+        val partial = engine.advanceWait(waiting, ready, 5_000, now + 5_000, zone, "gate")
+        assertTrue(partial is CommandResult.Applied)
+        val progressed = (partial as CommandResult.Applied).state
+        assertEquals(5_000L, progressed.pendingWait!!.accumulatedFocusMs)
+        assertNull(progressed.activeUnlock)
+        val early = engine.completeNormalWait(progressed, ready, now + 5_000, zone, pendingId, "gate")
+        assertTrue(early is CommandResult.Rejected)
+        assertNull((early as CommandResult.Rejected).state.activeUnlock)
+        val complete = progressed.copy(pendingWait = progressed.pendingWait!!.copy(accumulatedFocusMs = 12_000))
+        val otherWait = engine.completeNormalWait(complete, ready, now + 5_000, zone, "another-wait", "gate")
+        assertTrue(otherWait is CommandResult.Rejected)
+        assertNull((otherWait as CommandResult.Rejected).state.activeUnlock)
+    }
+
     @Test fun healthReportsWriteFailuresAndAdvancedProtectionWithoutOverridingGrantedAccess() {
         val input = state()
         val expectations = listOf(

@@ -60,3 +60,21 @@ test('empty POST uses an empty object and unexpected request failures do not exp
  const stream=await fetch(base+'/api/v1/events',{headers});assert.equal(stream.status,200);assert.equal(await stream.text(),'');
  assert.equal(logged.length,2);
 });
+
+test('HTTP recording submissions need a started attempt with the matching verifier, and corrections reach the saved receipt',async t=>{
+ let verifierCalls=0;
+ const {base,call,store}=await appFixture(t,{openrouterKey:'mock',videoVerifier:async()=>{verifierCalls++;return{measuredUnits:1,reason:'unused'};}});
+ const {data:a}=await call('/installations',{}),install=store.authenticate(a.token),now=Date.now();
+ const upload=async attemptId=>{const f=new FormData();f.set('video',new Blob(['mp4'],{type:'video/mp4'}),'clip.mp4');f.set('endedAt',String(now));const r=await fetch(base+`/api/v1/attempts/${attemptId}/video`,{method:'POST',headers:{Authorization:'Bearer '+a.token},body:f});return{status:r.status,data:await r.json()};};
+ assert.deepEqual(await upload(id()),{status:404,data:{error:'Start the recording before submitting video.'}});
+ const walk=id(),pushups=id();
+ await call('/attempts',{attemptId:walk,taskId:'walk',startedAt:now-10000,configRevision:0},a.token);
+ await call('/attempts',{attemptId:pushups,taskId:'pushups',startedAt:now-10000,configRevision:0},a.token);
+ assert.deepEqual(await upload(walk),{status:400,data:{error:'This recording uses another verifier.'}});
+ assert.deepEqual(await call(`/attempts/${pushups}/gps`,{endedAt:now,points:[],timeZone:'UTC'},a.token),{status:400,data:{error:'This recording uses another verifier.'}});
+ assert.equal(verifierCalls,0);
+ await store.finishAttempt(install,walk,{endedAt:now,measuredUnits:5,timeZone:'UTC'});
+ const corrected=await call(`/attempts/${walk}/correction`,{value:250},a.token);
+ assert.equal(corrected.status,200);assert.equal(corrected.data.correctedUnits,250);
+ assert.equal(store.get(install).attempts[walk].receipt.correctedUnits,250);
+});

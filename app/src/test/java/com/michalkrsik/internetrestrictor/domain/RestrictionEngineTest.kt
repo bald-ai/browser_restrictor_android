@@ -319,6 +319,31 @@ class RestrictionEngineTest {
     }
 
     @Test
+    fun emergencySkipNeedsARemainingDailySkipAGateModeAndNoCurrentUnlock() {
+        val earned = initialWithBudget()
+        assertTrue(engine.snapshot(earned, ready, now).skipSnapshot.eligible)
+
+        // The daily limit is one skip, so after one use nothing remains even though budget was earned.
+        val used = earned.copy(dailyCounter = earned.dailyCounter.copy(emergencySkipsUsed = 1))
+        val usedSkip = engine.snapshot(used, ready, now).skipSnapshot
+        assertEquals(0, usedSkip.remaining)
+        assertFalse(usedSkip.eligible)
+
+        // YouTube modes are not gate modes that offer a skip.
+        assertFalse(engine.snapshot(earned, youtubeReady, now).skipSnapshot.eligible)
+
+        // The out-of-time latch is a gate mode, but a current emergency session still blocks a second skip.
+        val latched = ready.copy(outOfTimeLatchToken = "latch")
+        assertTrue(engine.snapshot(earned, latched, now).skipSnapshot.eligible)
+        val emergency = earned.copy(
+            activeUnlock = UnlockSession("emergency", UnlockSource.EMERGENCY, now, now + 15 * MINUTE_MS),
+        )
+        val latchedEmergency = engine.snapshot(emergency, latched, now)
+        assertEquals(GateMode.OUT_OF_TIME_LATCHED, latchedEmergency.canonicalMode)
+        assertFalse(latchedEmergency.skipSnapshot.eligible)
+    }
+
+    @Test
     fun emergencySkipBypassesExhaustionAndConsumesCount() {
         val earned = applied(engine.earnPushupBudget(initial(), now, zone))
         val state = earned.copy(dailyUsage = earned.dailyUsage.copy(usedMs = 3 * MINUTE_MS))

@@ -19,10 +19,17 @@ groups={
   ('leave-capture-running','status = "Saving recording…"; recording?.stop()','status = "Saving recording…"; Unit'),
   ('misreport-capture-failure','catch (error: Exception) { phase = "error"; status = error.message','catch (error: Exception) { phase = "ready"; status = error.message')]),
  'waitguards':('domain/RestrictionEngine.kt','*GatePreconditionsTest',[
-  ('allow-unfocused-progress','runtime.gateFocused && runtime.gateSessionId != null','runtime.gateSessionId != null'),
+  ('allow-unfocused-progress','GateMode.WAITING ||\n            !runtime.focusedGateMatches(expectedGateSessionId)\n        ) {','GateMode.WAITING\n        ) {'),
+  ('allow-unavailable-progress','if (underlyingMode(state, runtime, nowWallMs) != GateMode.WAITING ||\n            !runtime.focusedGateMatches(expectedGateSessionId)\n        ) {','if (!runtime.focusedGateMatches(expectedGateSessionId)\n        ) {'),
   ('ignore-completion-token','gateSessionId != null && gateSessionId == expectedGateSessionId && gateFocused','gateFocused'),
-  ('complete-unfocused-wait','runtime.focusedGateMatches(expectedGateSessionId) &&','true &&'),
-  ('complete-unavailable-wait','runtime.focusedGateMatches(expectedGateSessionId) &&\n            underlyingMode(state, runtime, nowWallMs) == GateMode.WAITING','runtime.focusedGateMatches(expectedGateSessionId)')]),
+  ('complete-unfocused-wait','!runtime.focusedGateMatches(expectedGateSessionId) ||','false ||'),
+  ('complete-unavailable-wait','!runtime.focusedGateMatches(expectedGateSessionId) ||\n            underlyingMode(state, runtime, nowWallMs) != GateMode.WAITING','!runtime.focusedGateMatches(expectedGateSessionId)'),
+  ('complete-other-wait','pending.id != expectedPendingWaitId ||','false ||'),
+  ('complete-partial-wait','pending.accumulatedFocusMs < pending.requiredFocusMs ||','false ||')]),
+ 'emergencyskip':('domain/RestrictionEngine.kt','*RestrictionEngineTest',[
+  ('ignore-daily-skip-limit','val skipEligible = remainingSkips > 0 &&','val skipEligible = true &&'),
+  ('allow-any-gate-mode','            skipModeEligible &&\n','            true &&\n'),
+  ('allow-second-emergency-session','            !activeUnlockIsCurrent &&\n','            true &&\n')]),
  'coordinator':('v1/V1Coordinator.kt','*V1CoordinatorTest',[
   ('credit-preview-evidence','val preview = evidence.optBoolean("preview") || json.optBoolean("preview")','val preview = json.optBoolean("preview")'),
   ('delete-before-durable-reward','check(repository.applyTaskReceipt(receipt))','check(true)'),

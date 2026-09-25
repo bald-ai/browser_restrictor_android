@@ -85,10 +85,8 @@ export async function runProcess(command,args,timeout=30000){return new Promise(
 function parseVideoVerdict(envelope){
   let verdict;try{verdict=JSON.parse(envelope.choices[0].message.content);}catch{throw new AppError('Video verification returned an invalid result.',502);}
   fail(verdict&&typeof verdict==='object'&&!Array.isArray(verdict)&&Object.keys(verdict).sort().join(',')==='confidence,measured_units,reason','Video verification returned an invalid result.',502);
- return verdict;
-}
-function validateVideoNumbers(verdict){
   fail(Number.isFinite(verdict.measured_units)&&verdict.measured_units>=0&&Number.isFinite(verdict.confidence)&&verdict.confidence>=0&&verdict.confidence<=1&&typeof verdict.reason==='string','Video verification measurement was invalid.',502);
+ return verdict;
 }
 function measuredVideoUnits(task,verdict,duration){
   const units=task.metric==='seconds'?Math.round(verdict.measured_units/4*10)/10:verdict.measured_units;
@@ -107,7 +105,7 @@ export async function verifyVideo(attempt,video,{key,fetcher=fetch,onUsage=()=>{
   await onProviderStart();
   const response=await fetcher('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json','X-Title':'Friction v1 activity verification'},body:JSON.stringify({model:process.env.VIDEO_MODEL||'google/gemini-3.8-flash',messages:[{role:'system',content:system},{role:'user',content:[{type:'video_url',video_url:{url:`data:video/mp4;base64,${bytes.toString('base64')}`}},{type:'text',text:'Measure the target activity shown in this recording.'}]}],reasoning:{effort:'low',exclude:true},max_tokens:4096,response_format:{type:'json_schema',json_schema:{name:'activity_measurement',strict:true,schema:{type:'object',properties:{measured_units:{type:'number'},confidence:{type:'number'},reason:{type:'string'}},required:['measured_units','confidence','reason'],additionalProperties:false}}},provider:{require_parameters:true,zdr:true},usage:{include:true}}),signal:AbortSignal.timeout(180000)});
   const envelope=await response.json();await onUsage({cost:envelope.usage?.cost,usage:envelope.usage,provider:envelope.provider,responseId:envelope.id});fail(response.ok,`Video verification provider returned ${response.status}. Try again later.`,502);fail(envelope.choices?.[0]?.finish_reason==='stop','Video verification returned an incomplete result.',502);
-  const verdict=parseVideoVerdict(envelope);validateVideoNumbers(verdict);
+  const verdict=parseVideoVerdict(envelope);
   const units=measuredVideoUnits(task,verdict,duration);
   return{measuredUnits:units,confidence:verdict.confidence,reason:verdict.reason,diagnostics:{sourceSeconds:duration,densifyFactor:4,provider:envelope.provider}};
  }finally{await fs.rm(dir,{recursive:true,force:true});}

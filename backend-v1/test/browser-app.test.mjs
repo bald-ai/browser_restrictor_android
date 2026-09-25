@@ -310,3 +310,21 @@ test('test recording results attach only to the matching task and reviewed versi
  await store.stage(install,{config,expectedRevision:0});await f.refresh();
  assert.equal($('cards').querySelector('.test-result'),null);assert.equal(store.get(install).revision,0);
 });
+
+test('review card classes mark single, saved, undone and cancelled reviews',async t=>{
+ const f=await fixture(t),{$,store,install}=f;
+ const classes=card=>[...card.classList].sort();
+ await f.stage(c=>{c.settings.waitSeconds=7;});
+ assert.deepEqual(classes($('cards').querySelector('.change-card')),['change-card','single']);
+ $('applyChanges').click();await settle();
+ assert.deepEqual(classes($('cards').querySelector('.change-card')),['change-card','completed','single']);
+ $('undoChanges').click();await settle();
+ const undone=$('cards').querySelector('.change-card');
+ assert.deepEqual(classes(undone),['cancelled','change-card','completed','single']);
+ assert.match(undone.querySelector('.eyebrow').textContent,/UNDONE/);
+ await f.stage(c=>{c.settings.waitSeconds=5;c.settings.minutesPerCredit=9;});
+ const pair=$('cards').querySelectorAll('.change-card');
+ assert.equal(pair.length,2);assert.deepEqual(classes(pair[0]),['change-card']);
+ await store.cancel(install,{});await f.refresh();
+ assert.deepEqual(classes($('cards').querySelector('.change-card')),['cancelled','change-card']);
+});
