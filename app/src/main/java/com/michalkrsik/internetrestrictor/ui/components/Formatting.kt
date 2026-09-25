@@ -7,8 +7,6 @@ import kotlin.math.ceil
 
 fun BudgetPeriod.label(): String = name.lowercase().replaceFirstChar(Char::uppercase)
 
-fun BudgetPeriod.lowerLabel(): String = name.lowercase()
-
 fun BudgetPeriod.friendlyLabel(): String = when (this) {
     BudgetPeriod.DAILY -> "Today"
 }

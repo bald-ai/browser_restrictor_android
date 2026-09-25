@@ -6,6 +6,7 @@ if not _session_os.environ.get('VERIFICATION_SESSION_ROOT'):
     raise SystemExit(_session_subprocess.call(['python3', str(_SessionPath(__file__).resolve().parents[1] / 'scripts/verification-session.py'), 'metrics', *_session_sys.argv[1:]]))
 import json,pathlib,sys
 from source_manifest import source_manifest, measurement_manifest
+from function_metrics import CRAP_LIMIT
 root=pathlib.Path(__file__).resolve().parent.parent
 metrics=json.loads((root/'quality/metrics/summary.json').read_text())
 failures=[]
@@ -21,9 +22,9 @@ for component in ['android','server','browser']:
   actual=data['coverage'][metric]['pct']
   if not isinstance(actual,(float,int)) or actual<target:failures.append(f'{component} {metric}: {actual} < {target}')
  if data['coverage']['branches'].get('unownedProbeIds'):failures.append(f'{component}: handwritten branch ownership is unresolved')
- if data['crapAbove8']:failures.append(f'{component}: {data["crapAbove8"]} functions have CRAP >8')
+ if data['crapAboveLimit']:failures.append(f'{component}: {data["crapAboveLimit"]} functions have CRAP >{CRAP_LIMIT}')
  if data['unmappedFunctions']:failures.append(f'{component}: {data["unmappedFunctions"]} executable functions have unverified coverage')
-result={'passed':not failures,'failures':failures,'targets':{'lines':90,'branches':85,'crap':8},'exceptions':[]}
+result={'passed':not failures,'failures':failures,'targets':{'lines':90,'branches':85,'crap':CRAP_LIMIT},'exceptions':[]}
 (root/'quality/metrics/gate.json').write_text(json.dumps(result,indent=2)+'\n')
 print('\n'.join(failures) if failures else 'All whole-component targets passed.')
 sys.exit(bool(failures))

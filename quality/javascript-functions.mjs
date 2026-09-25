@@ -3,6 +3,7 @@ import path from 'node:path';
 import {createRequire} from 'node:module';
 const root=path.resolve(import.meta.dirname,'..'),require=createRequire(path.join(root,'backend-v1/package.json'));
 const {parse}=require('acorn');
+const CRAP_LIMIT=10;
 const cov=JSON.parse(fs.readFileSync(path.join(root,'quality/metrics/istanbul/coverage-final.json')));
 const rows=[];
 const isFunction=n=>['FunctionDeclaration','FunctionExpression','ArrowFunctionExpression'].includes(n.type);
@@ -33,4 +34,4 @@ for(const [file,c] of Object.entries(cov)){
  }visit(tree,null);
 }
 fs.writeFileSync(path.join(root,'quality/metrics/javascript-functions.json'),JSON.stringify(rows,null,2)+'\n');
-for(const component of ['server','browser']){const functions=rows.filter(r=>r.component===component);console.log(component,{functions:functions.length,unmapped:functions.filter(r=>r.crap===null).length,maxComplexity:Math.max(...functions.map(r=>r.complexity)),complexityAbove8:functions.filter(r=>r.complexity>8).length,maxCrap:Math.max(...functions.map(r=>r.crap??0)),crapAbove8:functions.filter(r=>r.crap>8).length});}
+for(const component of ['server','browser']){const functions=rows.filter(r=>r.component===component);console.log(component,{functions:functions.length,unmapped:functions.filter(r=>r.crap===null).length,maxComplexity:Math.max(...functions.map(r=>r.complexity)),complexityAboveLimit:functions.filter(r=>r.complexity>CRAP_LIMIT).length,maxCrap:Math.max(...functions.map(r=>r.crap??0)),crapAboveLimit:functions.filter(r=>r.crap>CRAP_LIMIT).length});}

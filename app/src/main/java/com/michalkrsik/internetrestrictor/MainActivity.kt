@@ -30,9 +30,6 @@ import com.michalkrsik.internetrestrictor.domain.ProtectionHealth
 import com.michalkrsik.internetrestrictor.domain.HealthAction
 import com.michalkrsik.internetrestrictor.domain.StateSnapshot
 import com.michalkrsik.internetrestrictor.domain.ThemePreference
-import com.michalkrsik.internetrestrictor.ui.dashboard.DashboardScreen
-import com.michalkrsik.internetrestrictor.ui.challenge.ExerciseChallengeActivity
-import com.michalkrsik.internetrestrictor.ui.sprint.SprintChallengeActivity
 import com.michalkrsik.internetrestrictor.ui.onboarding.OnboardingScreen
 import com.michalkrsik.internetrestrictor.ui.settings.SettingsScreen
 import com.michalkrsik.internetrestrictor.ui.theme.EditorialTheme
@@ -84,7 +81,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         finishTaskPickerHandoffAfterDraw()
         refreshDeviceAccess()
-        if (BuildConfig.IS_V1) lifecycleScope.launch { appContainer.v1.sync(); appContainer.v1.retryPending() }
+        lifecycleScope.launch { appContainer.v1.sync(); appContainer.v1.retryPending() }
     }
 
     private fun finishTaskPickerHandoffAfterDraw() {
@@ -144,11 +141,6 @@ class MainActivity : ComponentActivity() {
                 onThemeChange = { theme ->
                     lifecycleScope.launch { appContainer.repository.setTheme(theme) }
                 },
-                onSave = { settings ->
-                    lifecycleScope.launch {
-                        appContainer.repository.saveSettings(snapshot.stateRevision, settings)
-                    }
-                },
                 onCancelActiveUnlock = {
                     lifecycleScope.launch { appContainer.repository.cancelActiveUnlock() }
                 },
@@ -163,7 +155,7 @@ class MainActivity : ComponentActivity() {
                     diagnosticsExporter.launch("internet-restrictor-diagnostics.txt")
                 },
             )
-            else -> if (BuildConfig.IS_V1) {
+            else -> {
                 val connection by appContainer.v1.status.collectAsState()
                 com.michalkrsik.internetrestrictor.v1.V1Dashboard(
                     snapshot = snapshot, connection = connection,
@@ -179,14 +171,7 @@ class MainActivity : ComponentActivity() {
                     onCorrect = { receipt, value -> appContainer.v1.correct(receipt.measurement.attemptId, value) },
                     onFallback = { receipt -> appContainer.v1.confirmGpsFallback(receipt.measurement.attemptId) },
                 )
-            } else DashboardScreen(
-                snapshot = snapshot,
-                onOpenSettings = { destination = DESTINATION_SETTINGS },
-                onTestBrowser = ::launchBrowser,
-                onStartExercise = ::launchExerciseChallenge,
-                onHealthAction = { handleHealthAction(snapshot.enforcementHealth) },
-                onStartSprint = ::launchSprintChallenge,
-            )
+            }
         }
     }
 
@@ -243,14 +228,6 @@ class MainActivity : ComponentActivity() {
         } else {
             openBrowserListing()
         }
-    }
-
-    private fun launchExerciseChallenge() {
-        startActivity(Intent(this, ExerciseChallengeActivity::class.java))
-    }
-
-    private fun launchSprintChallenge() {
-        startActivity(Intent(this, SprintChallengeActivity::class.java))
     }
 
     private fun openBrowserListing() {

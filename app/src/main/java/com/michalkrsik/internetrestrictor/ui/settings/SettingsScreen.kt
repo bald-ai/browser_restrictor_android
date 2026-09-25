@@ -6,28 +6,20 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -35,49 +27,34 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import com.michalkrsik.internetrestrictor.domain.MAX_SESSION_MINUTES
-import com.michalkrsik.internetrestrictor.domain.MIN_SESSION_MINUTES
-import com.michalkrsik.internetrestrictor.domain.ProtectionHealth
-import com.michalkrsik.internetrestrictor.domain.RestrictorSettings
 import com.michalkrsik.internetrestrictor.domain.StateSnapshot
 import com.michalkrsik.internetrestrictor.domain.ThemePreference
 import com.michalkrsik.internetrestrictor.ui.components.HealthCard
 import com.michalkrsik.internetrestrictor.ui.components.PermissionStateRows
 import com.michalkrsik.internetrestrictor.ui.theme.EditorialTheme
-import com.michalkrsik.internetrestrictor.ui.theme.PulsePanel
 import com.michalkrsik.internetrestrictor.ui.theme.PillShape
-import com.michalkrsik.internetrestrictor.ui.theme.pulseButtonColors
-import com.michalkrsik.internetrestrictor.ui.theme.PulseActionBorder
-import com.michalkrsik.internetrestrictor.ui.theme.editorialTitle
 
 @Composable
 fun SettingsScreen(
     snapshot: StateSnapshot,
     onBack: () -> Unit,
     onThemeChange: (ThemePreference) -> Unit,
-    onSave: (RestrictorSettings) -> Unit,
     onCancelActiveUnlock: () -> Unit,
     onClearReports: () -> Unit,
     onOpenAccessibility: () -> Unit,
@@ -85,19 +62,11 @@ fun SettingsScreen(
     onHealthAction: () -> Unit,
     onExportDiagnostics: () -> Unit,
     onCustomize: () -> Unit = {},
-    configurableTasks: Boolean = com.michalkrsik.internetrestrictor.BuildConfig.IS_V1,
 ) {
     BackHandler(onBack = onBack)
-    var firstSession by rememberSaveable { mutableStateOf(snapshot.settings.sessionMinutes.getOrElse(0) { 3L }.toString()) }
-    var secondSession by rememberSaveable { mutableStateOf(snapshot.settings.sessionMinutes.getOrElse(1) { 5L }.toString()) }
-    var thirdSession by rememberSaveable { mutableStateOf(snapshot.settings.sessionMinutes.getOrElse(2) { 10L }.toString()) }
     var showClearReportsDialog by rememberSaveable { mutableStateOf(false) }
     var systemAccessExpanded by rememberSaveable { mutableStateOf(false) }
     var developerExpanded by rememberSaveable { mutableStateOf(false) }
-
-    val parsedSessions = listOf(firstSession, secondSession, thirdSession).map(::parseSessionMinutes)
-    val sessionValues = parsedSessions.filterNotNull()
-    val sessionsValid = sessionValues.size == 3
 
     PulseScreen {
         PulseBack(onClick = onBack)
@@ -106,19 +75,7 @@ fun SettingsScreen(
         Spacer(Modifier.height(7.dp))
         Text("BROWSER RULES.", style = MaterialTheme.typography.headlineLarge.copy(fontSize = 35.sp, lineHeight = 40.sp, letterSpacing = (-1).sp))
         Spacer(Modifier.height(21.dp))
-        if (configurableTasks) {
-            PulsePrimary("Customize tasks & rules", onCustomize, subtitle = "Settings, rewards, reset times and task definitions")
-        } else PulseControlGroup {
-            PulseSection("Session presets", "Minutes")
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PresetField(firstSession, { firstSession = it }, 1, parsedSessions[0] == null, Modifier.weight(1f), snapshot.settings.theme == ThemePreference.LIGHT)
-                PresetField(secondSession, { secondSession = it }, 2, parsedSessions[1] == null, Modifier.weight(1f), snapshot.settings.theme == ThemePreference.LIGHT)
-                PresetField(thirdSession, { thirdSession = it }, 3, parsedSessions[2] == null, Modifier.weight(1f), snapshot.settings.theme == ThemePreference.LIGHT)
-            }
-            Spacer(Modifier.height(11.dp))
-            Text("Choose the lengths offered when you open a browser. From 1 to 120 minutes.", style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp, lineHeight = 17.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if(!sessionsValid) PulseText("Use whole-minute values between 1 and 120.", 10, color = MaterialTheme.colorScheme.error)
-        }
+        PulsePrimary("Customize tasks & rules", onCustomize, subtitle = "Settings, rewards, reset times and task definitions")
         Spacer(Modifier.height(13.dp))
         Row(Modifier.fillMaxWidth().padding(vertical = 15.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -151,7 +108,6 @@ fun SettingsScreen(
         }
         Text("Tasks contribute toward your next credit. Emergency access is earned with your first credit of the day.", Modifier.padding(top = 11.dp), style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp, lineHeight = 17.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(20.dp))
-        if (!configurableTasks) PulsePrimary("Save changes", { onSave(snapshot.settings.copy(delayEnabled = true, sessionMinutes = sessionValues)) }, enabled = sessionsValid)
         Spacer(Modifier.height(24.dp))
         Spacer(Modifier.weight(1f))
         PulseNav(settings = true, onToday = onBack, onSettings = {})
@@ -195,15 +151,6 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun PresetField(value: String, onValueChange: (String) -> Unit, number: Int, isError: Boolean, modifier: Modifier, day: Boolean) {
-    Column(modifier) {
-        Text("PRESET $number", style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp, letterSpacing = .5.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(5.dp))
-        BasicTextField(value, onValueChange, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), cursorBrush = SolidColor(PulseYellow), textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 23.sp, textAlign = TextAlign.Center, color = if(day) PulseYellow else InkDark), modifier = Modifier.fillMaxWidth().height(46.dp).background(if(day) Paper2Dark else PaperDark, RoundedCornerShape(8.dp)).border(1.dp, if(isError) MaterialTheme.colorScheme.error else EditorialTheme.colors.hairline, RoundedCornerShape(8.dp)).semantics { contentDescription = "Session preset $number in minutes" }, decorationBox = { inner -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { inner() } })
-    }
-}
-
-@Composable
 private fun GhostButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -219,9 +166,4 @@ private fun GhostButton(
         colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
         content = content,
     )
-}
-
-private fun parseSessionMinutes(raw: String): Long? {
-    if (raw.isBlank() || raw.any { !it.isDigit() }) return null
-    return raw.toLongOrNull()?.takeIf { it in MIN_SESSION_MINUTES..MAX_SESSION_MINUTES }
 }

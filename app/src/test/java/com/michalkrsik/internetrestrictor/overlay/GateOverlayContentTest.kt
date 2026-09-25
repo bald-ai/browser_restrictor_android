@@ -34,7 +34,7 @@ class GateOverlayContentTest {
         }
     } as WindowManager
     private val gate = GateOverlayController(host.get(), manager, repository, app.fixtureScope,
-        { tasks++ }, {}, { leaves++ }, {}, { throw it })
+        { tasks++ }, { leaves++ }, {}, { throw it })
     @Before fun setup() = runBlocking {
         repository.awaitLoaded()
         repository.updateDeviceAccess(true, true, true, false)

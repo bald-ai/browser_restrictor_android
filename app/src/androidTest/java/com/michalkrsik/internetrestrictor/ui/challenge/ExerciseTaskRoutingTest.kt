@@ -4,14 +4,13 @@ import android.app.Activity
 import android.app.Instrumentation
 import android.content.Intent
 import androidx.test.platform.app.InstrumentationRegistry
-import com.michalkrsik.internetrestrictor.BuildConfig
 import com.michalkrsik.internetrestrictor.MainActivity
 import org.junit.Assert.*
 import org.junit.Test
 
 class ExerciseTaskRoutingTest {
     @Test fun oldCameraEntryOpensTaskDashboardWithoutRecording() {
-        assertTrue("Every build must use V1", BuildConfig.IS_V1)
+
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         var destination: String? = null
         val monitor = object : Instrumentation.ActivityMonitor() {
@@ -27,7 +26,6 @@ class ExerciseTaskRoutingTest {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             instrumentation.waitForIdleSync()
             assertEquals(MainActivity.DESTINATION_DASHBOARD, destination)
-            assertFalse(ExerciseChallengeVisibility.active.value)
         } finally {
             instrumentation.removeMonitor(monitor)
         }

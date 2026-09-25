@@ -1,7 +1,6 @@
 package com.michalkrsik.internetrestrictor.v1
 
 import androidx.test.platform.app.InstrumentationRegistry
-import com.michalkrsik.internetrestrictor.BuildConfig
 import com.michalkrsik.internetrestrictor.appContainer
 import com.michalkrsik.internetrestrictor.domain.TaskDefinition
 import com.michalkrsik.internetrestrictor.domain.TaskMeasurementReceipt
@@ -19,7 +18,7 @@ class V1DeviceIntegrationTest {
 
     @Test fun prepareGateTestCredit() = runBlocking {
         assumeTrue("Explicit gate fixture opt-in required", InstrumentationRegistry.getArguments().getString("v1GateFixture") == "true")
-        assertTrue("Select the v1Dev test variant", BuildConfig.IS_V1)
+
         assertEquals("com.michalkrsik.browserrestrictor.v1dev", context.packageName)
         val container = context.appContainer
         container.repository.awaitLoaded()
@@ -48,7 +47,7 @@ class V1DeviceIntegrationTest {
 
     @Test fun removeGateTestCredit() = runBlocking {
         assumeTrue("Explicit gate fixture opt-in required", InstrumentationRegistry.getArguments().getString("v1GateFixture") == "true")
-        assertTrue(BuildConfig.IS_V1)
+
         assertEquals("com.michalkrsik.browserrestrictor.v1dev", context.packageName)
         val preferences = context.getSharedPreferences("v1-device-test", 0)
         val receipt = preferences.getString("receipt", null) ?: return@runBlocking

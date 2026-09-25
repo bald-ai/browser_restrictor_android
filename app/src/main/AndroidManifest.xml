@@ -83,11 +83,6 @@
             android:screenOrientation="fullSensor" />
 
         <service
-            android:name=".ui.sprint.SprintLocationService"
-            android:exported="false"
-            android:foregroundServiceType="location" />
-
-        <service
             android:name=".monitoring.ChromeAccessibilityService"
             android:description="@string/accessibility_service_description"
             android:exported="true"

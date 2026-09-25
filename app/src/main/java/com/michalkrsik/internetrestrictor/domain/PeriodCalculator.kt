@@ -59,9 +59,6 @@ object PeriodCalculator {
     fun budgetKey(wallMs: Long, zoneId: ZoneId, settings: ConfigurationSettings = ConfigurationSettings()): String =
         keysAt(wallMs, zoneId, settings).daily
 
-    fun localDate(wallMs: Long, zoneId: ZoneId): LocalDate =
-        Instant.ofEpochMilli(wallMs).atZone(zoneId).toLocalDate()
-
     /** Repeated local times reset once, at the first occurrence. A missing local
      * time resets at the first valid instant after the daylight-saving gap. */
     private fun resetAt(date: LocalDate, time: LocalTime, zoneId: ZoneId): Long {

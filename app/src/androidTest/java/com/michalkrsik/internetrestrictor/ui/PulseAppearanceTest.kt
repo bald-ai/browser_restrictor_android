@@ -16,9 +16,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.view.WindowCompat
-import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.platform.app.InstrumentationRegistry
 import com.michalkrsik.internetrestrictor.domain.CommandResult
@@ -28,7 +26,7 @@ import com.michalkrsik.internetrestrictor.domain.ProtectedTarget
 import com.michalkrsik.internetrestrictor.domain.RestrictionEngine
 import com.michalkrsik.internetrestrictor.domain.RuntimeSignals
 import com.michalkrsik.internetrestrictor.domain.ThemePreference
-import com.michalkrsik.internetrestrictor.ui.dashboard.DashboardScreen
+import com.michalkrsik.internetrestrictor.v1.V1Dashboard
 import com.michalkrsik.internetrestrictor.ui.gate.GateActions
 import com.michalkrsik.internetrestrictor.ui.gate.GateScreen
 import com.michalkrsik.internetrestrictor.ui.settings.SettingsScreen
@@ -81,8 +79,8 @@ class PulseAppearanceTest {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     val themed = snapshot.copy(settings = snapshot.settings.copy(theme = appearance))
                     when (screen) {
-                        "dashboard" -> DashboardScreen(themed, {}, {}, {}, {})
-                        "settings" -> SettingsScreen(themed, {}, { appearance = it }, {}, {}, {}, {}, {}, {}, {})
+                        "dashboard" -> V1Dashboard(themed, "Connected", {}, {}, {}, {}, {}, { _, _ -> }, {})
+                        "settings" -> SettingsScreen(themed, {}, { appearance = it }, {}, {}, {}, {}, {}, {})
                         else -> GateScreen(themed, GateActions({}, {}, {}, {}, {}))
                     }
                 }
@@ -90,29 +88,21 @@ class PulseAppearanceTest {
         }
         for (theme in listOf(ThemePreference.DARK, ThemePreference.LIGHT)) {
             composeRule.runOnIdle { appearance = theme; screen = "dashboard" }
-            composeRule.onNodeWithText("AVAILABLE TO BROWSE").assertIsDisplayed()
+            composeRule.onNodeWithText("Your day, on purpose.").assertIsDisplayed()
             capture("${theme.name.lowercase()}-dashboard")
-            composeRule.onNodeWithContentDescription("How exercise points work").performScrollTo().performClick()
-            composeRule.onNodeWithText("Exercise points").assertIsDisplayed()
-            composeRule.onNodeWithText("Got it").performClick()
             composeRule.runOnIdle { screen = "settings" }
             composeRule.onNodeWithText("Dark appearance").assertIsDisplayed()
             capture("${theme.name.lowercase()}-settings")
             composeRule.runOnIdle { screen = "gate" }
-            composeRule.onNodeWithText("START EXERCISE").performScrollTo().assertIsDisplayed()
-            val exercise = composeRule.onNode(hasText("START EXERCISE") and hasClickAction()).fetchSemanticsNode().boundsInRoot.height
-            composeRule.onNodeWithText("CONTINUE FOR 5 MINUTES").performScrollTo().assertIsDisplayed()
-            val browse = composeRule.onNode(hasText("CONTINUE FOR 5 MINUTES") and hasClickAction()).fetchSemanticsNode().boundsInRoot.height
+            composeRule.onNodeWithText("CHOOSE A TASK").performScrollTo().assertIsDisplayed()
+            val exercise = composeRule.onNode(hasText("CHOOSE A TASK") and hasClickAction()).fetchSemanticsNode().boundsInRoot.height
+            composeRule.onNodeWithText("Unlock · 5 minutes").performScrollTo().assertIsDisplayed()
+            val browse = composeRule.onNode(hasText("Unlock · 5 minutes") and hasClickAction()).fetchSemanticsNode().boundsInRoot.height
             assertTrue("Exercise action must be at least as tall as browse", exercise >= browse)
             // Scroll back to the top before capturing the screen.
             composeRule.onNodeWithText("Leave browser").performScrollTo()
             capture("${theme.name.lowercase()}-gate")
-            composeRule.onNodeWithContentDescription("How exercise points work").performScrollTo().performClick()
-            composeRule.onNodeWithText(
-                "1 point equals:\n\n1 push-up\n2 machine reps\n3 seconds of plank\n\nMix exercises to earn 5 points for +3 minutes. Partial points carry over until 04:00.",
-            ).assertIsDisplayed()
-            capture("${theme.name.lowercase()}-points-help")
-            composeRule.onNodeWithText("Got it").performClick()
+
         }
     }
 

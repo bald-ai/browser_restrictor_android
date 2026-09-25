@@ -2,7 +2,6 @@ package com.michalkrsik.internetrestrictor.ui.gate
 
 import com.michalkrsik.internetrestrictor.ui.theme.*
 import androidx.compose.foundation.layout.width
-import com.michalkrsik.internetrestrictor.ui.components.ExercisePointsProgress
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -23,9 +22,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -64,19 +61,15 @@ import com.michalkrsik.internetrestrictor.domain.GateMode
 import com.michalkrsik.internetrestrictor.domain.MINUTE_MS
 import com.michalkrsik.internetrestrictor.domain.StateSnapshot
 import com.michalkrsik.internetrestrictor.domain.WaitCalculator
-import com.michalkrsik.internetrestrictor.domain.YOUTUBE_UNLOCK_SETS
 import com.michalkrsik.internetrestrictor.ui.components.BudgetBar
 import com.michalkrsik.internetrestrictor.ui.components.PauseEmblem
 import com.michalkrsik.internetrestrictor.ui.components.formatCompactTime
 import com.michalkrsik.internetrestrictor.ui.components.friendlyLabel
 import com.michalkrsik.internetrestrictor.ui.theme.EditorialTheme
 import com.michalkrsik.internetrestrictor.ui.theme.PillShape
-import com.michalkrsik.internetrestrictor.ui.theme.PulsePanel
 import com.michalkrsik.internetrestrictor.ui.theme.pulseButtonColors
 import com.michalkrsik.internetrestrictor.ui.theme.PulseActionBorder
 import com.michalkrsik.internetrestrictor.ui.theme.PulseCharcoal
-import com.michalkrsik.internetrestrictor.ui.theme.SerifNote
-import com.michalkrsik.internetrestrictor.ui.theme.editorialTitle
 
 data class GateActions(
     val onStartSession: (Long) -> Unit,
@@ -84,7 +77,6 @@ data class GateActions(
     val onExerciseChallenge: () -> Unit,
     val onTryAgain: () -> Unit,
     val onLeaveBrowser: () -> Unit,
-    val onSprintChallenge: () -> Unit = {},
 )
 
 @Composable
@@ -113,16 +105,13 @@ fun GateScreen(snapshot: StateSnapshot, actions: GateActions) {
             GateMode.PAUSED -> PausedControls(snapshot, selectedMinutes, { selectedMinutes = it }, actionInFlight,
                 { actionInFlight = true; actions.onStartSession(selectedMinutes) },
                 { actionInFlight = true; actions.onEmergencySkip() },
-                { actionInFlight = true; actions.onExerciseChallenge() },
-                { actionInFlight = true; actions.onSprintChallenge() })
+                { actionInFlight = true; actions.onExerciseChallenge() })
             GateMode.OUT_OF_TIME, GateMode.OUT_OF_TIME_LATCHED -> OutOfTimeControls(snapshot, actionInFlight,
                 { actionInFlight = true; actions.onExerciseChallenge() },
                 { actionInFlight = true; actions.onEmergencySkip() },
-                { actionInFlight = true; actions.onTryAgain() },
-                { actionInFlight = true; actions.onSprintChallenge() })
+                { actionInFlight = true; actions.onTryAgain() })
             GateMode.YOUTUBE_LOCKED -> YouTubeLockedControls(snapshot, actionInFlight,
-                { actionInFlight = true; actions.onExerciseChallenge() },
-                { actionInFlight = true; actions.onSprintChallenge() })
+                { actionInFlight = true; actions.onExerciseChallenge() })
             else -> Unit
         }
         snapshot.lastErrorMessage?.let { PulseText(it, 12, Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.error) }
@@ -136,7 +125,6 @@ private fun YouTubeLockedControls(
     snapshot: StateSnapshot,
     actionInFlight: Boolean,
     onExerciseChallenge: () -> Unit,
-    onSprintChallenge: () -> Unit = {},
 ) {
     Column(
         Modifier.padding(vertical = 20.dp),
@@ -150,17 +138,7 @@ private fun YouTubeLockedControls(
             modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp),
             shape = PillShape,
         ) {
-            Text(if (com.michalkrsik.internetrestrictor.BuildConfig.IS_V1) snapshot.configuration.settings.youtubeUnlockLabel else "Start push-ups", style = MaterialTheme.typography.labelLarge)
-        }
-        if (!com.michalkrsik.internetrestrictor.BuildConfig.IS_V1) Button(
-            colors = pulseButtonColors(),
-            border = PulseActionBorder,
-            onClick = onSprintChallenge,
-            enabled = !actionInFlight,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp),
-            shape = PillShape,
-        ) {
-            Text("Start sprint", style = MaterialTheme.typography.labelLarge)
+            Text(snapshot.configuration.settings.youtubeUnlockLabel, style = MaterialTheme.typography.labelLarge)
         }
         Text(
             "${snapshot.earnedBudgetRoundsToday}/${snapshot.configuration.settings.youtubeCredits} ${snapshot.configuration.settings.creditName} today · until ${snapshot.configuration.settings.dayReset}",
@@ -189,7 +167,6 @@ private fun PausedControls(
     onStart: () -> Unit,
     onSkip: () -> Unit,
     onExerciseChallenge: () -> Unit,
-    onSprintChallenge: () -> Unit = {},
 ) {
     Column {
         PulseControlGroup {
@@ -206,9 +183,8 @@ private fun PausedControls(
         Spacer(Modifier.height(5.dp))
         PulseCarryOver(snapshot)
         Spacer(Modifier.height(18.dp))
-        PulsePrimary(if (com.michalkrsik.internetrestrictor.BuildConfig.IS_V1) "Choose a task" else "Start push-ups", onExerciseChallenge, exercise = true, subtitle = "Earn ${snapshot.configuration.settings.minutesPerCredit} minutes with your next credit", enabled = !actionInFlight)
+        PulsePrimary("Choose a task", onExerciseChallenge, exercise = true, subtitle = "Earn ${snapshot.configuration.settings.minutesPerCredit} minutes with your next credit", enabled = !actionInFlight)
         Spacer(Modifier.height(8.dp))
-        if (!com.michalkrsik.internetrestrictor.BuildConfig.IS_V1) PulsePrimary("Start sprint", onSprintChallenge, exercise = true, subtitle = "Choose a GPS task to earn more time", enabled = !actionInFlight)
         Spacer(Modifier.height(10.dp))
         OutlinedButton(onClick = onStart, enabled = !actionInFlight, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(7.dp), border = BorderStroke(1.dp, EditorialTheme.colors.hairline), colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)) {
             Text("${snapshot.configuration.settings.unlockLabel} · $selectedMinutes minutes", style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp, letterSpacing = .5.sp))
@@ -336,14 +312,13 @@ private fun OutOfTimeControls(
     onExerciseChallenge: () -> Unit,
     onSkip: () -> Unit,
     onTryAgain: () -> Unit,
-    onSprintChallenge: () -> Unit = {},
 ) {
     Column(
         Modifier.padding(vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         Budgets(snapshot)
-        ExerciseAndSprintButtons(snapshot, actionInFlight, onExerciseChallenge, onSprintChallenge)
+        TaskButton(snapshot, actionInFlight, onExerciseChallenge)
         SkipButton(snapshot, actionInFlight, onSkip)
         Button(
             onClick = onTryAgain,
@@ -357,16 +332,14 @@ private fun OutOfTimeControls(
 }
 
 @Composable
-private fun ExerciseAndSprintButtons(
+private fun TaskButton(
     snapshot: StateSnapshot,
     actionInFlight: Boolean,
     onExerciseChallenge: () -> Unit,
-    onSprintChallenge: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         PulseCarryOver(snapshot)
-        PulsePrimary(if (com.michalkrsik.internetrestrictor.BuildConfig.IS_V1) "Choose a task" else "Start push-ups", onExerciseChallenge, exercise = true, subtitle = "Earn ${snapshot.configuration.settings.minutesPerCredit} minutes with your next credit", enabled = !actionInFlight)
-        if (!com.michalkrsik.internetrestrictor.BuildConfig.IS_V1) PulsePrimary("Start sprint", onSprintChallenge, exercise = true, subtitle = "Choose a GPS task to earn more time", enabled = !actionInFlight)
+        PulsePrimary("Choose a task", onExerciseChallenge, exercise = true, subtitle = "Earn ${snapshot.configuration.settings.minutesPerCredit} minutes with your next credit", enabled = !actionInFlight)
     }
 }
 

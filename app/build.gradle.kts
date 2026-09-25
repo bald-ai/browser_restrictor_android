@@ -155,7 +155,7 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
-        buildConfigField("boolean", "IS_V1", "true")
+
         buildConfigField("String", "V1_BACKEND_URL", buildConfigString(v1BackendUrl))
 
     }
@@ -173,7 +173,7 @@ android {
             versionNameSuffix = "-v1-dev"
             matchingFallbacks += listOf("debug")
             signingConfig = signingConfigs.getByName("debug")
-            buildConfigField("boolean", "IS_V1", "true")
+
 
         }
         release {

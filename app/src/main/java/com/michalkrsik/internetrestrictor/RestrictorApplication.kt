@@ -13,7 +13,7 @@ open class RestrictorApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
-        if (BuildConfig.IS_V1) container.v1.start()
+        container.v1.start()
         accessMonitor = DeviceAccessMonitor(this, container)
         ProcessLifecycleOwner.get().lifecycle.addObserver(accessMonitor)
     }

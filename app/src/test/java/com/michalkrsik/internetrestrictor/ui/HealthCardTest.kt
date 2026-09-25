@@ -31,13 +31,10 @@ class HealthCardTest {
         val actions = mapOf(
             ProtectionHealth.READY to null,
             ProtectionHealth.READY_LIMITED_RECOVERY to "Improve recovery",
-            ProtectionHealth.ENFORCEMENT_OFF to "Turn on",
             ProtectionHealth.ACCESSIBILITY_REQUIRED to "Open Accessibility",
-            ProtectionHealth.USAGE_ACCESS_RECOMMENDED to "Open Usage Access",
             ProtectionHealth.SERVICE_DISCONNECTED to "Repair service",
             ProtectionHealth.BROWSERS_NOT_FOUND to "Get a supported app",
             ProtectionHealth.STORAGE_ERROR to "Open app info",
-            ProtectionHealth.RESTRICTED_SETTINGS_BLOCKED to "Open app info",
             ProtectionHealth.ADVANCED_PROTECTION_BLOCKED to "Open Android help",
         )
         assertEquals(ProtectionHealth.entries.toSet(), actions.keys)
@@ -50,7 +47,7 @@ class HealthCardTest {
             if (small) rule.onNodeWithText(copy.body).assertDoesNotExist()
             else rule.onNodeWithText(copy.body).assertIsDisplayed()
         }
-        rule.runOnIdle { assertEquals(18, clicked) }
+        rule.runOnIdle { assertEquals(actions.values.count { it != null } * 2, clicked) }
     }
 
     @Test fun usageAccessRemovesTheRecoveryPromptWithoutClaimingCompleteRecovery() {

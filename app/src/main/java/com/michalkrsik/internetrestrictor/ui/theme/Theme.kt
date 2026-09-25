@@ -51,11 +51,6 @@ val GoDark = Color(0xFFD6F66A)
 val WarnDark = Color(0xFFEFC66C)
 val LowDark = Color(0xFFFF9580)
 
-val InstrumentSerif = FontFamily(
-    Font(R.font.instrument_serif_regular, FontWeight.Normal),
-    Font(R.font.instrument_serif_italic, FontWeight.Normal, FontStyle.Italic),
-)
-
 @OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
 val Manrope = FontFamily(
     Font(R.font.pulse_body, FontWeight.Normal, variationSettings = FontVariation.Settings(FontVariation.weight(400))),
@@ -109,13 +104,6 @@ object EditorialTheme {
         @Composable
         get() = LocalEditorialColors.current
 }
-
-val SerifNote = TextStyle(
-    fontFamily = Manrope,
-    fontWeight = FontWeight.Normal,
-    fontSize = 14.sp,
-    lineHeight = 21.sp,
-)
 
 /** Preserve screen copy and accessibility labels while the theme supplies Pulse typography. */
 @Composable

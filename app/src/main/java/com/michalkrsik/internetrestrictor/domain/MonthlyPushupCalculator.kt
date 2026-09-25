@@ -21,11 +21,6 @@ object MonthlyPushupCalculator {
     fun nextCycleStart(startDate: String): String =
         LocalDate.parse(startDate).plusMonths(1).withDayOfMonth(CYCLE_START_DAY).toString()
 
-    fun cycleEndWallMs(startDate: String, zoneId: ZoneId = this.zoneId): Long = LocalDate.parse(nextCycleStart(startDate))
-        .atStartOfDay(zoneId)
-        .toInstant()
-        .toEpochMilli()
-
     fun ensureCurrentCycle(
         cycles: List<MonthlyPushupCycle>,
         nowWallMs: Long,

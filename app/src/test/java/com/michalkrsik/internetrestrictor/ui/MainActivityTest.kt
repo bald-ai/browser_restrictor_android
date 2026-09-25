@@ -1,7 +1,6 @@
 package com.michalkrsik.internetrestrictor.ui
 
 import android.content.Intent
-import android.os.Looper
 import android.provider.Settings
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -46,12 +45,9 @@ class MainActivityTest {
     @Test fun healthActionsProduceOnlyTheExpectedIntentsInTheShadowActivity() {
         val expected = mapOf(
             ProtectionHealth.READY to null,
-            ProtectionHealth.ENFORCEMENT_OFF to null,
             ProtectionHealth.READY_LIMITED_RECOVERY to Settings.ACTION_USAGE_ACCESS_SETTINGS,
-            ProtectionHealth.USAGE_ACCESS_RECOMMENDED to Settings.ACTION_USAGE_ACCESS_SETTINGS,
             ProtectionHealth.ACCESSIBILITY_REQUIRED to Settings.ACTION_ACCESSIBILITY_SETTINGS,
             ProtectionHealth.SERVICE_DISCONNECTED to Settings.ACTION_ACCESSIBILITY_SETTINGS,
-            ProtectionHealth.RESTRICTED_SETTINGS_BLOCKED to Settings.ACTION_ACCESSIBILITY_SETTINGS,
             ProtectionHealth.STORAGE_ERROR to Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
             ProtectionHealth.BROWSERS_NOT_FOUND to Intent.ACTION_VIEW,
             ProtectionHealth.ADVANCED_PROTECTION_BLOCKED to Intent.ACTION_VIEW,
@@ -65,10 +61,6 @@ class MainActivityTest {
                 if (health == ProtectionHealth.ADVANCED_PROTECTION_BLOCKED) assertEquals("https://support.google.com/android/answer/16339980", intent.dataString)
             }
         }
-        call("launchExerciseChallenge")
-        compose.runOnIdle { assertTrue(shadowOf(compose.activity).nextStartedActivity.component!!.className.endsWith("ExerciseChallengeActivity")) }
-        call("launchSprintChallenge")
-        compose.runOnIdle { assertTrue(shadowOf(compose.activity).nextStartedActivity.component!!.className.endsWith("SprintChallengeActivity")) }
         call("launchBrowser")
         compose.runOnIdle { assertTrue(shadowOf(compose.activity).nextStartedActivity.dataString!!.startsWith("market://")) }
     }

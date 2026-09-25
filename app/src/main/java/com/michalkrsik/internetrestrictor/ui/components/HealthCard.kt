@@ -39,22 +39,10 @@ private val healthMessages = mapOf(
             "Improve recovery",
             true,
         ),
-    ProtectionHealth.ENFORCEMENT_OFF to HealthCopy(
-        "Enforcement is off",
-        "Browsers and X are not gated, but their active use is still counted in your report.",
-        "Turn on",
-        false,
-    ),
     ProtectionHealth.ACCESSIBILITY_REQUIRED to HealthCopy(
         "Accessibility access required",
         "Internet Restrictor cannot protect browsers or X until its service is enabled in Android Settings.",
         "Open Accessibility",
-        false,
-    ),
-    ProtectionHealth.USAGE_ACCESS_RECOMMENDED to HealthCopy(
-        "Usage access recommended",
-        "Real-time protection works, but recovery after an interruption is limited.",
-        "Open Usage Access",
         false,
     ),
     ProtectionHealth.SERVICE_DISCONNECTED to HealthCopy(
@@ -72,12 +60,6 @@ private val healthMessages = mapOf(
     ProtectionHealth.STORAGE_ERROR to HealthCopy(
         "Stored state needs repair",
         "Usage was not reset. Protection is visibly open until the local state can be trusted again.",
-        "Open app info",
-        false,
-    ),
-    ProtectionHealth.RESTRICTED_SETTINGS_BLOCKED to HealthCopy(
-        "Restricted setting blocked",
-        "Open app info, use the three-dot menu, choose Allow restricted settings, then return to Accessibility.",
         "Open app info",
         false,
     ),

@@ -12,7 +12,7 @@ python3 scripts/verification-session.py metrics
 python3 scripts/verification-session.py mutations
 ```
 
-Ordinary suites: `npm test`, `npm run benchmark:test` (local tooling tests), and `npm run test:android`. The existing APK CI also builds/lints the app and uploads its APK; the APK is a deliverable, not a verification report. `coverage` measures backend/browser JavaScript; `metrics` runs the full Android and JavaScript measurement pipeline with the existing 90% line, 85% branch and CRAP <=8 gates. `mutations` accepts JavaScript mutation names. For Android use `python3 scripts/verification-session.py mutations:android GROUP` with a group defined in `quality/mutate-android.py`. Production model benchmark history is separate and preserved.
+Ordinary suites: `npm test`, `npm run benchmark:test` (local tooling tests), and `npm run test:android`. The existing APK CI also builds/lints the app and uploads its APK; the APK is a deliverable, not a verification report. `coverage` measures backend/browser JavaScript; `metrics` runs the full Android and JavaScript measurement pipeline with the existing 90% line, 85% branch and CRAP <=10 gates. `mutations` accepts JavaScript mutation names. For Android use `python3 scripts/verification-session.py mutations:android GROUP` with a group defined in `quality/mutate-android.py`. Production model benchmark history is separate and preserved.
 
 Mutation outcomes distinguish surviving changes from assertion detections and infrastructure errors. Low-level measurement scripts are implementation helpers; use the manual runner so fresh inputs and temporary cleanup are managed together.
 

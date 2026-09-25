@@ -1,7 +1,6 @@
 package com.michalkrsik.internetrestrictor.v1
 
 import androidx.test.platform.app.InstrumentationRegistry
-import com.michalkrsik.internetrestrictor.BuildConfig
 import com.michalkrsik.internetrestrictor.appContainer
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
@@ -17,7 +16,7 @@ class V1PreviewDeviceTest {
     @Test fun draftGpsMeasurementNeverChangesRewardsOrConfiguration() = runBlocking<Unit> {
         assumeTrue(InstrumentationRegistry.getArguments().getString("v1PreviewSmoke") == "true")
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        assertTrue(BuildConfig.IS_V1 && context.packageName.endsWith(".v1dev"))
+        assertTrue(context.packageName.endsWith(".v1dev"))
         val coordinator = context.appContainer.v1
         assertTrue(coordinator.sync())
         val before = context.appContainer.repository.snapshot.value

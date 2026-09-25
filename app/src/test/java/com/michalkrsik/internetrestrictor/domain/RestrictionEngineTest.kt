@@ -69,7 +69,6 @@ class RestrictionEngineTest {
         assertEquals(listOf(3L, 5L, 10L), settings.sessionMinutes)
         assertEquals(ThemePreference.DARK, settings.theme)
         assertEquals(0, engine.budgetSnapshots(initial()).single().limitMinutes)
-        assertEquals(12_000, WaitCalculator.requiredFocusMs(3))
     }
 
     @Test

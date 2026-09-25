@@ -1,12 +1,9 @@
 package com.michalkrsik.internetrestrictor.ui
 
-import androidx.compose.ui.test.assertIsNotEnabled
-import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import com.michalkrsik.internetrestrictor.domain.ThemePreference
-import com.michalkrsik.internetrestrictor.domain.RestrictorSettings
 import org.junit.Assert.assertEquals
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
@@ -49,7 +46,7 @@ class SettingsScreenTest {
 
         composeRule.setContent {
             RestrictorTheme(snapshot.settings.theme) {
-                SettingsScreen(snapshot, {}, {}, {}, {}, {}, {}, {}, {}, {})
+                SettingsScreen(snapshot, {}, {}, {}, {}, {}, {}, {}, {})
             }
         }
 
@@ -74,7 +71,7 @@ class SettingsScreenTest {
         var customized = 0
         composeRule.setContent {
             RestrictorTheme(appearance) {
-                SettingsScreen(snapshot.copy(settings = snapshot.settings.copy(theme = appearance)), {}, { appearance = it }, {}, {}, {}, {}, {}, {}, {}, { customized++ })
+                SettingsScreen(snapshot.copy(settings = snapshot.settings.copy(theme = appearance)), {}, { appearance = it }, {}, {}, {}, {}, {}, {}, { customized++ })
             }
         }
         composeRule.onNodeWithText("CUSTOMIZE TASKS & RULES").performScrollTo().performClick()

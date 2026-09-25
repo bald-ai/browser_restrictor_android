@@ -117,9 +117,8 @@ private fun WelcomeStep() {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         InfoCard(
-            if (com.michalkrsik.internetrestrictor.BuildConfig.IS_V1) "Your setup, connected" else "Local by design",
-            if (com.michalkrsik.internetrestrictor.BuildConfig.IS_V1) "This experimental app has its own backend and installation identity. Settings and short activity summaries sync there. Voice uses OpenAI; activity evidence is sent for verification. Blocking, timers and balances keep working on your phone. No signup is needed."
-            else "Settings and usage stay on this device. Challenge videos are temporarily sent through the owner's verifier and OpenRouter, then deleted. There is no account, advertising ID, or analytics service.",
+            "Your setup, connected",
+            "This experimental app has its own backend and installation identity. Settings and short activity summaries sync there. Voice uses OpenAI; activity evidence is sent for verification. Blocking, timers and balances keep working on your phone. No signup is needed.",
         )
         InfoCard(
             "A gentle boundary",
@@ -137,20 +136,12 @@ private fun DefaultsStep() {
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        if (com.michalkrsik.internetrestrictor.BuildConfig.IS_V1) {
-            InfoCard("Earn your time", "Complete video or GPS tasks to earn credits and browsing minutes. Partial progress from different tasks combines. Today's time and unfinished progress expire at your daily reset.")
-            InfoCard("Make it yours", "Talk to Friction or use ordinary controls to edit tasks, rewards, reset times and waits. Review proposed changes on cards and apply by button or voice. Undo restores the previous values.")
-            InfoCard("Stay in control", "Voice and verification need the internet. GPS recordings save on your phone for later validation. Existing blocking rules continue if your connection drops.")
-        } else {
-        InfoCard("Daily budget", "Choose a daily allowance from 0 to 30 minutes in settings. It arrives at your daily reset; tasks earn extra time.")
-        InfoCard("Earn more", "Every 5 points earns +3 minutes. 1 push-up, 2 machine reps, or 3s plank earns 1 point. Mix exercises; partial points carry until 04:00.")
-        InfoCard("Monthly history", "Every verified push-up is counted in permanent 9th-to-9th monthly history. Plank and machine work stay off that ledger.")
-        InfoCard("Sessions", "Choose 3, 5, or 10 minutes by default. You can customize all three presets in Settings. Every normal opening has one fixed 12-second focused wait.")
-        }
+        InfoCard("Earn your time", "Complete video or GPS tasks to earn credits and browsing minutes. Partial progress from different tasks combines. Today's time and unfinished progress expire at your daily reset.")
+        InfoCard("Make it yours", "Talk to Friction or use ordinary controls to edit tasks, rewards, reset times and waits. Review proposed changes on cards and apply by button or voice. Undo restores the previous values.")
+        InfoCard("Stay in control", "Voice and verification need the internet. GPS recordings save on your phone for later validation. Existing blocking rules continue if your connection drops.")
         InfoCard(
             "Emergency unlock",
-            if (com.michalkrsik.internetrestrictor.BuildConfig.IS_V1) "Your first credit of the day earns one emergency unlock. It opens access immediately without spending your earned browsing time. It starts at 15 minutes; you can change its duration in Customize."
-            else "Each day starts with none. Your first completed exercise set earns one 15-minute emergency unlock for that day. It starts immediately and won’t use earned time.",
+            "Your first credit of the day earns one emergency unlock. It opens access immediately without spending your earned browsing time. It starts at 15 minutes; you can change its duration in Customize.",
         )
     }
 }
@@ -210,7 +201,7 @@ private fun DisclosureCard() {
                 "Draws the pause screen over supported browsers and X.",
                 "Measures active, focused browser and X time in one shared pool.",
                 "Does not inspect URLs, webpages, text, typing, or screenshots.",
-                if (com.michalkrsik.internetrestrictor.BuildConfig.IS_V1) "Keeps blocking and balances on this phone; syncs configuration and short activity summaries to your separate backend." else "Keeps usage and settings on this device.",
+                "Keeps blocking and balances on this phone; syncs configuration and short activity summaries to your separate backend.",
             ).forEach { Text("•  $it", style = MaterialTheme.typography.bodyMedium) }
         }
     }
@@ -221,8 +212,7 @@ private fun UsageStep(granted: Boolean, onOpenUsageAccess: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text(editorialTitle("Improve recovery."), style = MaterialTheme.typography.headlineLarge)
         Text(
-            if (com.michalkrsik.internetrestrictor.BuildConfig.IS_V1) "Usage Access helps check which protected app was active if Android briefly interrupts Friction. Accessibility access runs the live blocking screen."
-            else "Usage Access can help confirm recent browser boundaries after a brief process interruption. It is not used to trigger the gate.",
+            "Usage Access helps check which protected app was active if Android briefly interrupts Friction. Accessibility access runs the live blocking screen.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -239,8 +229,7 @@ private fun UsageStep(granted: Boolean, onOpenUsageAccess: () -> Unit) {
         ) { Text(if (granted) "Usage Access granted ✓" else "Open Usage Access settings") }
         Text(
             if (granted) {
-                if (com.michalkrsik.internetrestrictor.BuildConfig.IS_V1) "Permission granted. Recovery is still limited: time while Friction was interrupted may not be fully accounted for. Your saved rules and balances are kept."
-                else "Permission granted. This personal MVP still reports limited recovery until the store-ready reconciliation suite is validated."
+                "Permission granted. Recovery is still limited: time while Friction was interrupted may not be fully accounted for. Your saved rules and balances are kept."
             } else {
                 "You may continue without it. The dashboard will clearly say Protected with limited recovery."
             },

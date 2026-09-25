@@ -253,7 +253,6 @@ class RestrictionEngine(
             gateSessionId = runtime.gateSessionId,
             outOfTimeLatchToken = runtime.outOfTimeLatchToken,
             pendingWaitId = pending?.id,
-            activeUnlockId = state.activeUnlock?.id,
             activeTarget = runtime.activeTarget,
             settings = state.settings,
             budgetSnapshots = budgets,
@@ -269,7 +268,6 @@ class RestrictionEngine(
             exercisePointSixthsToday = state.dailyCounter.exercisePointSixths,
             verifiedPushupsToday = state.dailyCounter.verifiedPushups,
             sprintMetersRemainder = state.dailyCounter.sprintMetersRemainder,
-            offSessionStartedAtWallMs = state.offUsageReminder.sessionStartedAtWallMs,
             usageReports = state.usageReports,
             todayUsageReport = state.usageReports.firstOrNull {
                 it.localDayKey == PeriodCalculator.keysAt(nowWallMs, zoneId, state.configuration.settings).daily

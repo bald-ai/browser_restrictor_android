@@ -40,7 +40,6 @@ const val MINUTE_MS = 60_000L
 const val HOUR_MS = 60L * MINUTE_MS
 const val DAY_MS = 24L * HOUR_MS
 const val PENDING_WAIT_EXPIRY_MS = DAY_MS
-const val EMERGENCY_UNLOCK_MS = 15L * MINUTE_MS
 const val DAILY_BASE_BUDGET_MINUTES = 0L
 const val EXERCISE_SET_REWARD_MINUTES = 3L
 val PUSHUPS_PER_SET get() = ExercisePolicies.find(ExerciseId.PUSH_UP)!!.unitsPerSet
@@ -48,15 +47,12 @@ val PLANK_SECONDS_PER_SET get() = ExercisePolicies.find(ExerciseId.PLANK)!!.unit
 val MACHINE_REPS_PER_SET get() = ExercisePolicies.find(ExerciseId.OUTDOOR_LAT_PULLDOWN)!!.unitsPerSet
 const val SPRINT_INTENDED_METERS = 150L
 const val SPRINT_SET_QUALIFYING_METERS = 120L
-const val MIN_SPRINT_AVERAGE_SPEED_KMH = 15.0
 const val YOUTUBE_UNLOCK_SETS = 4L
 const val MAX_DAILY_CREDITED_EXERCISE_VERIFICATIONS = 256
 const val EMERGENCY_SKIP_DAILY_LIMIT = 1L
-const val DAILY_RESET_HOUR = 4
 const val MIN_SESSION_MINUTES = 1L
 const val MAX_SESSION_MINUTES = 120L
 val DEFAULT_SESSION_MINUTES = listOf(3L, 5L, 10L)
-const val FIXED_WAIT_MS = 12_000L
 const val MAX_SAFE_MINUTES = Long.MAX_VALUE / MINUTE_MS
 const val MAX_SAFE_BUDGET_ROUNDS =
     (MAX_SAFE_MINUTES - DAILY_BASE_BUDGET_MINUTES) / EXERCISE_SET_REWARD_MINUTES
@@ -92,13 +88,10 @@ enum class HealthAction { NONE, USAGE_ACCESS, ACCESSIBILITY, BROWSER_LISTING, AP
 enum class ProtectionHealth(val action: HealthAction) {
     READY(HealthAction.NONE),
     READY_LIMITED_RECOVERY(HealthAction.USAGE_ACCESS),
-    ENFORCEMENT_OFF(HealthAction.NONE),
     ACCESSIBILITY_REQUIRED(HealthAction.ACCESSIBILITY),
-    USAGE_ACCESS_RECOMMENDED(HealthAction.USAGE_ACCESS),
     SERVICE_DISCONNECTED(HealthAction.ACCESSIBILITY),
     BROWSERS_NOT_FOUND(HealthAction.BROWSER_LISTING),
     STORAGE_ERROR(HealthAction.APP_INFO),
-    RESTRICTED_SETTINGS_BLOCKED(HealthAction.ACCESSIBILITY),
     ADVANCED_PROTECTION_BLOCKED(HealthAction.ADVANCED_PROTECTION_HELP),
 }
 
@@ -306,7 +299,6 @@ data class StateSnapshot(
     val gateSessionId: String?,
     val outOfTimeLatchToken: String?,
     val pendingWaitId: String?,
-    val activeUnlockId: String?,
     val activeTarget: ProtectedTarget?,
     val settings: RestrictorSettings,
     val budgetSnapshots: List<BudgetSnapshot>,
@@ -322,7 +314,6 @@ data class StateSnapshot(
     val exercisePointSixthsToday: Long,
     val verifiedPushupsToday: Long,
     val sprintMetersRemainder: Long,
-    val offSessionStartedAtWallMs: Long,
     val usageReports: List<DailyUsageReport>,
     val todayUsageReport: DailyUsageReport,
     val currentWeekUsageReports: List<DailyUsageReport>,

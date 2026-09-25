@@ -18,16 +18,11 @@ import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.*
 import com.michalkrsik.internetrestrictor.domain.StateSnapshot
 import com.michalkrsik.internetrestrictor.domain.ThemePreference
-import com.michalkrsik.internetrestrictor.ui.components.ExercisePointsProgress
-import com.michalkrsik.internetrestrictor.ui.dashboard.carryExpirationRemainingMs
-import java.time.ZoneId
-import kotlinx.coroutines.delay
 
 /** The approved phone artwork has a 363px content viewport. Scale uniformly by width. */
 @Composable
@@ -113,32 +108,13 @@ fun PulseControlGroup(content: @Composable ColumnScope.() -> Unit) {
 
 @Composable
 fun PulseCarryOver(snapshot: StateSnapshot) {
-    if (com.michalkrsik.internetrestrictor.BuildConfig.IS_V1) {
-        Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                PulseText("PROGRESS TO NEXT CREDIT", 9)
-                PulseText("Resets ${snapshot.configuration.settings.dayReset}", 9, muted = true)
-            }
-            LinearProgressIndicator(progress = { snapshot.taskCreditProgress.toFloat().coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().padding(vertical = 9.dp), color = EditorialTheme.colors.accent, trackColor = EditorialTheme.colors.accent.copy(alpha = 0.15f), drawStopIndicator = {})
-            PulseText("${(snapshot.taskCreditProgress * 100).toInt()}% · any task contributes", 10, muted = true)
+    Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            PulseText("PROGRESS TO NEXT CREDIT", 9)
+            PulseText("Resets ${snapshot.configuration.settings.dayReset}", 9, muted = true)
         }
-        return
-    }
-    var now by remember { mutableLongStateOf(snapshot.wallNowMs) }
-    LaunchedEffect(Unit) { while(true) { now = System.currentTimeMillis(); delay(1000) } }
-    val minutes = carryExpirationRemainingMs(now, ZoneId.systemDefault()) / 60_000
-    Column(Modifier.fillMaxWidth().padding(top = 15.dp, bottom = 3.dp)) {
-        HorizontalDivider(color = EditorialTheme.colors.hairlineSoft)
-        Row(Modifier.fillMaxWidth().padding(top = 15.dp, bottom = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("EXERCISE CARRY-OVER", style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, letterSpacing = .8.sp))
-            Column(horizontalAlignment = Alignment.End) {
-                Text("EXPIRES IN", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp, letterSpacing = .7.sp))
-                Spacer(Modifier.height(5.dp))
-                PulseText("${minutes / 60}h ${minutes % 60}m", 13)
-            }
-        }
-        ExercisePointsProgress(snapshot.exercisePointSixthsToday)
-        HorizontalDivider(Modifier.padding(top = 15.dp), color = EditorialTheme.colors.hairlineSoft)
+        LinearProgressIndicator(progress = { snapshot.taskCreditProgress.toFloat().coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().padding(vertical = 9.dp), color = EditorialTheme.colors.accent, trackColor = EditorialTheme.colors.accent.copy(alpha = 0.15f), drawStopIndicator = {})
+        PulseText("${(snapshot.taskCreditProgress * 100).toInt()}% · any task contributes", 10, muted = true)
     }
 }
 

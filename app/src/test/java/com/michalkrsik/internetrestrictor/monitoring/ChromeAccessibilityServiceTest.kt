@@ -1,7 +1,6 @@
 package com.michalkrsik.internetrestrictor.monitoring
 
 import android.accessibilityservice.AccessibilityService
-import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import android.os.Looper
@@ -12,7 +11,6 @@ import com.michalkrsik.internetrestrictor.domain.*
 import com.michalkrsik.internetrestrictor.fixtures.FixtureApplication
 import com.michalkrsik.internetrestrictor.overlay.OverlayCoordinator
 import com.michalkrsik.internetrestrictor.ui.challenge.*
-import com.michalkrsik.internetrestrictor.ui.sprint.SprintChallengeVisibility
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.cancel
 import org.junit.*
@@ -22,8 +20,6 @@ import org.robolectric.*
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.android.controller.ServiceController
 import org.robolectric.annotation.Config
-import org.robolectric.shadow.api.Shadow
-import org.robolectric.shadows.ShadowContextImpl
 import org.robolectric.util.ReflectionHelpers
 import org.robolectric.util.ReflectionHelpers.ClassParameter.from
 import java.lang.reflect.Proxy
@@ -49,12 +45,10 @@ class ChromeAccessibilityServiceTest {
     @Before fun setup() = runBlocking {
         repository.awaitLoaded(); repository.applyConfiguration(AppConfiguration(revision = 1))
         TaskPickerTransition.pending.value = false
-        ExerciseChallengeVisibility.cancelLaunch(); SprintChallengeVisibility.cancelLaunch()
     }
     @After fun close() {
         controllers.reversed().forEach { it.destroy() }
         TaskPickerTransition.pending.value = false
-        ExerciseChallengeVisibility.cancelLaunch(); SprintChallengeVisibility.cancelLaunch()
         app.fixtureScope.cancel()
     }
     private fun service(connect: Boolean = true): ChromeAccessibilityService {
@@ -82,7 +76,7 @@ class ChromeAccessibilityServiceTest {
         val service = service(connect = false)
         call(service, "removeOverlays")
         val gate = com.michalkrsik.internetrestrictor.overlay.GateOverlayController(app, manager, repository,
-            app.fixtureScope, {}, {}, {}, {}, { throw it })
+            app.fixtureScope, {}, {}, {}, { throw it })
         val badge = com.michalkrsik.internetrestrictor.overlay.BadgeOverlayController(app, manager, repository, { throw it })
         val monitor = BrowserForegroundMonitor(service)
         ReflectionHelpers.setField(service, "gateController", gate)
@@ -155,12 +149,6 @@ class ChromeAccessibilityServiceTest {
         assertNull(shadowOf(service).nextStartedActivity)
         tick(1_500)
         assertFalse(TaskPickerTransition.pending.value)
-        call(service, "openSprintChallenge")
-        assertTrue(SprintChallengeVisibility.active.value)
-        val intent = shadowOf(service).nextStartedActivity
-        assertEquals("com.android.chrome", intent.getStringExtra("return_package"))
-        assertTrue(intent.component!!.className.endsWith("SprintChallengeActivity"))
-        tick(1_500)
-        assertFalse(SprintChallengeVisibility.active.value)
+
     }
 }

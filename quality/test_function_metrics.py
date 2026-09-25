@@ -59,14 +59,14 @@ class FunctionSummaryTest(unittest.TestCase):
         summary = summarize_functions([
             dict(classification='abstract-declaration', complexity=None, crap=None),
             dict(classification='executable', complexity=1, crap=None),
-            dict(classification='executable', complexity=5, crap=8.5),
+            dict(classification='executable', complexity=5, crap=10.5),
         ])
         self.assertEqual(3, summary['functions'])
         self.assertEqual(2, summary['executableFunctions'])
         self.assertEqual(1, summary['nonExecutableDeclarations'])
         self.assertEqual(1, summary['unmappedFunctions'])
-        self.assertEqual(1, summary['crapAbove8'])
-        self.assertEqual(8.5, summary['maxCrap'])
+        self.assertEqual(1, summary['crapAboveLimit'])
+        self.assertEqual(10.5, summary['maxCrap'])
 
     def test_unclassified_javascript_functions_still_fail_when_unmapped(self):
         self.assertEqual(1, summarize_functions([dict(complexity=1, crap=None)])['unmappedFunctions'])

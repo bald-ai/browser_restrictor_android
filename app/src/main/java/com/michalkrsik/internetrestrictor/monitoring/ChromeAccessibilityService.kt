@@ -1,6 +1,5 @@
 package com.michalkrsik.internetrestrictor.monitoring
 
-import com.michalkrsik.internetrestrictor.ui.challenge.ChallengeVisibility
 import android.accessibilityservice.AccessibilityService
 import android.app.KeyguardManager
 import android.content.BroadcastReceiver
@@ -8,7 +7,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.res.Configuration
-import android.os.Build
 import android.os.PowerManager
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
@@ -21,10 +19,6 @@ import com.michalkrsik.internetrestrictor.domain.StateSnapshot
 import com.michalkrsik.internetrestrictor.overlay.BadgeOverlayController
 import com.michalkrsik.internetrestrictor.overlay.GateOverlayController
 import com.michalkrsik.internetrestrictor.overlay.OverlayCoordinator
-import com.michalkrsik.internetrestrictor.ui.challenge.ExerciseChallengeActivity
-import com.michalkrsik.internetrestrictor.ui.challenge.ExerciseChallengeVisibility
-import com.michalkrsik.internetrestrictor.ui.sprint.SprintChallengeActivity
-import com.michalkrsik.internetrestrictor.ui.sprint.SprintChallengeVisibility
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -81,7 +75,6 @@ class ChromeAccessibilityService(private val overlayWindowManager: WindowManager
             repository = repository,
             scope = serviceScope,
             onExerciseChallenge = ::openExerciseChallenge,
-            onSprintChallenge = ::openSprintChallenge,
             onLeaveBrowser = ::leaveBrowser,
             onFocusChanged = ::onGateFocusChanged,
             onAttachFailure = ::onOverlayAttachFailure,
@@ -174,13 +167,11 @@ class ChromeAccessibilityService(private val overlayWindowManager: WindowManager
         renderJob = serviceScope.launch {
             combine(
                 repository.snapshot,
-                ExerciseChallengeVisibility.active,
-                SprintChallengeVisibility.active,
                 com.michalkrsik.internetrestrictor.ui.challenge.TaskPickerTransition.pending,
-            ) { snapshot, exerciseActive, sprintActive, _ ->
-                snapshot to (exerciseActive || sprintActive)
-            }.collect { (snapshot, challengeActive) ->
-                overlayCoordinator.render(targetFor(snapshot, challengeActive))
+            ) { snapshot, _ ->
+                snapshot
+            }.collect { snapshot ->
+                overlayCoordinator.render(targetFor(snapshot))
             }
         }
     }
@@ -267,41 +258,6 @@ class ChromeAccessibilityService(private val overlayWindowManager: WindowManager
         } catch (error: Exception) {
             transition.pending.value = false
             eventLog.record("Task picker launch failed: ${error.javaClass.simpleName}")
-        }
-    }
-
-    private fun openSprintChallenge() = launchChallenge(
-        SprintChallengeActivity::class.java, SprintChallengeVisibility, "Sprint",
-    )
-
-    private fun launchChallenge(
-        activity: Class<out android.app.Activity>,
-        visibility: ChallengeVisibility,
-        label: String,
-    ) {
-        eventLog.record("$label challenge requested")
-        visibility.prepareLaunch()
-        val intent = Intent(this, activity).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            foregroundMonitor.lastProtectedPackageName?.let { putExtra("return_package", it) }
-        }
-        try {
-            // Launch while the interactive gate is still attached for Android background-launch rules.
-            startActivity(intent)
-            overlayCoordinator.render(OverlayCoordinator.Target.CHALLENGE)
-            challengeLaunchWatchdogJob?.cancel()
-            challengeLaunchWatchdogJob = serviceScope.launch {
-                delay(CHALLENGE_LAUNCH_TIMEOUT_MS)
-                if (!visibility.activityStarted.value) {
-                    eventLog.record("$label challenge did not become visible; gate restored")
-                    visibility.cancelLaunch()
-                    renderCurrentOverlayState()
-                }
-            }
-        } catch (error: Exception) {
-            eventLog.record("$label challenge launch failed: ${error.javaClass.simpleName}")
-            visibility.cancelLaunch()
-            renderCurrentOverlayState()
         }
     }
 
@@ -410,16 +366,13 @@ class ChromeAccessibilityService(private val overlayWindowManager: WindowManager
 
     private fun renderCurrentOverlayState() {
         if (!::overlayCoordinator.isInitialized) return
-        val challengeActive = ExerciseChallengeVisibility.active.value || SprintChallengeVisibility.active.value
-        overlayCoordinator.render(targetFor(repository.snapshot.value, challengeActive))
+        overlayCoordinator.render(targetFor(repository.snapshot.value))
     }
 
     private fun targetFor(
         snapshot: StateSnapshot,
-        challengeActive: Boolean,
     ): OverlayCoordinator.Target = when {
         com.michalkrsik.internetrestrictor.ui.challenge.TaskPickerTransition.pending.value -> OverlayCoordinator.Target.GATE
-        challengeActive -> OverlayCoordinator.Target.CHALLENGE
         leaveRearmGuard.suppressingOverlays -> OverlayCoordinator.Target.HIDDEN
         snapshot.usesFullGate -> OverlayCoordinator.Target.GATE
         snapshot.usesBadge -> OverlayCoordinator.Target.BADGE

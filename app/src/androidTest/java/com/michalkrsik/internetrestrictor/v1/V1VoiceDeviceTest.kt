@@ -6,7 +6,6 @@ import android.webkit.WebView
 import android.util.Base64
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
-import com.michalkrsik.internetrestrictor.BuildConfig
 import com.michalkrsik.internetrestrictor.appContainer
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
@@ -29,7 +28,7 @@ class V1VoiceDeviceTest {
 
     @Test fun recordedSpeechReviewButtonAndNativeAck() = runBlocking {
         assumeTrue("Set -e v1VoiceSmoke true to run the paid Live test", InstrumentationRegistry.getArguments().getString("v1VoiceSmoke") == "true")
-        assertTrue(BuildConfig.IS_V1)
+
         assertTrue(context.packageName.endsWith(".v1dev"))
         val audioFile = File(context.filesDir, "v1-voice-request.wav")
         assertTrue("Push the 'Please set my waiting time to five seconds' WAV first", audioFile.exists())
@@ -197,7 +196,7 @@ class V1VoiceDeviceTest {
 
     @Test fun spokenCancellationDiscardsWorkWhileCallStaysOpen() = runBlocking<Unit> {
         assumeTrue("Paid opt-in voice test", InstrumentationRegistry.getArguments().getString("v1VoiceSmoke") == "true")
-        assertTrue(BuildConfig.IS_V1 && context.packageName.endsWith(".v1dev"))
+        assertTrue(context.packageName.endsWith(".v1dev"))
         assertTrue(coordinator.sync())
         val originalWait = repository.snapshot.value.configuration.settings.waitSeconds
         val requestAudio = File(context.filesDir, "v1-voice-request.wav")

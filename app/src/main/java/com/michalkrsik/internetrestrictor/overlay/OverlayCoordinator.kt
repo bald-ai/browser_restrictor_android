@@ -4,7 +4,7 @@ package com.michalkrsik.internetrestrictor.overlay
  * The single owner of both Accessibility overlays.
  *
  * Controllers only deal with WindowManager mechanics. This coordinator owns which overlay
- * is allowed to exist, including challenge suppression and the bounded Leave transition.
+ * is allowed to exist, including the bounded Leave transition.
  */
 class OverlayCoordinator(
     private val gateController: GateOverlayController,
@@ -15,7 +15,6 @@ class OverlayCoordinator(
         HIDDEN,
         GATE,
         BADGE,
-        CHALLENGE,
         LEAVING,
     }
 
@@ -73,9 +72,9 @@ class OverlayCoordinator(
                 gateController.hide()
                 badgeController.show()
             }
-            Target.HIDDEN, Target.CHALLENGE -> {
+            Target.HIDDEN -> {
                 onGateVisibilityChanged(false)
-                gateController.hide(requested != Target.CHALLENGE)
+                gateController.hide()
                 badgeController.hide()
             }
             Target.LEAVING -> Unit

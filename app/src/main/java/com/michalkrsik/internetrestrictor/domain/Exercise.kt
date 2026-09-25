@@ -6,22 +6,12 @@ enum class ExerciseId(val wireId: String) {
     OUTDOOR_LAT_PULLDOWN("outdoor_lat_pulldown"),
     SIT_UP("sit_up"),
     UNSUPPORTED("unsupported"),
-    ;
-
-    companion object {
-        fun fromWireId(value: String?): ExerciseId? = entries.firstOrNull { it.wireId == value }
-    }
 }
 
 enum class ExerciseMetric(val wireId: String) {
     REPETITIONS("repetitions"),
     HOLD_SECONDS("hold_seconds"),
     NONE("none"),
-    ;
-
-    companion object {
-        fun fromWireId(value: String?): ExerciseMetric? = entries.firstOrNull { it.wireId == value }
-    }
 }
 
 data class ExercisePolicy(
@@ -73,12 +63,6 @@ object ExercisePolicies {
     )
 
     fun find(id: ExerciseId): ExercisePolicy? = credited.firstOrNull { it.id == id }
-
-    fun requiresMetric(id: ExerciseId): ExerciseMetric = find(id)?.metric ?: when (id) {
-        ExerciseId.SIT_UP -> ExerciseMetric.REPETITIONS
-        ExerciseId.UNSUPPORTED -> ExerciseMetric.NONE
-        else -> error("Missing exercise policy for $id")
-    }
 }
 
 data class ExerciseAccumulation(
@@ -104,9 +88,3 @@ const val EXERCISE_POINT_SIXTHS_PER_BOOST = 30L
 
 fun exercisePointSixthsPerUnit(id: ExerciseId): Long =
     requireNotNull(ExercisePolicies.find(id)) { "Exercise does not earn points" }.pointSixthsPerUnit
-
-fun formatExercisePoints(sixths: Long): String =
-    java.math.BigDecimal.valueOf(sixths)
-        .divide(java.math.BigDecimal.valueOf(6), 2, java.math.RoundingMode.HALF_UP)
-        .stripTrailingZeros()
-        .toPlainString()

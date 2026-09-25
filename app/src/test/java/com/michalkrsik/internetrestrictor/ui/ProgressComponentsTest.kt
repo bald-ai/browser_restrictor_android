@@ -2,8 +2,6 @@ package com.michalkrsik.internetrestrictor.ui
 
 import android.app.Application
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.ui.semantics.ProgressBarRangeInfo
-import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.michalkrsik.internetrestrictor.domain.*
@@ -19,23 +17,6 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35], application = Application::class)
 class ProgressComponentsTest {
     @get:Rule val compose = createComposeRule()
-
-    @Test fun exerciseProgressClampsValuesAndHelpOpensAndClosesInline() {
-        val sixths = mutableStateOf(-1L)
-        compose.setContent { RestrictorTheme(ThemePreference.LIGHT) { ExercisePointsProgress(sixths.value) } }
-        val progress = compose.onNodeWithContentDescription("Exercise points toward a 3-minute boost")
-        for ((value, expected) in listOf(-1L to 0f, 0L to 0f, 6L to 1f, 15L to 2.5f, 30L to 5f, 31L to 5f)) {
-            compose.runOnIdle { sixths.value = value }
-            progress.assert(SemanticsMatcher.expectValue(SemanticsProperties.ProgressBarRangeInfo, ProgressBarRangeInfo(expected, 0f..5f)))
-        }
-        compose.onNodeWithContentDescription("How exercise points work").performClick()
-        compose.onNodeWithText("Exercise points").assertIsDisplayed()
-        compose.onNodeWithText("Got it").performClick()
-        compose.onNodeWithText("Exercise points").assertDoesNotExist()
-        compose.onNodeWithContentDescription("How exercise points work").performClick()
-        compose.onNodeWithContentDescription("How exercise points work").performClick()
-        compose.onNodeWithText("Exercise points").assertDoesNotExist()
-    }
 
     @Test fun disabledForcedExhaustedWarningAndUnboundedBudgetsHaveAccurateAccessibleCopy() {
         val budget = mutableStateOf(BudgetSnapshot(BudgetPeriod.DAILY, true, 60_000, 0, 60_000, 0, false))
@@ -57,13 +38,10 @@ class ProgressComponentsTest {
         compose.onNodeWithText("Current day").assertDoesNotExist()
     }
 
-    @Test fun formattingBoundariesAndExerciseMetricsRetainTheirPublicMeaning() {
+    @Test fun formattingBoundariesRetainTheirPublicMeaning() {
         val examples = listOf(-1L to "less than a minute", 59_999L to "less than a minute", 60_000L to "1 min", 60_001L to "2 min", 3_600_000L to "1 hr", 3_660_000L to "1 hr 1 min")
         for ((value, formatted) in examples) assertEquals(formatted, formatLongTime(value))
         assertEquals("0m", formatReportTime(-1)); assertEquals("<1m", formatReportTime(1))
-        assertEquals("daily", BudgetPeriod.DAILY.lowerLabel()); assertEquals("Today", BudgetPeriod.DAILY.friendlyLabel())
-        for (id in listOf(ExerciseId.PUSH_UP, ExerciseId.OUTDOOR_LAT_PULLDOWN, ExerciseId.SIT_UP)) assertEquals(ExerciseMetric.REPETITIONS, ExercisePolicies.requiresMetric(id))
-        assertEquals(ExerciseMetric.HOLD_SECONDS, ExercisePolicies.requiresMetric(ExerciseId.PLANK))
-        assertEquals(ExerciseMetric.NONE, ExercisePolicies.requiresMetric(ExerciseId.UNSUPPORTED))
+        assertEquals("Today", BudgetPeriod.DAILY.friendlyLabel())
     }
 }

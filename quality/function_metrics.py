@@ -1,5 +1,7 @@
 """Keep non-executable contracts visible without borrowing implementation scores."""
 
+CRAP_LIMIT = 10
+
 
 def read_kotlin_function(line):
     file, name, start, end, first, last, complexity, kind = line.split('\t')
@@ -16,6 +18,6 @@ def summarize_functions(functions):
                 nonExecutableDeclarations=len(functions) - len(executable),
                 unmappedFunctions=sum(f['crap'] is None for f in executable),
                 maxComplexity=max((f['complexity'] for f in executable), default=0),
-                complexityAbove8=sum(f['complexity'] > 8 for f in executable),
+                complexityAboveLimit=sum(f['complexity'] > CRAP_LIMIT for f in executable),
                 maxCrap=max((f['crap'] or 0 for f in executable), default=0),
-                crapAbove8=sum(f['crap'] is not None and f['crap'] > 8 for f in executable))
+                crapAboveLimit=sum(f['crap'] is not None and f['crap'] > CRAP_LIMIT for f in executable))

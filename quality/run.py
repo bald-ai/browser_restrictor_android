@@ -56,10 +56,10 @@ report={'runId':run_id,'sourceUnchanged':unchanged,'sourceSha256':before,'steps'
 if not unchanged:raise RuntimeError('Source changed during verification; discard joined metrics and rerun.')
 if any(step['name']=='metrics' and step['exit']==0 for step in results):
  summary=json.loads((root/'quality/metrics/summary.json').read_text())
- print('Component | Line coverage | Branch coverage | Maximum CRAP | Above 8 | Unmapped | Non-executable declarations',flush=True)
+ print('Component | Line coverage | Branch coverage | Maximum CRAP | Above limit | Unmapped | Non-executable declarations',flush=True)
  for component in ['android','server','browser']:
   item=summary[component]
-  print(f"{component} | {item['coverage']['lines']['pct']:.2f}% | {item['coverage']['branches']['pct']:.2f}% | {item['maxCrap']:.4f} | {item['crapAbove8']} | {item['unmappedFunctions']} | {item['nonExecutableDeclarations']}",flush=True)
+  print(f"{component} | {item['coverage']['lines']['pct']:.2f}% | {item['coverage']['branches']['pct']:.2f}% | {item['maxCrap']:.4f} | {item['crapAboveLimit']} | {item['unmappedFunctions']} | {item['nonExecutableDeclarations']}",flush=True)
  print('Non-executable inventory:', summary['nonExecutableDeclarations'],flush=True)
  print('Android raw bytecode branches:',summary['android']['coverage']['bytecodeBranches'],flush=True)
  print('Source unchanged:',unchanged,flush=True)

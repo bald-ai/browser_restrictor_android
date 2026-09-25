@@ -64,7 +64,7 @@ class OverlayControllersTest {
             else -> error("Unexpected framework request: ${method.name}")
         }
     } as WindowManager
-    private val gate = GateOverlayController(context, manager, repository, scope, {}, {}, { leaves++ }, focuses::add, failures::add)
+    private val gate = GateOverlayController(context, manager, repository, scope, {}, { leaves++ }, focuses::add, failures::add)
     private val badge = BadgeOverlayController(context, manager, repository, failures::add)
 
     @After fun close() { gate.hide(); badge.hide(); scope.cancel() }
@@ -89,7 +89,7 @@ class OverlayControllersTest {
     }
 
     @Test fun gateIsFullSizeOpaqueAndFocusedAndBackDispatchesTheLeaveAction() {
-        gate.hide(); gate.recreateForConfigurationChange()
+        gate.hide()
         gate.show(); gate.show()
         assertTrue(gate.isShowing)
         assertEquals(1, attached.size)
@@ -149,8 +149,10 @@ class OverlayControllersTest {
         badge.refreshForConfigurationChange()
         assertTrue(badge.isShowing)
         gate.show()
-        gate.recreateForConfigurationChange()
+        val gateView = attached.keys.single { it != view }
+        OverlayCoordinator(gate, badge) {}.onConfigurationChanged()
         assertTrue(gate.isShowing)
+        assertTrue("Configuration changes keep the existing gate attached", attached.containsKey(gateView))
         assertTrue(focuses.isEmpty())
     }
 
@@ -165,7 +167,7 @@ class OverlayControllersTest {
         coordinator.render(OverlayCoordinator.Target.BADGE)
         assertFalse(gate.isShowing); assertTrue(badge.isShowing)
         coordinator.onConfigurationChanged()
-        coordinator.render(OverlayCoordinator.Target.CHALLENGE)
+        coordinator.render(OverlayCoordinator.Target.HIDDEN)
         assertFalse(gate.isShowing); assertFalse(badge.isShowing)
         coordinator.render(OverlayCoordinator.Target.GATE)
         coordinator.beginLeaving(); coordinator.beginLeaving()

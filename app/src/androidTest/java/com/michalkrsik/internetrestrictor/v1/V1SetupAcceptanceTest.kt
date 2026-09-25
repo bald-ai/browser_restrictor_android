@@ -6,7 +6,6 @@ import android.view.ViewGroup
 import android.webkit.WebView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
-import com.michalkrsik.internetrestrictor.BuildConfig
 import com.michalkrsik.internetrestrictor.appContainer
 import com.michalkrsik.internetrestrictor.data.ConfigurationJson
 import kotlinx.coroutines.runBlocking
@@ -54,7 +53,7 @@ class V1SetupAcceptanceTest {
 
  @Test fun allSettingsAndTaskLifecycle()=runBlocking<Unit>{
   assumeTrue(InstrumentationRegistry.getArguments().getString("v1SetupAcceptance")=="true")
-  assertTrue(BuildConfig.IS_V1);assertEquals("com.michalkrsik.browserrestrictor.v1dev",context.packageName);assertTrue(v1.sync());assertNull("Do not overwrite a user's pending review",pending())
+  assertEquals("com.michalkrsik.browserrestrictor.v1dev",context.packageName);assertTrue(v1.sync());assertNull("Do not overwrite a user's pending review",pending())
   val original=v1.api.request("/config").getJSONObject("config");File(context.filesDir,"setup-original.json").writeText(original.toString(2));report.put("startedAt",System.currentTimeMillis()).put("original",original)
   try{
    open()
@@ -105,7 +104,7 @@ class V1SetupAcceptanceTest {
   v1.api.request("/attempts",attempt);val result=v1.saveVideo(attempt,copy,now);assertEquals(2,result.getInt("measuredUnits"));assertTrue(repo.snapshot.value.taskReceipts.any{it.measurement.attemptId==result.getString("attemptId")});pass("Real push-up video submitted from phone and consumed by native reward ledger",result);return result
  }
  @Test fun realRuntimeRewardsAndResets()=runBlocking<Unit>{
-  assumeTrue(InstrumentationRegistry.getArguments().getString("v1SetupRuntime")=="true");assertTrue(BuildConfig.IS_V1);assertEquals("com.michalkrsik.browserrestrictor.v1dev",context.packageName);assertTrue(v1.sync());assertNull(pending())
+  assumeTrue(InstrumentationRegistry.getArguments().getString("v1SetupRuntime")=="true");assertEquals("com.michalkrsik.browserrestrictor.v1dev",context.packageName);assertTrue(v1.sync());assertNull(pending())
   val original=v1.api.request("/config").getJSONObject("config");File(context.filesDir,"setup-runtime-original.json").writeText(original.toString(2))
   val originalServices=shell("settings get secure enabled_accessibility_services").trim();val originalAuto=originalServices.split(':').filterNot{it.contains("com.michalkrsik.browserrestrictor/")||it.contains("com.michalkrsik.browserrestrictor.v1dev/")}.joinToString(":")
   report.put("originalServices",originalServices);assertTrue("Existing accessibility services must be captured",originalServices.contains("com.wispr.flowapp"));val receipts=mutableListOf<String>();report.put("startedAt",System.currentTimeMillis()).put("before",nativeSnapshot());assertEquals("No real dev rewards may be present before reset test",0L,repo.snapshot.value.earnedBudgetRoundsToday)
@@ -137,7 +136,7 @@ class V1SetupAcceptanceTest {
  }
 
  @Test fun agentGroupedSetupAndNativeTaskRouting()=runBlocking<Unit>{
-  assumeTrue(InstrumentationRegistry.getArguments().getString("v1SetupAgent")=="true");assertTrue(BuildConfig.IS_V1);assertEquals("com.michalkrsik.browserrestrictor.v1dev",context.packageName);assertTrue(v1.sync());assertNull(pending());val original=v1.api.request("/config").getJSONObject("config")
+  assumeTrue(InstrumentationRegistry.getArguments().getString("v1SetupAgent")=="true");assertEquals("com.michalkrsik.browserrestrictor.v1dev",context.packageName);assertTrue(v1.sync());assertNull(pending());val original=v1.api.request("/config").getJSONObject("config")
   report.put("startedAt",System.currentTimeMillis())
   fun chat(message:String){js("document.getElementById('message').value=${JSONObject.quote(message)};document.getElementById('chatForm').requestSubmit()");waitFor("agent response",120000){!state().optBoolean("busy")&&eval("document.getElementById('send').disabled")=="false"};pass("Actual phone chat response",state().getJSONArray("messages"))}
   try{
@@ -163,11 +162,11 @@ class V1SetupAcceptanceTest {
  }
 
  @Test fun stageProcessRestartProbe()=runBlocking<Unit>{
-  assumeTrue(InstrumentationRegistry.getArguments().getString("v1SetupPersistence")=="true");assertTrue(BuildConfig.IS_V1);assertTrue(v1.sync());assertNull(pending());val original=v1.api.request("/config").getJSONObject("config");File(context.filesDir,"setup-restart-original.json").writeText(original.toString())
+  assumeTrue(InstrumentationRegistry.getArguments().getString("v1SetupPersistence")=="true");assertTrue(v1.sync());assertNull(pending());val original=v1.api.request("/config").getJSONObject("config");File(context.filesDir,"setup-restart-original.json").writeText(original.toString())
   try{open();apply(settings(JSONObject().put("waitSeconds",9).put("minutesPerCredit",6).put("sessionMinutes","2, 4, 6").put("dailyBudgetMinutes",20).put("dayReset","05:15").put("youtubeCredits",3).put("emergencyMinutes",8).put("creditName","tokens").put("unlockLabel","Open calmly").put("youtubeUnlockLabel","Open video").put("emergencyUnlockLabel","Use a break")));File(context.filesDir,"setup-restart-expected.json").writeText(state().toString());pass("Eleven non-default settings saved for process-death probe");report.put("passed",true)}catch(e:Throwable){restore(original);throw e}finally{scenario?.close();File(context.filesDir,"setup-restart-stage.json").writeText(report.toString(2))}
  }
  @Test fun verifyProcessRestartProbe()=runBlocking<Unit>{
-  assumeTrue(InstrumentationRegistry.getArguments().getString("v1SetupPersistence")=="true");assertTrue(BuildConfig.IS_V1);val original=JSONObject(File(context.filesDir,"setup-restart-original.json").readText());val expected=ConfigurationJson.parseConfiguration(JSONObject(File(context.filesDir,"setup-restart-expected.json").readText()))
+  assumeTrue(InstrumentationRegistry.getArguments().getString("v1SetupPersistence")=="true");val original=JSONObject(File(context.filesDir,"setup-restart-original.json").readText());val expected=ConfigurationJson.parseConfiguration(JSONObject(File(context.filesDir,"setup-restart-expected.json").readText()))
   try{val disk=File(context.filesDir,"datastore/restrictor_state.bin").inputStream().use{com.michalkrsik.internetrestrictor.data.AppStateSerializer.readFrom(it)};assertEquals(expected,disk.configuration);repo.awaitLoaded();assertEquals(expected,repo.snapshot.value.configuration);open();assertEquals(expected,repo.snapshot.value.configuration);click("#setupTab");assertTrue(str("document.getElementById('settingsList').textContent").contains("Open calmly"));screenshot("restart-persisted");pass("Actual process restart preserves all eleven settings in disk, native state and visible setup",ConfigurationJson.settingsJson(expected.settings));report.put("passed",true)}finally{scenario?.close();restore(original);report.put("originalRestored",true);File(context.filesDir,"setup-restart-verified.json").writeText(report.toString(2))}
  }
 
