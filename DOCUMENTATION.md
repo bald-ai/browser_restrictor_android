@@ -68,7 +68,6 @@ restart/deployment.
 - `app/src/main/java/com/michalkrsik/internetrestrictor/domain/RestrictionEngine.kt`: reward application and restriction rules.
 - `design-preview/`: historical React design mockup; not the shipped Android UI.
 - `prototypes/`: historical experiments; not maintained product code.
-- `validation_artifacts/` and `review-reports/`: historical captures and review evidence.
 
 ## Challenge reliability and limits
 
@@ -187,9 +186,6 @@ To run the Compose instrumentation tests on a connected emulator or device:
 ```bash
 ./gradlew connectedDebugAndroidTest
 ```
-
-The captures in `validation_artifacts/` predate this redesign and are retained only as a baseline. They are not current visual proof of the daily-only earned-budget flow.
-
 ## Architecture
 
 - `domain/`: pure restriction engine, local-day math, fixed wait rules, and immutable state models.
