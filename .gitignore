@@ -16,6 +16,9 @@
 !/AGENTS.md
 !/AGENT_CAPABILITIES.md
 
+# Keep project development documentation in Git.
+!/Dev/**/*.md
+
 .DS_Store
 node_modules/
 
