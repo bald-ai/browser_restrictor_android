@@ -1,9 +1,14 @@
-node_modules/
-data/
-.env
-results/
+# Dependencies, local runtime data, and generated benchmark output.
+/node_modules/
+/data/
+/results/
 
-# Railway treats this directory as its archive root. Include runtime docs here
-# as well as in the repository's Markdown allowlist.
-!/docs/
-!/docs/*.md
+# Local credentials; sanitized examples remain versioned.
+.env
+.env.*
+!.env.example
+!.env.*.example
+!.env.sample
+!.env.*.sample
+!.env.template
+!.env.*.template
