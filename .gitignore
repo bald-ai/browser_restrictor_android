@@ -19,6 +19,11 @@
 # Keep project development documentation in Git.
 !/Dev/**/*.md
 
+# Keep backend setup, benchmark analyses, and launch copy in Git.
+!/backend-v1/README.md
+!/benchmarks/friction/analyses/**/*.md
+!/launch/product-hunt/copy.md
+
 .DS_Store
 node_modules/
 
