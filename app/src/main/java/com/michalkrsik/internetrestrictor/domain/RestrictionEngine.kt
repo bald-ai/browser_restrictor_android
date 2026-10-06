@@ -41,6 +41,7 @@ class RestrictionEngine(
         accept(normalizeDailyCounter(state, dayKey, nowWallMs, zoneId))
         accept(migrateLegacyExercisePoints(state, dayKey))
         accept(expireAccess(state, nowWallMs))
+        accept(forgivePartialMinute(state))
         accept(pruneHistory(state, dayKey))
         return if (revisionRelevant) state.copy(stateRevision = nextRevision(state.stateRevision)) else state
     }
@@ -138,6 +139,14 @@ class RestrictionEngine(
         }
 
         return state
+    }
+
+    /** A normal unlock is charged only for completed minutes; its unfinished minute is dropped when it ends. */
+    private fun forgivePartialMinute(state: PersistedState): PersistedState {
+        if (state.activeUnlock?.source == UnlockSource.NORMAL) return state
+        val usedMs = state.dailyUsage.usedMs
+        val wholeMs = usedMs - usedMs % MINUTE_MS
+        return if (wholeMs == usedMs) state else state.copy(dailyUsage = state.dailyUsage.copy(usedMs = wholeMs))
     }
 
     private fun pruneHistory(input: PersistedState, dayKey: String): PersistedState {
@@ -365,7 +374,7 @@ class RestrictionEngine(
         if (underlyingMode(state, runtime, nowWallMs) != GateMode.PAUSED) {
             return rejected(state, "The browser is no longer paused")
         }
-        if (requestedMinutes !in state.settings.sessionMinutes) {
+        if (!SessionOptions.allows(state.settings.sessionMinutes, budgetSnapshots(state), requestedMinutes)) {
             return rejected(state, "Unsupported session duration")
         }
         val selectedDuration = safeMinutesToMs(requestedMinutes)
@@ -438,7 +447,7 @@ class RestrictionEngine(
             id = idGenerator.nextId(),
             source = UnlockSource.NORMAL,
             grantedAtWallMs = nowWallMs,
-            expiresAtWallMs = Math.addExact(nowWallMs, pending.selectedDurationMs),
+            expiresAtWallMs = Math.addExact(nowWallMs, cappedSessionMs(state, pending.selectedDurationMs)),
         )
         return CommandResult.Applied(
             state.copy(
@@ -447,6 +456,12 @@ class RestrictionEngine(
                 pendingWait = null,
             ),
         )
+    }
+
+    /** A normal window never outlasts the whole budget minutes left when it starts. */
+    private fun cappedSessionMs(state: PersistedState, selectedMs: Long): Long {
+        val availableMinutes = SessionOptions.availableWholeMinutes(budgetSnapshots(state)) ?: return selectedMs
+        return minOf(selectedMs, safeMinutesToMs(availableMinutes)).coerceAtLeast(MINUTE_MS)
     }
 
     private fun RuntimeSignals.focusedGateMatches(expectedGateSessionId: String?): Boolean =
@@ -855,10 +870,10 @@ class RestrictionEngine(
     ): PersistedState {
         val state = normalize(input, nowWallMs, zoneId)
         if (state.activeUnlock == null) return state
-        return state.copy(
+        return forgivePartialMinute(state.copy(
             stateRevision = nextRevision(state.stateRevision),
             activeUnlock = null,
-        )
+        ))
     }
 
     private fun addReportInterval(

@@ -207,17 +207,18 @@ class RestrictionEngineTest {
     @Test
     fun startWaitUsesSnapshotRevisionAndCreatesFixedCost() {
         val state = initialWithBudget()
-        val result = engine.startWait(state, ready, state.stateRevision, 5, now, zone)
+        val result = engine.startWait(state, ready, state.stateRevision, 3, now, zone)
         assertTrue(result is CommandResult.Applied)
         val pending = (result as CommandResult.Applied).state.pendingWait
         assertNotNull(pending)
         assertEquals(12_000, pending!!.requiredFocusMs)
-        assertEquals(5 * MINUTE_MS, pending.selectedDurationMs)
+        assertEquals(3 * MINUTE_MS, pending.selectedDurationMs)
     }
 
     @Test
     fun startWaitUsesCustomizedSessionPresets() {
-        val state = initialWithBudget(RestrictorSettings(sessionMinutes = listOf(1L, 45L, 120L)))
+        val earned = initialWithBudget(RestrictorSettings(sessionMinutes = listOf(1L, 45L, 120L)))
+        val state = earned.copy(dailyCounter = earned.dailyCounter.copy(grantedBudgetMinutes = 60))
 
         val accepted = engine.startWait(state, ready, state.stateRevision, 45, now, zone)
         assertTrue(accepted is CommandResult.Applied)
@@ -238,7 +239,7 @@ class RestrictionEngineTest {
     @Test
     fun unfocusedWaitDoesNotAdvance() {
         val state = initialWithBudget()
-        val started = applied(engine.startWait(state, ready, state.stateRevision, 10, now, zone))
+        val started = applied(engine.startWait(state, ready, state.stateRevision, 3, now, zone))
         val result = engine.advanceWait(
             started,
             ready.copy(gateFocused = false),
@@ -254,7 +255,7 @@ class RestrictionEngineTest {
     @Test
     fun focusedCompletionIsAtomic() {
         val start = initialWithBudget()
-        val waiting = applied(engine.startWait(start, ready, start.stateRevision, 10, now, zone))
+        val waiting = applied(engine.startWait(start, ready, start.stateRevision, 3, now, zone))
         val completed = applied(
             engine.advanceWait(waiting, ready, 12_000, now + 12_000, zone, "gate-1"),
         )
@@ -278,7 +279,7 @@ class RestrictionEngineTest {
     fun emergencySkipClearsWaitWithoutChangingEarnedBudget() {
         val start = initial()
         val earnedStart = applied(engine.earnPushupBudget(start, now, zone))
-        val waiting = applied(engine.startWait(earnedStart, ready, earnedStart.stateRevision, 5, now, zone))
+        val waiting = applied(engine.startWait(earnedStart, ready, earnedStart.stateRevision, 3, now, zone))
         val skipped = applied(
             engine.emergencySkip(
                 waiting,
@@ -571,7 +572,7 @@ class RestrictionEngineTest {
     fun pushupRoundPreservesOrdinaryWaitInsteadOfOpeningBrowser() {
         val state = initialWithBudget()
         val waiting = applied(
-            engine.startWait(state, ready, state.stateRevision, 5, now, zone),
+            engine.startWait(state, ready, state.stateRevision, 3, now, zone),
         )
 
         val earned = applied(engine.earnPushupBudget(waiting, now + 1_000, zone))
@@ -594,7 +595,7 @@ class RestrictionEngineTest {
     @Test
     fun normalCompletionWinsSkipRace() {
         val state = initialWithBudget()
-        val waiting = applied(engine.startWait(state, ready, state.stateRevision, 10, now, zone))
+        val waiting = applied(engine.startWait(state, ready, state.stateRevision, 3, now, zone))
         val atEnd = waiting.copy(
             pendingWait = waiting.pendingWait!!.copy(accumulatedFocusMs = waiting.pendingWait.requiredFocusMs),
         )
@@ -850,7 +851,7 @@ class RestrictionEngineTest {
             usageReports = listOf(DailyUsageReport("2026-07-10", exerciseSets = 3)),
         )
         val waiting = applied(
-            engine.startWait(base, ready, base.stateRevision, 10, beforeReset, zone),
+            engine.startWait(base, ready, base.stateRevision, 5, beforeReset, zone),
         )
         assertEquals(12_000, waiting.pendingWait!!.requiredFocusMs)
         val after = engine.normalize(waiting, beforeReset + 3_000, zone)
@@ -1031,7 +1032,7 @@ class RestrictionEngineTest {
             exerciseSets = 2,
         )
         val state = base.copy(
-            dailyUsage = base.dailyUsage.copy(usedMs = 10_000),
+            dailyUsage = base.dailyUsage.copy(usedMs = 70_000),
             activeUnlock = unlock,
             dailyCounter = base.dailyCounter.copy(
                 earnedBudgetRounds = 2,
@@ -1043,7 +1044,8 @@ class RestrictionEngineTest {
         val cancelled = engine.cancelActiveUnlock(state, now + 1_000, zone)
 
         assertNull(cancelled.activeUnlock)
-        assertEquals(10_000, cancelled.dailyUsage.usedMs)
+        // Completed minutes stay charged; the unfinished one is forgiven.
+        assertEquals(60_000, cancelled.dailyUsage.usedMs)
         assertEquals(2, cancelled.dailyCounter.earnedBudgetRounds)
         assertEquals(1, cancelled.dailyCounter.emergencySkipsUsed)
         assertEquals(listOf(report), cancelled.usageReports)

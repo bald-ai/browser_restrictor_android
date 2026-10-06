@@ -42,12 +42,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.michalkrsik.internetrestrictor.domain.GateMode
-import com.michalkrsik.internetrestrictor.domain.MINUTE_MS
 import com.michalkrsik.internetrestrictor.domain.StateSnapshot
+import com.michalkrsik.internetrestrictor.domain.unlockCountdown
 import com.michalkrsik.internetrestrictor.ui.components.formatCompactTime
 import kotlinx.coroutines.delay
 import kotlin.math.abs
-import kotlin.math.ceil
 
 private val BadgeGrey = Color(0xFF22251F)
 private val BadgeContentColor = Color(0xFFD6F66A)
@@ -147,8 +146,8 @@ fun BadgeContent(
 
 @Composable
 private fun CollapsedBadge(snapshot: StateSnapshot) {
-    val unlock = snapshot.activeUnlock
-    if (unlock == null) {
+    val countdown = snapshot.unlockCountdown()
+    if (countdown == null) {
         Text(
             text = nonSessionStatus(snapshot),
             style = MaterialTheme.typography.labelMedium,
@@ -158,21 +157,16 @@ private fun CollapsedBadge(snapshot: StateSnapshot) {
         return
     }
 
-    val remainingMs = (unlock.expiresAtWallMs - snapshot.wallNowMs).coerceAtLeast(0)
-    val totalMs = (unlock.expiresAtWallMs - unlock.grantedAtWallMs).coerceAtLeast(1)
-    val progress = (remainingMs.toFloat() / totalMs.toFloat()).coerceIn(0f, 1f)
-    val minutes = ceil(remainingMs / MINUTE_MS.toDouble()).toLong()
-
     Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
         CircularProgressIndicator(
-            progress = { progress },
+            progress = { countdown.progress },
             modifier = Modifier.size(34.dp),
             color = BadgeContentColor,
             trackColor = BadgeContentColor.copy(alpha = 0.22f),
             strokeWidth = 3.6.dp,
         )
         Text(
-            text = minutes.toString(),
+            text = countdown.displayMinutes.toString(),
             style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.6.sp),
             color = BadgeContentColor,
         )
@@ -182,11 +176,11 @@ private fun CollapsedBadge(snapshot: StateSnapshot) {
 
 @Composable
 private fun ExpandedBadge(snapshot: StateSnapshot) {
-    val unlock = snapshot.activeUnlock
-    if (unlock != null) {
+    val countdown = snapshot.unlockCountdown()
+    if (countdown != null) {
         BadgeValue(
             label = snapshot.configuration.settings.unlockLabel,
-            value = "${formatCompactTime(unlock.expiresAtWallMs - snapshot.wallNowMs)} left",
+            value = "${formatCompactTime(countdown.remainingMs)} left",
         )
         BadgeDivider()
     } else {
@@ -251,8 +245,8 @@ private fun DragGrip() {
 }
 
 private fun badgeDescription(snapshot: StateSnapshot, expanded: Boolean): String {
-    val unlock = snapshot.activeUnlock?.let {
-        "Unlock ${formatCompactTime(it.expiresAtWallMs - snapshot.wallNowMs)} left"
+    val unlock = snapshot.unlockCountdown()?.let {
+        "Unlock ${formatCompactTime(it.remainingMs)} left"
     } ?: nonSessionStatus(snapshot)
     if (!expanded) return "$unlock. Swipe left to expand. Drag vertically to move."
     val available = snapshot.budgetSnapshots

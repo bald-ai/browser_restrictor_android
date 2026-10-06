@@ -6,6 +6,9 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
@@ -75,10 +78,10 @@ class GateScreenTest {
         }
 
         composeRule.onNodeWithText("3 MIN").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("3 minute session").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("5 minute session").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithContentDescription("10 minute session").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("Unlock · 5 minutes").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("3 minute session").performScrollTo().assertIsDisplayed().assertIsEnabled()
+        composeRule.onNodeWithContentDescription("5 minute session, not enough time left").performScrollTo().assertIsNotEnabled()
+        composeRule.onNodeWithContentDescription("10 minute session, not enough time left").performScrollTo().assertIsNotEnabled()
+        composeRule.onNodeWithText("Unlock · 3 minutes").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText(
             "A 12-second pause before each session",
         ).performScrollTo().assertIsDisplayed()
@@ -87,6 +90,47 @@ class GateScreenTest {
         composeRule.onNodeWithText("PROGRESS TO NEXT CREDIT").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Leave browser").performScrollTo().assertIsDisplayed()
         composeRule.onAllNodesWithText("Settings", substring = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun selectionFallsBackToTheDefaultWhenTheChosenLengthDisappears() {
+        val normalized = engine.normalize(PersistedState(), now, ZoneId.of("UTC"))
+        val earned = when (val result = engine.earnPushupBudget(normalized, now, ZoneId.of("UTC"))) {
+            is com.michalkrsik.internetrestrictor.domain.CommandResult.Applied -> result.state
+            else -> error("Expected budget to be earned")
+        }
+        fun withBudget(minutes: Long) = engine.snapshot(
+            earned.copy(dailyCounter = earned.dailyCounter.copy(grantedBudgetMinutes = minutes)), runtime, now,
+        )
+        val snapshot = androidx.compose.runtime.mutableStateOf(withBudget(2))
+        composeRule.setContent {
+            RestrictorTheme(snapshot.value.settings.theme) { GateScreen(snapshot.value, actions) }
+        }
+        composeRule.onNodeWithContentDescription("2 minute session").performScrollTo().performClick()
+
+        // Earning time on the same gate removes the "2" option; the default, not the longest, takes over.
+        composeRule.runOnIdle { snapshot.value = withBudget(12) }
+        composeRule.onNodeWithText("Unlock · 5 minutes").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun budgetBelowShortestPresetReplacesItWithTheRemainingMinutes() {
+        val normalized = engine.normalize(PersistedState(), now, ZoneId.of("UTC"))
+        val state = when (val result = engine.earnPushupBudget(normalized, now, ZoneId.of("UTC"))) {
+            is com.michalkrsik.internetrestrictor.domain.CommandResult.Applied -> result.state.copy(
+                dailyCounter = result.state.dailyCounter.copy(grantedBudgetMinutes = 2),
+            )
+            else -> error("Expected budget to be earned")
+        }
+        val snapshot = engine.snapshot(state, runtime, now)
+        composeRule.setContent {
+            RestrictorTheme(snapshot.settings.theme) { GateScreen(snapshot, actions) }
+        }
+
+        composeRule.onNodeWithContentDescription("2 minute session").performScrollTo().assertIsEnabled()
+        composeRule.onAllNodesWithContentDescription("3 minute session", substring = true).assertCountEquals(0)
+        composeRule.onNodeWithContentDescription("5 minute session, not enough time left").performScrollTo().assertIsNotEnabled()
+        composeRule.onNodeWithText("Unlock · 2 minutes").performScrollTo().assertIsDisplayed()
     }
 
     @Test
@@ -161,7 +205,7 @@ class GateScreenTest {
             else -> error("Expected budget to be earned")
         }
         val waiting = when (
-            val result = engine.startWait(base, runtime, base.stateRevision, 5, now, ZoneId.of("UTC"))
+            val result = engine.startWait(base, runtime, base.stateRevision, 3, now, ZoneId.of("UTC"))
         ) {
             is com.michalkrsik.internetrestrictor.domain.CommandResult.Applied -> result.state.copy(
                 dailyCounter = result.state.dailyCounter.copy(grantedBudgetMinutes = 3),
@@ -174,7 +218,7 @@ class GateScreenTest {
         }
 
         composeRule.onNodeWithText("UNLOCKING BROWSER").assertIsDisplayed()
-        composeRule.onNodeWithText("5 min session").assertIsDisplayed()
+        composeRule.onNodeWithText("3 min session").assertIsDisplayed()
         composeRule.onNodeWithText("12").assertIsDisplayed()
         composeRule.onNodeWithText("Daily budget").assertIsDisplayed()
         composeRule.onNodeWithText("Cancel", substring = true).assertIsDisplayed()

@@ -264,7 +264,7 @@ class ExerciseCreditEngineTest {
                 pushupRepetitionRemainder = 3, machineRepetitionRemainder = 4,
                 plankSecondRemainder = 1, verifiedPushups = 3,
             ),
-            dailyUsage = initial().dailyUsage.copy(usedMs = 1234),
+            dailyUsage = initial().dailyUsage.copy(usedMs = 2 * MINUTE_MS),
         )
         val migrated = engine.normalize(old, now, zone)
         assertEquals(1, migrated.dailyCounter.earnedBudgetRounds)

@@ -241,7 +241,7 @@ class RestrictorRepositoryPolicyTest {
                 id = "normal-unlock",
                 source = com.michalkrsik.internetrestrictor.domain.UnlockSource.NORMAL,
                 grantedAtWallMs = now,
-                expiresAtWallMs = now + 30_000L,
+                expiresAtWallMs = now + 90_000L,
             ),
         )
 
@@ -269,8 +269,8 @@ class RestrictorRepositoryPolicyTest {
         // Initialize tick anchors
         repository.tick(timeSource.elapsedRealtimeMs(), timeSource.wallTimeMs())
 
-        // Browse for 30 seconds until normal unlock reaches expiry
-        repeat(30) {
+        // Browse for 90 seconds until normal unlock reaches expiry
+        repeat(90) {
             timeSource.advance(1_000L)
             repository.tick(timeSource.elapsedRealtimeMs(), timeSource.wallTimeMs())
         }
@@ -284,9 +284,9 @@ class RestrictorRepositoryPolicyTest {
         val activated = repository.emergencySkip(snapshot.stateRevision, snapshot.pendingWaitId)
         org.junit.Assert.assertTrue(activated)
 
-        // Earlier normal usage was charged, NOT free
+        // Earlier normal usage was charged, NOT free; only its unfinished minute is forgiven
         val afterSkip = repository.snapshot.value
-        assertEquals(30_000L, afterSkip.budgetSnapshots.single().usedMs)
+        assertEquals(60_000L, afterSkip.budgetSnapshots.single().usedMs)
         assertEquals(com.michalkrsik.internetrestrictor.domain.UnlockSource.EMERGENCY, afterSkip.activeUnlock?.source)
         org.junit.Assert.assertTrue(diagnostics.any { it.contains("Emergency access granted") })
     }
@@ -516,13 +516,13 @@ class RestrictorRepositoryPolicyTest {
             dailyUsage = com.michalkrsik.internetrestrictor.domain.UsagePeriodState(
                 period = com.michalkrsik.internetrestrictor.domain.BudgetPeriod.DAILY,
                 key = "2026-07-10",
-                usedMs = 0L,
+                usedMs = 59_700L,
             ),
             activeUnlock = com.michalkrsik.internetrestrictor.domain.UnlockSession(
                 id = "normal-unlock",
                 source = com.michalkrsik.internetrestrictor.domain.UnlockSource.NORMAL,
                 grantedAtWallMs = now,
-                expiresAtWallMs = now + 60_000L,
+                expiresAtWallMs = now + 120_000L,
             ),
         )
 
@@ -552,15 +552,16 @@ class RestrictorRepositoryPolicyTest {
         // 1. Advance 600ms (sub-heartbeat tick, buffer holds 600ms uncommitted)
         timeSource.advance(600L)
         repository.tick(timeSource.elapsedRealtimeMs(), timeSource.wallTimeMs())
-        assertEquals(0L, repository.snapshot.value.budgetSnapshots.single().usedMs)
+        assertEquals(59_700L, repository.snapshot.value.budgetSnapshots.single().usedMs)
         assertEquals(0L, repository.snapshot.value.todayUsageReport.protectedUsageMs)
 
-        // 2. Cancel active unlock (valid transition): must commit 600ms before cancellation
+        // 2. Cancel active unlock (valid transition): must commit 600ms before cancellation,
+        // completing a charged minute; without that commit the partial minute would be forgiven.
         val cancelled = repository.cancelActiveUnlock()
         org.junit.Assert.assertTrue(cancelled)
 
         val postCancel = repository.snapshot.value
-        assertEquals(600L, postCancel.budgetSnapshots.single().usedMs)
+        assertEquals(60_000L, postCancel.budgetSnapshots.single().usedMs)
         assertEquals(600L, postCancel.todayUsageReport.protectedUsageMs)
         assertNull(postCancel.activeUnlock)
         org.junit.Assert.assertTrue(postCancel.skipSnapshot.eligible)
@@ -571,7 +572,7 @@ class RestrictorRepositoryPolicyTest {
 
         val emergencySnapshot = repository.snapshot.value
         assertEquals(com.michalkrsik.internetrestrictor.domain.UnlockSource.EMERGENCY, emergencySnapshot.activeUnlock?.source)
-        assertEquals(600L, emergencySnapshot.budgetSnapshots.single().usedMs)
+        assertEquals(60_000L, emergencySnapshot.budgetSnapshots.single().usedMs)
     }
 
     @Test

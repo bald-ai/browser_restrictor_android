@@ -104,8 +104,10 @@ an exact upcoming reset, use the phone's reported next reset and time zone.
 ## sessions: Waiting, browsing sessions and charged time
 
 When a protected browsing app opens, the gate offers the configured session
-lengths. Normal access needs available browsing time and completion of the
-configured wait. The focused wait advances while the gate is focused, the screen
+lengths. Lengths longer than the browsing time left are greyed out. If even the
+shortest length does not fit, it is replaced by the minutes still left, so two
+minutes left offers a two-minute session. Normal access needs available
+browsing time and completion of the configured wait. The focused wait advances while the gate is focused, the screen
 is on and the phone is unlocked. A zero-second wait grants the session directly.
 
 A session is an elapsed-time access window. Its expiry continues while the user
@@ -114,6 +116,13 @@ browsing use, not for every elapsed minute in that window. Chrome, Firefox,
 Edge, Opera and X share that budget. Running out of budget can block normal
 browsing before the selected session window ends. A new session still needs the
 gate's normal unlock flow. The assistant cannot start a session or force access.
+
+Budget is charged in whole minutes. Within one normal session, only completed
+minutes of use count: 59 seconds costs nothing and 60 seconds costs one minute.
+The unfinished minute is dropped when the session ends, so the remaining
+browsing time between sessions is always a whole number of minutes. The browser
+badge counts down whichever ends first, the session window or the remaining
+budget.
 
 Example: a five-minute session does not immediately deduct five minutes. Only
 qualifying use is charged, but returning after the window expires needs another

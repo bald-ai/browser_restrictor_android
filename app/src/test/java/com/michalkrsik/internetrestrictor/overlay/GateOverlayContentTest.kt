@@ -56,7 +56,8 @@ class GateOverlayContentTest {
         compose.onNodeWithText(label).performScrollTo().performClick()
         compose.runOnIdle { assertEquals(UnlockSource.EMERGENCY, repository.snapshot.value.activeUnlock!!.source) }
         compose.runOnIdle { runBlocking { assertTrue(repository.cancelActiveUnlock()); repository.setTheme(ThemePreference.DARK) } }
-        compose.onNodeWithText("Unlock · 5 minutes").performScrollTo().performClick()
-        compose.runOnIdle { assertEquals(5 * MINUTE_MS, repository.snapshot.value.waitSnapshot!!.selectedDurationMs) }
+        // One credit buys 3 minutes, so the gate falls back from the default 5 to the longest affordable preset.
+        compose.onNodeWithText("Unlock · 3 minutes").performScrollTo().performClick()
+        compose.runOnIdle { assertEquals(3 * MINUTE_MS, repository.snapshot.value.waitSnapshot!!.selectedDurationMs) }
     }
 }

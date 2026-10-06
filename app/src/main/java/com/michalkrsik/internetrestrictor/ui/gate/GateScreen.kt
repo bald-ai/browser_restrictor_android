@@ -42,10 +42,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
@@ -59,6 +61,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.michalkrsik.internetrestrictor.domain.GateMode
 import com.michalkrsik.internetrestrictor.domain.MINUTE_MS
+import com.michalkrsik.internetrestrictor.domain.SessionOption
+import com.michalkrsik.internetrestrictor.domain.SessionOptions
 import com.michalkrsik.internetrestrictor.domain.StateSnapshot
 import com.michalkrsik.internetrestrictor.domain.WaitCalculator
 import com.michalkrsik.internetrestrictor.ui.components.BudgetBar
@@ -85,7 +89,10 @@ fun GateScreen(snapshot: StateSnapshot, actions: GateActions) {
         WaitingGate(snapshot, actions.onLeaveBrowser)
         return
     }
-    var selectedMinutes by rememberSaveable(snapshot.gateSessionId, snapshot.settings.sessionMinutes) { mutableLongStateOf(snapshot.settings.sessionMinutes.getOrElse(1) { snapshot.settings.sessionMinutes.first() }) }
+    val sessionOptions = SessionOptions.options(snapshot.settings.sessionMinutes, snapshot.budgetSnapshots)
+    val defaultMinutes = snapshot.settings.sessionMinutes.getOrElse(1) { snapshot.settings.sessionMinutes.first() }
+    var chosenMinutes by rememberSaveable(snapshot.gateSessionId, snapshot.settings.sessionMinutes) { mutableLongStateOf(defaultMinutes) }
+    val selectedMinutes = selectableMinutes(sessionOptions, chosenMinutes, defaultMinutes)
     var actionInFlight by remember { mutableStateOf(false) }
     LaunchedEffect(snapshot.stateRevision, snapshot.canonicalMode) { actionInFlight = false }
     PulseScreen {
@@ -102,7 +109,7 @@ fun GateScreen(snapshot: StateSnapshot, actions: GateActions) {
             }
         }
         when(snapshot.canonicalMode) {
-            GateMode.PAUSED -> PausedControls(snapshot, selectedMinutes, { selectedMinutes = it }, actionInFlight,
+            GateMode.PAUSED -> PausedControls(snapshot, sessionOptions, selectedMinutes, { chosenMinutes = it }, actionInFlight,
                 { actionInFlight = true; actions.onStartSession(selectedMinutes) },
                 { actionInFlight = true; actions.onEmergencySkip() },
                 { actionInFlight = true; actions.onExerciseChallenge() })
@@ -161,6 +168,7 @@ private fun YouTubeLockedControls(
 @Composable
 private fun PausedControls(
     snapshot: StateSnapshot,
+    sessionOptions: List<SessionOption>,
     selectedMinutes: Long,
     onSelect: (Long) -> Unit,
     actionInFlight: Boolean,
@@ -172,7 +180,7 @@ private fun PausedControls(
         PulseControlGroup {
             PulseSection("Session length")
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                snapshot.settings.sessionMinutes.forEach { minutes -> DurationCard(minutes, minutes == selectedMinutes, { onSelect(minutes) }, Modifier.weight(1f)) }
+                sessionOptions.forEach { option -> DurationCard(option.minutes, option.enabled, option.minutes == selectedMinutes, { onSelect(option.minutes) }, Modifier.weight(1f)) }
             }
             Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(4.dp).background(PulseYellow, RoundedCornerShape(50)))
@@ -186,8 +194,8 @@ private fun PausedControls(
         PulsePrimary("Choose a task", onExerciseChallenge, exercise = true, subtitle = "Earn ${snapshot.configuration.settings.minutesPerCredit} minutes with your next credit", enabled = !actionInFlight)
         Spacer(Modifier.height(8.dp))
         Spacer(Modifier.height(10.dp))
-        OutlinedButton(onClick = onStart, enabled = !actionInFlight, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(7.dp), border = BorderStroke(1.dp, EditorialTheme.colors.hairline), colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)) {
-            Text("${snapshot.configuration.settings.unlockLabel} · $selectedMinutes minutes", style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp, letterSpacing = .5.sp))
+        OutlinedButton(onClick = onStart, enabled = !actionInFlight && sessionOptions.any { it.enabled }, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(7.dp), border = BorderStroke(1.dp, EditorialTheme.colors.hairline), colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)) {
+            Text("${snapshot.configuration.settings.unlockLabel} · $selectedMinutes ${if (selectedMinutes == 1L) "minute" else "minutes"}", style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp, letterSpacing = .5.sp))
             Spacer(Modifier.width(8.dp))
             PulseIcon("arrow", 17)
         }
@@ -376,15 +384,16 @@ private fun Budgets(snapshot: StateSnapshot) {
 @Composable
 private fun DurationCard(
     minutes: Long,
+    enabled: Boolean,
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val shape = RoundedCornerShape(13.dp)
     val color = if(selected) PulseCharcoal else MaterialTheme.colorScheme.onSurfaceVariant
-    Column(modifier.height(75.dp).clip(shape).background(if(selected) PulseYellow else CardDark).border(1.dp, if(selected) PulseYellow else EditorialTheme.colors.hairline, shape).clickable(role = Role.RadioButton, onClick = onClick).semantics { this.selected = selected; contentDescription = "$minutes minute session" }, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+    Column(modifier.height(75.dp).alpha(if (enabled) 1f else 0.38f).clip(shape).background(if(selected) PulseYellow else CardDark).border(1.dp, if(selected) PulseYellow else EditorialTheme.colors.hairline, shape).clickable(enabled = enabled, role = Role.RadioButton, onClick = onClick).semantics { this.selected = selected; contentDescription = if (enabled) "$minutes minute session" else "$minutes minute session, not enough time left"; if (!enabled) disabled() }, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         PulseText("$minutes", 24, weight = FontWeight.Medium, color = color)
-        PulseText("minutes", 10, color = color)
+        PulseText(if (minutes == 1L) "minute" else "minutes", 10, color = color)
     }
 }
 
@@ -395,6 +404,12 @@ private fun SectionLabel(text: String) {
         style = MaterialTheme.typography.labelSmall,
         color = EditorialTheme.colors.ink3,
     )
+}
+
+/** Keep the chosen length while it fits; otherwise use the default, or the longest length below it that fits. */
+private fun selectableMinutes(options: List<SessionOption>, chosen: Long, default: Long): Long {
+    val enabled = options.filter { it.enabled }.map { it.minutes }
+    return chosen.takeIf { it in enabled } ?: default.takeIf { it in enabled } ?: enabled.maxOrNull() ?: chosen
 }
 
 private fun availableMinutes(snapshot: StateSnapshot): Long =

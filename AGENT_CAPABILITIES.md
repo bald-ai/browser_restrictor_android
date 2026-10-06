@@ -38,7 +38,7 @@ A change request creates a review. The user approves it before it is saved.
 | `dayReset` | Daily reset | 04:00 | HH:mm, 00:00–23:59 | One daily boundary in the device time zone. Schedule edits preserve current balances. |
 | `waitSeconds` | Waiting time | 12 | 0–600 seconds | Pause before a normal unlock. Zero skips the wait. A changed wait restarts an unfinished wait on the next selection. |
 | `minutesPerCredit` | Minutes per credit | 3 | 1–120 minutes | Reward rate for new recordings. Existing rewards and in-flight recordings keep their pinned rate. |
-| `sessionMinutes` | Session lengths | 3, 5, 10 | Exactly three values, each 1–120 minutes | Offered normal session lengths; existing active sessions keep their agreed duration. |
+| `sessionMinutes` | Session lengths | 3, 5, 10 | Exactly three values, each 1–120 minutes | Offered normal session lengths; existing active sessions keep their agreed duration. Lengths above the whole minutes left today are greyed out; when even the shortest does not fit, it is offered as the remaining minutes instead. |
 | `youtubeCredits` | YouTube credits | 4 | 1–100 credits | Daily credit threshold for YouTube access. |
 | `emergencyMinutes` | Emergency minutes | 15 | 1–120 minutes | Duration of a new emergency unlock, earned after the first daily credit. One per day; free of browsing-budget charges. |
 | `creditName` | Credit name | credits | 1–60 characters, nonblank | Display label. |
