@@ -1,16 +1,18 @@
 import {fail} from './domain.mjs';
 
 // Sol 6 support and pricing verified 2026-09-23 against official docs and live benchmarks.
-// Verified against the official model pages and /api/docs/pricing on 2026-09-20.
+// Verified against the official model pages and /api/docs/pricing on 2026-09-20;
+// GPT-6.1 Sol on 2026-10-08 (no `none` effort; cached input is $0.10).
 // Fast pricing is explicitly published for all three models; do not infer support
 // for future additions from the generic Responses API service_tier enum.
 export const assistantModels = [
  {id:'gpt-6-sol',label:'Sol 6',efforts:['none','low','medium','high','xhigh','max'],serviceTiers:['default','fast'],input:2,cached:.2,output:10},
+ {id:'gpt-6.1-sol',label:'Sol 6.1',efforts:['low','medium','high','xhigh','max'],serviceTiers:['default','fast'],input:2,cached:.1,output:10},
  {id:'gpt-6-astra',label:'Astra',efforts:['low','medium','high','xhigh','max'],serviceTiers:['default','fast'],input:10,cached:1,output:50},
  {id:'gpt-5.6-luna',label:'Luna',efforts:['none','low','medium','high','xhigh','max'],serviceTiers:['default','fast'],input:.2,cached:.02,output:1.2},
  {id:'gpt-5.6-terra',label:'Terra',efforts:['none','low','medium','high','xhigh','max'],serviceTiers:['default','fast'],input:2,cached:.2,output:12},
 ];
-export const defaultAssistantSettings={model:'gpt-6-astra',reasoning:'low',serviceTier:'fast'};
+export const defaultAssistantSettings={model:'gpt-6.1-sol',reasoning:'low',serviceTier:'fast'};
 export const assistantOptions=assistantModels.map(({id,label,efforts,serviceTiers})=>({id,label,efforts,serviceTiers}));
 export function validateAssistantSettings(value){
  fail(value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).length===3&&Object.keys(value).every(k=>Object.hasOwn(defaultAssistantSettings,k)),'Choose a model, reasoning effort and processing speed.');

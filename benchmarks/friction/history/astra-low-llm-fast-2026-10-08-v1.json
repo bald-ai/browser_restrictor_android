@@ -1,0 +1,56 @@
+{
+  "runId": "astra-low-llm-fast-2026-10-08-v1",
+  "status": "complete",
+  "startedAt": "2026-10-08T13:45:54.195Z",
+  "finishedAt": "2026-10-08T13:51:20.313Z",
+  "suiteVersion": "friction-actions-v1",
+  "suiteHash": "20acb251e9b8bb7ecf87f2698aa6da689b76b603478d85266ecd2e77f51d89d5",
+  "configHash": "c74d5bda7c0b6e880469f42eda98d6f2a0d3e63c6c7b14f11e2c67a1e3d681a5",
+  "sourceHash": "be2245462727f1cfda7e14e0e842bbf47b7e9ef96d4fe7d4403df1f53e0bee35",
+  "resultsHash": "57158bff4dd359505a45173a101ffce0273801ce7a238c4c5f133722bb7444cf",
+  "config": {
+    "suite": "../suites/actions-v1.json",
+    "seed": 20260920,
+    "repeats": 2,
+    "warmups": 1,
+    "maxUsd": 6,
+    "maxCalls": 250,
+    "timeoutMs": 180000,
+    "strategies": [
+      {
+        "id": "astra-low-fast",
+        "kind": "llm",
+        "model": "gpt-6-astra",
+        "reasoning": "low",
+        "serviceTier": "fast"
+      }
+    ]
+  },
+  "totalUsd": 1.7279550000000004,
+  "scoredTrials": 74,
+  "summary": [
+    {
+      "id": "astra-low-fast",
+      "trials": 74,
+      "actions": 52,
+      "passed": 52,
+      "decisionCorrect": 52,
+      "abstained": 0,
+      "errors": 0,
+      "wrong": 0,
+      "auditFailures": 0,
+      "guardSafe": 22,
+      "guards": 22,
+      "humanReview": 22,
+      "coverage": 1,
+      "medianAllMs": 2689.26883299998,
+      "p95AllMs": 13757.301084,
+      "medianPassedActionMs": 2026.8892079999787,
+      "p95PassedActionMs": 10907.920792000004,
+      "estimatedUsd": 1.651045,
+      "costPerPassedAction": 0.031750865384615384,
+      "providerCalls": 80
+    }
+  ],
+  "evidencePath": "runs/astra-low-llm-fast-2026-10-08-v1"
+}

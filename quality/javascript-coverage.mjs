@@ -36,7 +36,7 @@ try {
  const preload=path.join(temporary,'save.cjs');
  await fs.writeFile(preload,`process.on('exit',()=>{if(global.__coverage__)require('node:fs').writeFileSync(${JSON.stringify(raw)}+'/'+process.pid+'.json',JSON.stringify(global.__coverage__));});`);
  const tests=(await fs.readdir(path.join(backend,'test'))).filter(p=>p.endsWith('.test.mjs')).map(p=>'test/'+p);
- const result=spawnSync(process.execPath,['--require',preload,'--test',...tests],{cwd:backend,env:{...process.env,OPENAI_API_KEY:'',OPENROUTER_API_KEY:'',AI_GATEWAY_API_KEY:'',PUBLIC_BASE_URL:''},encoding:'utf8',timeout:120000,maxBuffer:30*1024*1024});
+ const result=spawnSync(process.execPath,['--require',preload,'--test',...tests],{cwd:backend,env:{...process.env,OPENAI_API_KEY:'',OPENROUTER_API_KEY:'',PUBLIC_BASE_URL:''},encoding:'utf8',timeout:120000,maxBuffer:30*1024*1024});
  await fs.writeFile(path.join(evidence,'tests.log'),(result.stdout||'')+(result.stderr||'')+(result.error?.stack||''));
  await fs.writeFile(path.join(evidence,'tests.exit'),String(result.status??'error')+'\n');
  for(const file of await fs.readdir(raw))coverage.merge(JSON.parse(await fs.readFile(path.join(raw,file),'utf8')));

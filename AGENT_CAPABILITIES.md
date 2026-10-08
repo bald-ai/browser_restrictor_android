@@ -78,43 +78,24 @@ award the same recording twice. Uploads after the pinned daily period expires
 are history only. Corrections and eligible manual GPS completion also expire
 with the recording's reward period.
 
-## Jev and selected-model request routing
+## Request routing
 
-When the server has `AI_GATEWAY_API_KEY`, text and delegated voice requests first
-use `typesafe-ai/jev` for explicit changes to `waitSeconds` (0–600),
-`minutesPerCredit` (1–120), `youtubeCredits` (1–100), `emergencyMinutes` (1–120),
-and pause/resume of existing tasks. Examples: “Set waiting time to 7 seconds”
-and “Pause walking and make each credit worth 6 minutes.” The existing approval
-and cancel paths bypass Jev. Jev only prepares reviews; it cannot save changes.
-
-The tested selection threshold is 0.9. Each numeric field has an explicit-change
-probability: at most 0.1 leaves it alone, at least 0.9 requires a value choice
-at least 0.9; uncertain results go to the selected assistant model. Scope and every task choice also
-require at least 0.9. This threshold is not a reliability guarantee. Numeric
-choices cover permitted integers up to 120 plus larger literal values in the
-request. Unsupported values, questions, ambiguous/mixed requests, new tasks,
-renaming and other fields use the selected assistant model (Astra Low Fast by default).
-
-Jev has a 3-second provider timeout and no retries. Provider errors, rejected
-outputs and unavailable gateway configuration use the selected assistant model. Fallback adds latency;
-there is no guaranteed speed improvement. The fallback prompt explains that Jev
-is a specialized non-generative option selector, and distinguishes unaccepted
-requests from provider failures and requests where Jev was not run. Service
-failure is not evidence of complexity. Rejected guesses and provider error text
-are not forwarded as instructions. The assistant is told to check the entire
-request, clarify missing choices, avoid substituting invalid values, and honor
-explanation-before-proposal conditions. Both routes share one active turn,
-current/pending configuration, validation, stale-review checks, review/approval,
-undo and Android acknowledgement. No additional callable app functions exist.
+Every text and delegated voice request goes to the selected assistant model
+(Sol 6.1 Low Fast by default). Exact approval and cancel/undo commands are
+handled directly by the app without a model call. There is no classifier or
+decision-model fast path. The model prepares reviews; it cannot save changes.
+All requests share one active turn, current/pending configuration, validation,
+stale-review checks, review/approval, undo and Android acknowledgement.
 
 ## Assistant model preferences
 
-In Your setup → Assistant, users can select Sol 6 (`gpt-6-sol`), Astra (`gpt-6-astra`), Luna
-(`gpt-5.6-luna`) or Terra (`gpt-5.6-terra`). Sol 6, Luna and Terra offer Non-reasoning
-(`none`), Low, Medium, High, Extra high (`xhigh`) and Max. Astra offers Low through
-Max; it has no Non-reasoning option. All four support Standard (`default`) and
-Fast (`fast`) processing, verified against official pricing and live API calls.
-The default remains Astra / Low / Fast. Higher effort can take longer; Fast has
+In Your setup → Assistant, users can select Sol 6 (`gpt-6-sol`), Sol 6.1 (`gpt-6.1-sol`),
+Astra (`gpt-6-astra`), Luna (`gpt-5.6-luna`) or Terra (`gpt-5.6-terra`). Sol 6, Luna and
+Terra offer Non-reasoning (`none`), Low, Medium, High, Extra high (`xhigh`) and Max.
+Sol 6.1 and Astra offer Low through Max; they have no Non-reasoning option. All five
+support Standard (`default`) and Fast (`fast`) processing, verified against official
+pricing and live API calls. The default is Sol 6.1 / Low / Fast, chosen from the
+2026-10-08 benchmark (equal accuracy to Sol 6, lower cost than Sol 6 and Astra). Higher effort can take longer; Fast has
 higher token prices. Usage estimates use the actual model and returned tier.
 
 Save assistant settings persists `{model, reasoning, serviceTier}` per
@@ -124,10 +105,9 @@ starting selection. These preferences do not change app rules, reset time,
 balances, pending reviews or native configuration revisions, and do not need a
 phone acknowledgement. The selection is included in current agent context.
 This is a manual settings control, not a new callable agent function: the agent
-cannot change its model through `set_setting` or conversation. Jev still runs
-first within its existing scope. GPT-Live/Ripple voice audio and video judging
+cannot change its model through `set_setting` or conversation. GPT-Live/Ripple voice audio and video judging
 keep their separate models. None/Low requests time out after 60 seconds; higher
-efforts after 180 seconds. Jev retains its separate 3-second timeout.
+efforts after 180 seconds.
 
 ## Callable agent functions
 
@@ -272,4 +252,4 @@ review is pending. Undo restores the previous saved configuration exactly,
 including task order. Afterwards older actions remain viewable but cannot be
 restored; a new save enables undo for that new action. Repeated requests are
 idempotent. Sol 6 supports Standard/Fast and none, low, medium, high, xhigh, max;
-the factory assistant default remains Astra Low Fast.
+the factory assistant default is Sol 6.1 Low Fast.

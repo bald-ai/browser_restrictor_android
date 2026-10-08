@@ -12,7 +12,7 @@ from source_manifest import source_manifest as manifest, measurement_manifest
 root=pathlib.Path(__file__).resolve().parent.parent
 run_id='verification-'+str(time.time_ns());logs=root/'quality/logs'/run_id;logs.mkdir(parents=True)
 before=manifest();results=[]
-environment={**os.environ,'OPENAI_API_KEY':'','OPENROUTER_API_KEY':'','AI_GATEWAY_API_KEY':''};environment.pop('PUBLIC_BASE_URL',None)
+environment={**os.environ,'OPENAI_API_KEY':'','OPENROUTER_API_KEY':''};environment.pop('PUBLIC_BASE_URL',None)
 commands = [
  ('probe-compiler', ['python3', 'quality/build-probes.py']),
  ('measurement-tests', ['python3', '-m', 'unittest', 'discover', '-s', 'quality', '-p', 'test_*.py']),

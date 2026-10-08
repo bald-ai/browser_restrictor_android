@@ -12,8 +12,6 @@
     "quality:check": "python3 ../scripts/verification-session.py metrics"
   },
   "dependencies": {
-    "@ai-sdk/gateway": "4.0.86",
-    "ai": "7.0.106",
     "ws": "^8.18.0"
   },
   "devDependencies": {

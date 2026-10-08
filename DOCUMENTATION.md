@@ -15,7 +15,7 @@ The legacy verifier service, its shared-secret configuration and both old
 verification endpoints have been removed from this repository.
 
 V1 includes manual setup, grouped change review, and GPT-Live-1 Ripple voice over
-WebRTC. GPT-6 Astra handles supported app functions. Configuration changes are
+WebRTC. GPT-6.1 Sol handles supported app functions by default. Configuration changes are
 acknowledged only after Android persists them.
 
 The detailed implementation record, API contract, test evidence and handoff are in

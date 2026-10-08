@@ -62,7 +62,7 @@ for(const [name,file,before,after,tests]of specs){
   if(!source.includes(before))throw Error('Mutation anchor missing: '+name);
   // Replace the named first contract occurrence; other routes remain unchanged.
   await fs.writeFile(path.join(backend,file),source.replace(before,after));
-  const run=spawnSync(process.execPath,['--test',...tests.map(t=>'test/'+t+'.test.mjs')],{cwd:backend,env:{...process.env,OPENAI_API_KEY:'',OPENROUTER_API_KEY:'',AI_GATEWAY_API_KEY:'',PUBLIC_BASE_URL:''},encoding:'utf8',timeout:30000,maxBuffer:10*1024*1024});
+  const run=spawnSync(process.execPath,['--test',...tests.map(t=>'test/'+t+'.test.mjs')],{cwd:backend,env:{...process.env,OPENAI_API_KEY:'',OPENROUTER_API_KEY:'',PUBLIC_BASE_URL:''},encoding:'utf8',timeout:30000,maxBuffer:10*1024*1024});
   const output=(run.stdout||'')+(run.stderr||'')+(run.error?.stack||'');
   const log=path.join(logs,name+'.log');await fs.writeFile(log,output);
   const status=run.error?.code==='ETIMEDOUT'?'timed-out':run.error?'errored':run.status===0?'surviving':/ERR_ASSERTION|AssertionError/.test(output)?'detected':'errored';

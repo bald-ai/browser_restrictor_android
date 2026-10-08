@@ -7,17 +7,26 @@
   "maxCalls": 1500,
   "timeoutMs": 180000,
   "strategies": [
-    {"id":"astra-low-fast","kind":"llm","model":"gpt-6-astra","reasoning":"low","serviceTier":"fast"},
-    {"id":"luna-none","kind":"llm","model":"gpt-5.6-luna","reasoning":"none","serviceTier":"default"},
-    {"id":"terra-low","kind":"llm","model":"gpt-5.6-terra","reasoning":"low","serviceTier":"default"},
-    {"id":"jev-only","kind":"evaluator","model":"typesafe-ai/jev","threshold":0.9,"inputPerMillion":0.04,"outputPerMillion":0,"timeoutMs":3000},
-    {"id":"jev-then-terra","kind":"cascade","steps":[
-      {"kind":"evaluator","model":"typesafe-ai/jev","threshold":0.9,"inputPerMillion":0.04,"outputPerMillion":0,"timeoutMs":3000},
-      {"kind":"llm","model":"gpt-5.6-terra","reasoning":"low","serviceTier":"default"}
-    ]},
-    {"id":"jev-race-luna","kind":"race","steps":[
-      {"kind":"evaluator","model":"typesafe-ai/jev","threshold":0.9,"inputPerMillion":0.04,"outputPerMillion":0,"timeoutMs":3000},
-      {"kind":"llm","model":"gpt-5.6-luna","reasoning":"none","serviceTier":"default"}
-    ]}
+    {
+      "id": "astra-low-fast",
+      "kind": "llm",
+      "model": "gpt-6-astra",
+      "reasoning": "low",
+      "serviceTier": "fast"
+    },
+    {
+      "id": "luna-none",
+      "kind": "llm",
+      "model": "gpt-5.6-luna",
+      "reasoning": "none",
+      "serviceTier": "default"
+    },
+    {
+      "id": "terra-low",
+      "kind": "llm",
+      "model": "gpt-5.6-terra",
+      "reasoning": "low",
+      "serviceTier": "default"
+    }
   ]
 }

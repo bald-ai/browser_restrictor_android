@@ -148,7 +148,7 @@ class V1VoiceDeviceTest {
             val transcript = events.objects().filter { it.optString("type") == "session.input_transcript.delta" }.joinToString("") { it.optString("delta") }
             assertTrue("Live transcribed actual audio", transcript.contains("five", ignoreCase = true) || transcript.contains("5"))
             report.put("inputTranscript", transcript).put("liveEvents", events).put("appliedAndUndone", true)
-                .put("originalWait", originalWait).put("voice", "ripple").put("agent", "gpt-6-astra low fast")
+                .put("originalWait", originalWait).put("voice", "ripple").put("agent", "gpt-6.1-sol low fast")
             evaluate(view, "window.FrictionStopVoice(); 'stopping'")
             await("call closed", 10_000) { evaluate(view, "document.getElementById('voice').classList.contains('live')") == "false" }
         } catch (failure: Throwable) {
@@ -204,7 +204,7 @@ class V1VoiceDeviceTest {
         assertTrue(requestAudio.exists() && cancelAudio.exists())
         var scenario: ActivityScenario<V1ConversationActivity>? = null
         var web: WebView? = null
-        val report = JSONObject().put("test", "Spoken cancellation during actual Astra work")
+        val report = JSONObject().put("test", "Spoken cancellation during actual assistant work")
         var beforeIds = emptySet<String>()
         try {
             if (originalWait == 5L) setWait(12)
@@ -241,7 +241,7 @@ class V1VoiceDeviceTest {
             evaluate(view, "document.getElementById('voice').click(); 'connect'")
             await("voice connected", 50_000) { evaluate(view, "document.getElementById('voice').classList.contains('live')") == "true" }
             evaluate(view, "window.__cancelVoice.play(0); 'request'")
-            await("Astra is actually working", 35_000) { runBlocking { coordinator.api.request("/state").optBoolean("busy") } }
+            await("Assistant is actually working", 35_000) { runBlocking { coordinator.api.request("/state").optBoolean("busy") } }
             report.put("workObservedBeforeCancellation", true)
             val cancelledAt = System.currentTimeMillis()
             evaluate(view, "window.__cancelVoice.play(1); 'spoken cancel'")

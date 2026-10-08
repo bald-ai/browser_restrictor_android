@@ -8,6 +8,7 @@ import {assistantModels} from '../../backend-v1/assistant-settings.mjs';
 // https://developers.openai.com/api/docs/pricing
 // Both support none/low and Fast at 2x Standard rates. Only the requested
 // two lowest efforts are enabled here. Rates are USD per million tokens.
+// GPT-6.1 Sol is registered by the app itself (assistant-settings.mjs).
 export const benchmarkModels = [
  {id:'gpt-6-luna',label:'Luna 6',efforts:['none','low'],serviceTiers:['default','fast'],input:.1,cached:.01,output:.5},
  {id:'gpt-6-sol',label:'Sol 6',efforts:['none','low'],serviceTiers:['default','fast'],input:2,cached:.2,output:10},

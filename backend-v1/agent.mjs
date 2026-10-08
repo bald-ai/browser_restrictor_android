@@ -1,16 +1,15 @@
 import {assistantSettingsFor,responseOptions,estimatedModelCost,reserveModelCost} from './assistant-settings.mjs';
 import {fitChatContext} from './context-budget.mjs';
 import {readAppDocumentation} from './app-docs.mjs';
-import {captureBase,expandChanges} from './edits.mjs';
-import {buildQuestions,decodeChanges,createJevEvaluator,jevHandoffPrompt} from './jev.mjs';
+import {captureBase} from './edits.mjs';
 import {fail,id,clone,applyCards,isCancel,isApproval,isExplicitCancellation} from './domain.mjs';
 import {astraPrompt,tools} from './prompts.mjs';
 export function contextFor(store,install){const s=store.get(install),p=s.proposals.findLast(p=>p.status==='pending'),visible=p||s.proposals.at(-1);return{...store.envelope(s),assistantSettings:assistantSettingsFor(s),selectedCardId:s.selectedCardId,selectedCard:visible?.cards.find(c=>c.id===s.selectedCardId)||null,lastReview:p?null:clone(visible||null),proposal:p?clone(p):null,proposedConfig:p?applyCards(s.config,p.cards):null,statistics:clone({summary:s.statistics.summary,events:s.statistics.events?.slice(-15),updatedAt:s.statistics.updatedAt}),recentChanges:clone(s.changes.slice(-3))};}
 function validateMessage(message){fail(typeof message==='string'&&message.trim()&&message.length<=5000,'Write a message of 1–5,000 characters.');}
 function reviewInstructions(review){return `${review.title}. Review ${review.cards.length===1?'the change':`all ${review.cards.length} changes`} above, then tap Apply or tell me to apply them.`;}
 export class Agent {
- constructor(store,{key=process.env.OPENAI_API_KEY,fetcher=fetch,jevKey=process.env.AI_GATEWAY_API_KEY,jevEvaluator=null,jevTimeoutMs=3000}={}){this.store=store;this.key=key;this.fetcher=fetcher;this.jevEvaluator=jevEvaluator||(jevKey?createJevEvaluator(jevKey):null);this.jevTimeoutMs=jevTimeoutMs;}
- async chat(install,message,{source='text',jevFallbackReason='unavailable'}={}){
+ constructor(store,{key=process.env.OPENAI_API_KEY,fetcher=fetch}={}){this.store=store;this.key=key;this.fetcher=fetcher;}
+ async chat(install,message,{source='text'}={}){
   validateMessage(message);const store=this.store,runtime=store.getRuntime(install);
   const pending=clone(store.get(install).proposals.findLast(p=>p.status==='pending')||null);
   const direct=await this.directChat(install,message,source,pending);if(direct)return direct;
@@ -20,9 +19,7 @@ export class Agent {
   let text='';const started=Date.now(),trace=[];
   try{
    await store.message(install,'user',message,source);store.notify(install,'working',{text:'Preparing your request'});
-   const routed=await this.tryJev(install,message,ctx,trace,jevFallbackReason);
-   text=routed.text;jevFallbackReason=routed.fallbackReason;
-   if(!text)text=await this.modelChat(install,message,ctx,assistantSettings,jevFallbackReason,trace);
+   text=await this.modelChat(install,message,ctx,assistantSettings,trace);
    const result=await this.finishChat(install,ctx,text,started,trace);text=result.text;return result;
   }catch(e){if(ctx.cancelled)return{text:'Request cancelled.',cancelled:true,...store.snapshot(install)};await store.message(install,'assistant',e.message);throw e;}
   finally{if(runtime.turn===ctx)runtime.turn=null;store.notify(install,'done',{text,elapsedMs:Date.now()-started,trace});}
@@ -33,12 +30,12 @@ export class Agent {
    if(!ctx.cancelled)await store.message(install,'assistant',text);
    return{text,cancelled:ctx.cancelled,elapsedMs:Date.now()-started,trace,...store.snapshot(install)};
  }
- async modelChat(install,message,ctx,assistantSettings,jevFallbackReason,trace){
+ async modelChat(install,message,ctx,assistantSettings,trace){
   const store=this.store;let input=[],text='';
    input=[...store.get(install).messages.map(m=>({role:m.role,content:m.text})),{role:'developer',content:'Fresh CURRENT CONTEXT (app data): '+JSON.stringify(contextFor(store,install))}];
    for(let step=0;!text&&step<5;step++){
     fail(!ctx.cancelled,'Request cancelled.',409);
-    const body=fitChatContext({...responseOptions(assistantSettings),text:{verbosity:'low'},instructions:astraPrompt+jevHandoffPrompt(jevFallbackReason),input,tools,parallel_tool_calls:false,store:false});
+    const body=fitChatContext({...responseOptions(assistantSettings),text:{verbosity:'low'},instructions:astraPrompt,input,tools,parallel_tool_calls:false,store:false});
     input=body.input;
     const r=await this.requestResponse(install,assistantSettings,body);
     if(ctx.cancelled){text='Request cancelled.';break;}
@@ -61,46 +58,6 @@ export class Agent {
      input.push({type:'function_call_output',call_id:call.call_id,output:JSON.stringify(result)});
     }
   return text;
- }
- async tryJev(install,message,ctx,trace,jevFallbackReason){
-  const store=this.store;let text='';
-   if(this.jevEvaluator&&!isApproval(message)&&!isExplicitCancellation(message)){
-    jevFallbackReason='unresolved';
-    const questions=buildQuestions(ctx.editBase.config,message);
-    const state={latestRequest:message,recentConversation:store.get(install).messages.slice(-9,-1).map(({role,text})=>({role,text})),context:contextFor(store,install)};
-    const reservation=await store.reserve(install,'jev',Buffer.byteLength(JSON.stringify({state,questions}))*.04/1e6);
-    const evaluationStarted=Date.now();
-    const evaluation=await this.evaluateJev(install,state,questions,reservation,trace);
-    const result=evaluation.result;if(evaluation.failed)jevFallbackReason='provider_error';
-    fail(!ctx.cancelled,'Request cancelled.',409);
-    const changes=this.acceptedJevChanges(install,result,questions,ctx);
-    trace.push({name:'jev',accepted:Boolean(changes),elapsedMs:Date.now()-evaluationStarted,at:Date.now()});
-    if(changes){
-     // Use the same explicit-edit transaction as Astra: validates the captured
-     // revision/review, preserves pending edits and never saves without approval.
-     const review=await store.stage(install,{changes,expectedRevision:ctx.editBase.revision,title:'Requested changes'},ctx);
-     text=reviewInstructions(review);
-     trace.push({name:'propose_changes',at:Date.now()});
-    }
-   }
-  return {text,fallbackReason:jevFallbackReason};
- }
- acceptedJevChanges(install,result,questions,ctx){
-  const store=this.store;
-    let changes=null;
-    try{changes=result?decodeChanges(result.answers||{},questions,ctx.editBase.config):null;if(changes&&JSON.stringify(expandChanges(ctx.editBase.config,changes))===JSON.stringify(store.get(install).config))changes=null;}catch{changes=null;}
-  return changes;
- }
- async evaluateJev(install,state,questions,reservation,trace){
-  const store=this.store;let failed=false;
-    let result=null,settled=false;
-    try{
-     result=await this.jevEvaluator({state,questions,abortSignal:AbortSignal.timeout(this.jevTimeoutMs)});
-     const tokens=result.usage?.inputTokens;
-     await store.settle(reservation,Number.isFinite(tokens)?tokens*.04/1e6:null,{model:'typesafe-ai/jev',usage:result.usage||null,estimated:true,costBasis:'published-rates-not-invoice'});settled=true;
-    }catch(e){failed=true;trace.push({name:'jev_fallback',reason:'provider_error',at:Date.now()});}
-    finally{if(!settled)await store.settle(reservation,null,{model:'typesafe-ai/jev',reason:'Provider outcome unknown; reservation retained conservatively.'});}
-  return {result,failed};
  }
  async directChat(install,message,source,pending){
   const store=this.store;

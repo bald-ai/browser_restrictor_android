@@ -1,0 +1,89 @@
+{
+  "runId": "jev-vs-clef-2026-10-08-v1",
+  "status": "complete",
+  "startedAt": "2026-10-08T14:10:33.481Z",
+  "finishedAt": "2026-10-08T14:13:14.715Z",
+  "suiteVersion": "friction-actions-v1",
+  "suiteHash": "20acb251e9b8bb7ecf87f2698aa6da689b76b603478d85266ecd2e77f51d89d5",
+  "configHash": "966a25f82c36a01f86e968f96e2d222a87b32c4b5a292068bb0c73407378968f",
+  "sourceHash": "f022dd494ed47da3c9127a8c9a8c818206616b02d434594c206edb87506dfa97",
+  "resultsHash": "32e6d52fd60668c31b6b0f7121ff5a6b85f5411cb6d4355bd9e9896834381e98",
+  "config": {
+    "suite": "../suites/actions-v1.json",
+    "seed": 20261008,
+    "repeats": 1,
+    "warmups": 1,
+    "maxUsd": 5,
+    "maxCalls": 200,
+    "timeoutMs": 15000,
+    "strategies": [
+      {
+        "id": "jev",
+        "kind": "evaluator",
+        "model": "typesafe-ai/jev",
+        "threshold": 0.9,
+        "inputPerMillion": 0.04,
+        "outputPerMillion": 0,
+        "timeoutMs": 15000
+      },
+      {
+        "id": "clef",
+        "kind": "evaluator",
+        "model": "@cf/cloudflare/clef",
+        "threshold": 0.9,
+        "inputPerMillion": 0.24,
+        "outputPerMillion": 0,
+        "timeoutMs": 15000
+      }
+    ]
+  },
+  "totalUsd": 0.12170308000000002,
+  "scoredTrials": 74,
+  "summary": [
+    {
+      "id": "jev",
+      "trials": 37,
+      "actions": 26,
+      "passed": 12,
+      "decisionCorrect": 12,
+      "abstained": 25,
+      "errors": 0,
+      "wrong": 0,
+      "auditFailures": 0,
+      "guardSafe": 11,
+      "guards": 11,
+      "humanReview": 0,
+      "coverage": 0.32432432432432434,
+      "medianAllMs": 577.732124999995,
+      "p95AllMs": 933.2338750000054,
+      "medianPassedActionMs": 366.0115420000002,
+      "p95PassedActionMs": 772.0203329999931,
+      "estimatedUsd": 0.014057199999999999,
+      "costPerPassedAction": 0.0011714333333333333,
+      "providerCalls": 37
+    },
+    {
+      "id": "clef",
+      "trials": 37,
+      "actions": 26,
+      "passed": 2,
+      "decisionCorrect": 2,
+      "abstained": 33,
+      "errors": 2,
+      "wrong": 0,
+      "auditFailures": 0,
+      "guardSafe": 11,
+      "guards": 11,
+      "humanReview": 0,
+      "coverage": 0.05405405405405406,
+      "medianAllMs": 2192.299417000002,
+      "p95AllMs": 15003.018875000009,
+      "medianPassedActionMs": 2.834833000000799,
+      "p95PassedActionMs": 2582.207249999992,
+      "estimatedUsd": 0.10444632,
+      "costPerPassedAction": 0.05222316,
+      "providerCalls": 36
+    }
+  ],
+  "evidencePath": "runs/jev-vs-clef-2026-10-08-v1"
+}

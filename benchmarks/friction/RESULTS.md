@@ -14,3 +14,6 @@ Smoke runs validate the harness; do not use a single repetition to rank models. 
 | [luna6-handoff-jev-fast-2026-09-23-v1](history/luna6-handoff-jev-fast-2026-09-23-v1.json) | complete | friction-actions-v1 | 74 | 1 | $0.060299 | [Report](runs/luna6-handoff-jev-fast-2026-09-23-v1/index.html) |
 | [sol6-handoff-jev-fast-2026-09-23-v1](history/sol6-handoff-jev-fast-2026-09-23-v1.json) | complete | friction-actions-v1 | 74 | 1 | $0.381900 | [Report](runs/sol6-handoff-jev-fast-2026-09-23-v1/index.html) |
 | [sol6-low-tiers-2026-09-23-v1](history/sol6-low-tiers-2026-09-23-v1.json) | complete | friction-actions-v1 | 36 | 3 | $0.173128 | [Report](runs/sol6-low-tiers-2026-09-23-v1/index.html) |
+| [sol61-vs-sol6-llm-fast-2026-10-08-v1](history/sol61-vs-sol6-llm-fast-2026-10-08-v1.json) | complete | friction-actions-v1 | 222 | 2 | $0.967123 | [Report](runs/sol61-vs-sol6-llm-fast-2026-10-08-v1/index.html) |
+| [astra-low-llm-fast-2026-10-08-v1](history/astra-low-llm-fast-2026-10-08-v1.json) | complete | friction-actions-v1 | 74 | 2 | $1.727955 | [Report](runs/astra-low-llm-fast-2026-10-08-v1/index.html) |
+| [jev-vs-clef-2026-10-08-v1](history/jev-vs-clef-2026-10-08-v1.json) | complete | friction-actions-v1 | 74 | 1 | $0.121703 | [Report](runs/jev-vs-clef-2026-10-08-v1/index.html) |

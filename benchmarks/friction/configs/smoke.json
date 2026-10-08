@@ -1,18 +1,42 @@
 {
   "suite": "../suites/actions-v1.json",
   "seed": 20260920,
-  "cases": ["wait", "rename", "hypothetical", "edit-correct-approve-undo"],
+  "cases": [
+    "wait",
+    "rename",
+    "hypothetical",
+    "edit-correct-approve-undo"
+  ],
   "repeats": 1,
   "warmups": 0,
   "maxUsd": 3,
   "maxCalls": 40,
   "timeoutMs": 60000,
   "strategies": [
-    {"id":"luna-none","kind":"llm","model":"gpt-5.6-luna","reasoning":"none","serviceTier":"default"},
-    {"id":"jev-only","kind":"evaluator","model":"typesafe-ai/jev","threshold":0.9,"inputPerMillion":0.04,"outputPerMillion":0,"timeoutMs":3000},
-    {"id":"jev-then-luna","kind":"cascade","steps":[
-      {"kind":"evaluator","model":"typesafe-ai/jev","threshold":0.9,"inputPerMillion":0.04,"outputPerMillion":0,"timeoutMs":3000},
-      {"kind":"llm","model":"gpt-5.6-luna","reasoning":"none","serviceTier":"default"}
-    ]}
+    {
+      "id": "luna-none",
+      "kind": "llm",
+      "model": "gpt-5.6-luna",
+      "reasoning": "none",
+      "serviceTier": "default"
+    },
+    {
+      "id": "luna-or-terra",
+      "kind": "cascade",
+      "steps": [
+        {
+          "kind": "llm",
+          "model": "gpt-5.6-luna",
+          "reasoning": "none",
+          "serviceTier": "default"
+        },
+        {
+          "kind": "llm",
+          "model": "gpt-5.6-terra",
+          "reasoning": "low",
+          "serviceTier": "default"
+        }
+      ]
+    }
   ]
 }

@@ -15,18 +15,17 @@ npm run benchmark:test
 npm run benchmark                         # print the plan; no provider calls
 ```
 
-Put `OPENAI_API_KEY` and `AI_GATEWAY_API_KEY` in your environment or an external
-Node env file. The harness does not read prototype credentials implicitly.
-An LLM-only configuration needs only the OpenAI key; evaluator-only needs only
-the Gateway key. Run a small infrastructure smoke test first:
+Put `OPENAI_API_KEY` in your environment or an external Node env file. The
+harness does not read prototype credentials implicitly. Run a small
+infrastructure smoke test first:
 
 ```sh
 node --env-file=/absolute/path/benchmark.env benchmarks/friction/run.mjs \
   --config benchmarks/friction/configs/smoke.json --run
 ```
 
-Run the full comparison (6 setups × 37 scenarios × 3 repetitions = 666 scored
-scenario trials, plus six warmups):
+Run the full comparison (3 setups × 37 scenarios × 3 repetitions = 333 scored
+scenario trials, plus three warmups):
 
 ```sh
 node --env-file=/absolute/path/benchmark.env benchmarks/friction/run.mjs \
@@ -57,66 +56,51 @@ completed provider calls are also recorded incrementally in `calls.jsonl`.
 
 ## Setups
 
-`configs/luna6-sol6-jev-fast.json` compares GPT-6 Luna and GPT-6 Sol at
-`none` and `low`, with Jev first and Fast processing. It runs one complete
-37-scenario pass per setup (148 scored trials), matching the balanced first
-pass used in the earlier comparison. This is a preliminary comparison, not
-a repeated reliability study. `models.mjs` registers these candidates only
-inside the benchmark process; it does not add them to the app settings UI.
-Their published Standard input/cached/output rates are $0.10/$0.01/$0.50
-for Luna and $2/$0.20/$10 for Sol per million tokens; Fast is 2x.
+`models.mjs` registers GPT-6 Luna and GPT-6 Sol candidates only inside the
+benchmark process; it does not add them to the app settings UI. Their published
+Standard input/cached/output rates are $0.10/$0.01/$0.50 for Luna and
+$2/$0.20/$10 for Sol per million tokens; Fast is 2x.
 
-A setup is a named strategy tree in a JSON configuration. Supported leaves:
+A setup is a named strategy tree in a JSON configuration. Each leaf is a model:
 
 ```json
 {"kind":"llm","model":"gpt-5.6-luna","reasoning":"none","serviceTier":"default"}
 ```
 
-This invokes the maintained configuration agent with Jev disabled. The current
-model registry supports Astra, Luna and Terra, their validated reasoning efforts,
+This invokes the maintained configuration agent. The current
+model registry supports Sol 6, Sol 6.1, Astra, Luna and Terra, their validated reasoning efforts,
 and Standard (`default`) or Fast (`fast`) tiers. Add future general models to the
 backend's `assistant-settings.mjs` registry with verified support and pricing.
 Higher efforts use the backend's larger output allowances. A call is bounded by
 both the backend timeout and the benchmark's configured timeout.
 
-```json
-{"kind":"evaluator","model":"typesafe-ai/jev","threshold":0.9,"inputPerMillion":0.04,"outputPerMillion":0,"timeoutMs":3000}
-```
-
-This uses the production Jev question builder and decoder, and applies accepted
-explicit edits through the real Store. An uncertain or unsupported request is
-an **abstention**, not a correct answer. Another Gateway evaluation model can be
-substituted if it implements the same typed boolean/choice evaluation protocol;
-set its real rates and timeout explicitly. This is not a generic text-model API.
-Threshold changes create a different setup; do not silently retune the baseline.
-
-Combinations can nest either kind:
+Leaves can be combined:
 
 ```json
 {
-  "id":"jev-then-terra",
+  "id":"luna-or-terra",
   "kind":"cascade",
   "steps":[
-    {"kind":"evaluator","model":"typesafe-ai/jev","threshold":0.9,"inputPerMillion":0.04,"outputPerMillion":0,"timeoutMs":3000},
-    {"kind":"llm","model":"gpt-5.6-terra","reasoning":"low","serviceTier":"fast"}
+    {"kind":"llm","model":"gpt-5.6-luna","reasoning":"none","serviceTier":"default"},
+    {"kind":"llm","model":"gpt-5.6-terra","reasoning":"low","serviceTier":"default"}
   ]
 }
 ```
 
-- `cascade`: try each step until one resolves the request. Abstentions and errors
-  advance to the next step. A wrong accepted edit does **not** get an oracle retry.
-  A general model's answer or clarification is a resolved request.
+- `cascade`: try each step until one resolves the request. Errors advance to the
+  next step. A wrong resolved edit does **not** get an oracle retry. A model's
+  answer or clarification is a resolved request.
 - `race`: start all steps from independent copies of the same installation.
-  The first resolved result wins, even if it is wrong. An abstention cannot win.
+  The first resolved result wins, even if it is wrong. A failed call cannot win.
   Losing calls finish; their costs and errors remain in the evidence. Measured
   ready-time ends when the winner finishes, while wall-time includes losers and the lifecycle audit.
   This measures a speculative strategy, not production cancellation optimization.
-- Multiple evaluator or LLM leaves, and nested combinations, are supported.
-  Current LLM leaves only abstain through failure; an LLM-to-LLM cascade therefore
-  serves as error fallback, not an automatic quality judge or planner/executor.
+- Nested combinations are supported. A model leaf only fails to resolve through
+  an error, so a cascade serves as error fallback, not an automatic quality judge
+  or planner/executor.
 
 Exact approval/cancel commands use the shared deterministic app path in **every**
-setup, including evaluator-only. They make no provider calls. No route chooses
+setup. They make no provider calls. No route chooses
 an answer by comparing it with the expected result.
 
 ## Cases and scoring
@@ -169,7 +153,7 @@ semantic accuracy. Version 1 intentionally avoids a subjective LLM-as-judge scor
   your real frequency of use. Identical prompts plus your real workload weights
   are needed before drawing a usage-cost conclusion.
 - If a provider times out or returns an error, retain it. There are no hidden
-  evaluator retries. The general agent's ordinary multi-step tool loop remains
+  retries. The general agent's ordinary multi-step tool loop remains
   part of the setup and every call is counted.
 - The ready latency includes model work, branch isolation, local persistence and
   orchestration. It excludes post-run audit, UI rendering, voice audio, Android
@@ -189,15 +173,18 @@ and node_modules are never archived.
 The completed [Luna 6 / Sol 6 comparison](analyses/luna6-sol6-2026-09-23.md)
 includes the four requested setups, failure attribution and comparison limits.
 The [Luna 6 handoff prompt experiment](analyses/luna6-handoff-2026-09-23.md)
-compares that baseline with `configs/luna6-handoff-jev-fast.json` (74 trials).
+compares that baseline with a revised handoff prompt (74 trials).
 The [Sol 6 handoff prompt experiment](analyses/sol6-handoff-2026-09-23.md)
-uses `configs/sol6-handoff-jev-fast.json` for the same 74-trial comparison.
+repeats that 74-trial comparison for Sol 6.
 The [Sol 6 Low tier comparison](analyses/sol6-low-tiers-2026-09-23.md)
-uses `configs/sol6-low-tier-comparison.json`: six scenarios repeated three times
-with Fast and Standard processing (36 scored trials).
-Jev cascades pass the real prior outcome to the general assistant: an unaccepted
-evaluation differs from a provider failure. The shared backend prompt explains
-Jev and supplies task-completeness guidance without forwarding rejected guesses.
+compares Fast and Standard processing on six scenarios repeated three times
+(36 scored trials); `configs/sol6-low-tier-comparison.json` reruns it without Jev.
+The [Jev versus Clef comparison](analyses/jev-vs-clef-2026-10-08.md) measured
+both decision models before they were removed.
+
+Runs up to 2026-10-08 placed the Jev decision model in front of the assistant
+model. Jev and classifier strategies have since been removed from the app and
+harness; their configurations remain in each `history/` record and in Git.
 
 - `index.html`: standalone browsable summary and expandable trial details.
 - `REPORT.md`, `summary.csv`, `summary.json`: summary for sharing or analysis.

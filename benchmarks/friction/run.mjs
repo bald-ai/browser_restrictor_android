@@ -18,7 +18,6 @@ export function validateConfigFile(config,suite){
  if(config.cases&&(!Array.isArray(config.cases)||!config.cases.length||new Set(config.cases).size!==config.cases.length||config.cases.some(id=>!caseIds.has(id))))throw Error('Unknown or duplicate case selection');
 }
 function hasBudget(result){return result.status==='budget'||(result.branches||[]).some(hasBudget);}
-function nodes(s){return[s,...(s.steps||[]).flatMap(nodes)];}
 async function archive(dir){
  const files=['package.json'];for(const name of await fs.readdir(path.join(root,'backend-v1')))if(name.endsWith('.mjs')||['package.json','package-lock.json'].includes(name))files.push('backend-v1/'+name);
  for(const name of await fs.readdir(path.join(root,'backend-v1/docs')))if(name.endsWith('.md'))files.push('backend-v1/docs/'+name);
@@ -32,7 +31,7 @@ async function main(){
  const configPath=path.resolve(values.config),config=JSON.parse(await fs.readFile(configPath,'utf8'));if(values.cases)config.cases=values.cases.split(',');if(values.repeats)config.repeats=Number(values.repeats);if(values.seed)config.seed=Number(values.seed);if(values['max-usd'])config.maxUsd=Number(values['max-usd']);
  const suitePath=values.suite?path.resolve(values.suite):path.resolve(path.dirname(configPath),config.suite),suite=JSON.parse(await fs.readFile(suitePath,'utf8'));validateConfigFile(config,suite);const cases=suite.cases.filter(c=>!config.cases||config.cases.includes(c.id));
  const planned=schedule(cases,config.strategies,config.repeats,config.seed);console.log(JSON.stringify({suite:suite.version,cases:cases.length,scoredTrials:planned.length,repeats:config.repeats,strategies:config.strategies.map(s=>s.id),maxUsd:config.maxUsd,maxCalls:config.maxCalls,mode:values.run?'live':'plan-only'},null,2));if(!values.run){console.log('Add --run to execute paid provider calls. No calls made.');return;}
- const kinds=config.strategies.flatMap(nodes).map(s=>s.kind);if(kinds.includes('llm')&&!process.env.OPENAI_API_KEY)throw Error('Set OPENAI_API_KEY');if(kinds.includes('evaluator')&&!process.env.AI_GATEWAY_API_KEY)throw Error('Set AI_GATEWAY_API_KEY');
+ if(!process.env.OPENAI_API_KEY)throw Error('Set OPENAI_API_KEY');
  const runId=values['run-id']||new Date().toISOString().replaceAll(':','-');if(!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(runId))throw Error('Invalid run ID');
  const dir=path.resolve(values.out||path.join(import.meta.dirname,'runs'),runId);await fs.mkdir(path.dirname(dir),{recursive:true});await fs.mkdir(dir); // Refuse existing run IDs; never overwrite evidence.
  const provenance=await archive(dir);await fs.writeFile(path.join(dir,'suite.json'),JSON.stringify(suite,null,2));await fs.writeFile(path.join(dir,'config.json'),JSON.stringify(config,null,2));
@@ -44,7 +43,7 @@ async function main(){
   for(const [index,job]of plan.entries()){
    if(stop){report.status='interrupted';break;}const{c,strategy,rep,warmup}=job;const trial=String(index).padStart(5,'0')+'-'+strategy.id+'-'+c.id;let state=await fixture(path.join(dir,'stores',trial,'initial'),c);const turns=[];const start=performance.now();let elapsedMs=0;
    for(const [turnIndex,turn]of c.turns.entries()){
-    const result=await runTurn(strategy,state,turn.message,{dir:path.join(dir,'stores',trial,'turn-'+turnIndex),trial,meter,timeoutMs:config.timeoutMs,openaiKey:process.env.OPENAI_API_KEY,gatewayKey:process.env.AI_GATEWAY_API_KEY});state=result.state;const actual=observation(state),score=scoreTurn(turn.expect,result,actual);if(hasBudget(result)){score.outcome='budget';score.completed=false;score.actionCorrect=false;}elapsedMs+=result.elapsedMs;
+    const result=await runTurn(strategy,state,turn.message,{dir:path.join(dir,'stores',trial,'turn-'+turnIndex),trial,meter,timeoutMs:config.timeoutMs,openaiKey:process.env.OPENAI_API_KEY});state=result.state;const actual=observation(state),score=scoreTurn(turn.expect,result,actual);if(hasBudget(result)){score.outcome='budget';score.completed=false;score.actionCorrect=false;}elapsedMs+=result.elapsedMs;
     turns.push({message:turn.message,expected:turn.expect,actual,...score,result:serialResult(result)});
     // Do not score later turns from a state that already diverged from the script.
     if(!['passed','needs-review'].includes(score.outcome))break;
