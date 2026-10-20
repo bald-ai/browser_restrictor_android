@@ -1,4 +1,16 @@
-# Internet Restrictor for Android
+# Friction: Internet Restrictor for Android
+
+> **Status: working prototype**, used daily on my own phone.
+
+**In short**
+
+- **The app:** a native Android app (Kotlin) that puts a short pause in front of browsers, X and YouTube. Browsing time comes from a small daily allowance plus time earned by exercise, which a vision model verifies from a short video.
+- **The in-app AI agent:** tell it what to change, by text or voice ("set my daily allowance to 10 minutes", "move the reset to 5 am"). It prepares the change, shows it for review, and applies it only after approval. Every applied change can be undone. A Node.js backend validates each proposal against the same rules the app uses. What the agent can and cannot do: [AGENT_CAPABILITIES.md](AGENT_CAPABILITIES.md).
+- **The model benchmark:** a repeatable harness with 37 frozen scenarios (26 actions, 11 guard cases where the right answer is to change nothing). It runs the real backend validation and undo code against synthetic installs and records correctness, coverage, latency, estimated cost and failures. Every run is kept as a history record. Results and analyses: [benchmarks/friction/RESULTS.md](benchmarks/friction/RESULTS.md).
+
+Latest comparison (8 October 2026, 222 scored trials): Sol 6, Sol 6.1 Low and Sol 6.1 Medium all passed 52/52 action runs and 22/22 guard runs with no wrong proposals. Median response was 1.5–1.7 s, and Sol 6.1 cost about 17% less. Earlier runs are where cheaper models failed, mostly by making changes in guard cases where they should have asked first.
+
+## Details
 
 A native Android version of Internet Restrictor with an earned-budget exercise flow.
 
